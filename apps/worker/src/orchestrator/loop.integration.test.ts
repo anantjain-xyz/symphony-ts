@@ -177,7 +177,7 @@ d('OrchestratorLoop integration', () => {
     await Promise.all([...active.values()].map((h) => h.done));
     const { data: q } = await db.from('retry_queue').select('*').eq('issue_id', ISSUE_1.id);
     expect(q!.length).toBe(1);
-    expect(q![0].attempt_number).toBe(2);
+    expect(q![0]!.attempt_number).toBe(2);
     await rm(wsRoot, { recursive: true, force: true });
   });
 });

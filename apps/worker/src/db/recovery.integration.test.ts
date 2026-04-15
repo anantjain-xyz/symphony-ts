@@ -109,7 +109,7 @@ d('recover', () => {
     expect(row!.error_class).toBe('process_crashed');
     const { data: q } = await db.from('retry_queue').select('*').eq('issue_id', ACTIVE.id);
     expect(q!.length).toBe(1);
-    expect(q![0].attempt_number).toBe(2);
+    expect(q![0]!.attempt_number).toBe(2);
   });
 
   it('removes workspaces of terminal-state issues with no active attempts', async () => {

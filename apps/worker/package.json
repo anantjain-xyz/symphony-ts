@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@symphony/shared": "workspace:*",
-    "@supabase/supabase-js": "^2.47.10",
+    "@supabase/supabase-js": "2.47.10",
     "execa": "^9.5.2",
     "graphql-request": "^7.1.2",
     "gray-matter": "^4.0.3",

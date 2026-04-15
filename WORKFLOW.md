@@ -33,7 +33,7 @@ agent:
     in progress: 2
 
 codex:
-  command: codex
+  command: node ${SYMPHONY_CODEX_ADAPTER}
   approval_policy: never
   thread_sandbox: workspace-write
   turn_timeout_ms: 3600000

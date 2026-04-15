@@ -6,6 +6,13 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 loadDotenv({ path: resolve(repoRoot, '.env.local') });
 loadDotenv({ path: resolve(repoRoot, '.env') });
 
+// Expose the Codex adapter path so WORKFLOW.md can reference it via
+// `command: node ${SYMPHONY_CODEX_ADAPTER}`. Users can override in their own env.
+process.env.SYMPHONY_CODEX_ADAPTER ??= resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '../agents/codex-adapter.mjs',
+);
+
 import { createServiceClient } from '@symphony/shared';
 import { loadWorkflowFile } from './config/workflow.js';
 import { resolveConfig } from './config/resolve.js';

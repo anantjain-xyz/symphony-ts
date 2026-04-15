@@ -1,0 +1,28 @@
+{
+  "name": "@symphony/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@symphony/shared": "workspace:*",
+    "@supabase/supabase-js": "^2.47.10",
+    "execa": "^9.5.2",
+    "graphql-request": "^7.1.2",
+    "gray-matter": "^4.0.3",
+    "pino": "^9.5.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  }
+}

@@ -1,3 +1,11 @@
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { config as loadDotenv } from 'dotenv';
+
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
+loadDotenv({ path: resolve(repoRoot, '.env.local') });
+loadDotenv({ path: resolve(repoRoot, '.env') });
+
 import { createServiceClient } from '@symphony/shared';
 import { loadWorkflowFile } from './config/workflow.js';
 import { resolveConfig } from './config/resolve.js';
@@ -13,7 +21,7 @@ async function main(): Promise<void> {
   log.info({ pid: process.pid, node: process.version }, 'symphony-worker starting');
 
   const env = requireEnv(['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY']);
-  const workflowPath = process.env.WORKFLOW_PATH ?? './WORKFLOW.md';
+  const workflowPath = resolve(repoRoot, process.env.WORKFLOW_PATH ?? 'WORKFLOW.md');
 
   const workflow = await loadWorkflowFile(workflowPath);
   log.info(

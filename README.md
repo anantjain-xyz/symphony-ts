@@ -22,15 +22,23 @@ pnpm -r build                  # build everything
 
 Local Supabase URLs and keys: `supabase status`. Studio is at http://127.0.0.1:54423.
 
-### Worker
+### Env
 
-Set environment, then run:
+Both apps read from a single `.env.local` at the repo root:
 
 ```sh
-export SUPABASE_URL=http://127.0.0.1:54421
-export SUPABASE_SERVICE_ROLE_KEY=$(supabase status -o env | grep ^SERVICE_ROLE_KEY | cut -d'"' -f2)
-export LINEAR_API_KEY=lin_api_xxx
-export WORKFLOW_PATH=$(pwd)/WORKFLOW.md
+cp .env.example .env.local
+# fill in SUPABASE_SERVICE_ROLE_KEY (from `supabase status` -> Secret)
+#         NEXT_PUBLIC_SUPABASE_ANON_KEY (from `supabase status` -> Publishable)
+#         LINEAR_API_KEY
+```
+
+The worker loads it via `dotenv` in `apps/worker/src/index.ts`; the dashboard
+loads it via `loadEnvConfig` in `apps/dashboard/next.config.mjs`.
+
+### Worker
+
+```sh
 pnpm --filter @symphony/worker dev
 ```
 
@@ -39,8 +47,6 @@ Hit `Ctrl-C` to drain (loop.stop runs with a 30 s grace deadline).
 ### Dashboard
 
 ```sh
-cp apps/dashboard/.env.local.example apps/dashboard/.env.local
-# fill in NEXT_PUBLIC_SUPABASE_ANON_KEY (see `supabase status` -> Publishable)
 pnpm --filter @symphony/dashboard dev
 # open http://localhost:3000
 ```

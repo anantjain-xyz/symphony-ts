@@ -75,16 +75,25 @@ export function createLinearClient(opts: LinearClientOptions): TrackerClient {
 
 async function fetchByStateNames(client: GraphQLClient, states: string[]): Promise<Issue[]> {
   if (states.length === 0) return [];
-  // Linear's `state.name` is case-sensitive in their store but operators write
-  // workflow states in any case. We pull all issues whose state name matches
-  // case-insensitively by listing each lowercased state name as a separate `or`
-  // clause via the `in` operator on lower-cased name (Linear supports
-  // `name: { inIgnoreCase: [...] }`).
+  // Linear's StringComparator doesn't support `inIgnoreCase`, so we OR together
+  // one `eqIgnoreCase` branch per state name. Operators may configure state
+  // names in any case in WORKFLOW.md.
+  const varDecls = states.map((_, i) => `$s${i}: String!`).join(', ');
+  const orClauses = states
+    .map((_, i) => `{ state: { name: { eqIgnoreCase: $s${i} } } }`)
+    .join(', ');
+  const query = `
+    query SymphonyIssuesByState(${varDecls}) {
+      issues(filter: { or: [${orClauses}] }, first: 100) {
+        nodes {
+          ${ISSUE_FIELDS}
+        }
+      }
+    }
+  `;
+  const vars = Object.fromEntries(states.map((s, i) => [`s${i}`, s]));
   try {
-    const data = await client.request<{ issues: { nodes: LinearIssueNode[] } }>(
-      ISSUES_BY_STATE_QUERY,
-      { stateNames: states },
-    );
+    const data = await client.request<{ issues: { nodes: LinearIssueNode[] } }>(query, vars);
     return data.issues.nodes.map(normalize);
   } catch (err) {
     throw classify(err);
@@ -180,16 +189,6 @@ const ISSUE_FIELDS = `
 const VIEWER_QUERY = gql`
   query SymphonyPreflight {
     viewer { id }
-  }
-`;
-
-const ISSUES_BY_STATE_QUERY = gql`
-  query SymphonyIssuesByState($stateNames: [String!]!) {
-    issues(filter: { state: { name: { inIgnoreCase: $stateNames } } }, first: 100) {
-      nodes {
-        ${ISSUE_FIELDS}
-      }
-    }
   }
 `;
 

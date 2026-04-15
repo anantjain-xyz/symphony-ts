@@ -70,6 +70,37 @@ describe('CodexRunner', () => {
     await runner.kill();
   });
 
+  it('exits before handshake: rejects without unhandled rejection', async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      const runner = new CodexRunner({
+        command: 'unused',
+        cwd: process.cwd(),
+        approvalPolicy: 'never',
+        threadSandbox: 'workspace-write',
+        turnSandboxPolicy: 'inherit',
+        turnTimeoutMs: 5000,
+        onEvent: () => {},
+        spawnOverride: () =>
+          execa('node', ['-e', 'process.exit(1)'], {
+            stdin: 'pipe',
+            stdout: 'pipe',
+            stderr: 'pipe',
+            reject: false,
+          }),
+      });
+      await expect(runner.run('p')).rejects.toThrow();
+      // Let any microtasks / unhandledRejection events drain.
+      await new Promise((r) => setImmediate(r));
+      await new Promise((r) => setImmediate(r));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+  });
+
   it('interrupt: cancels the turn cleanly', async () => {
     const { runner } = makeRunner('interrupt');
     const p = runner.run('p');

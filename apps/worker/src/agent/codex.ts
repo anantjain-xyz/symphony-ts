@@ -71,6 +71,11 @@ export class CodexRunner {
       this.resolveCompletion = resolve;
       this.rejectCompletion = reject;
     });
+    // If codex exits before handshake, onExit rejects this promise. Nothing
+    // awaits it until after turn/start succeeds, so attach a silent handler
+    // to prevent an unhandledRejection from crashing the process. The caller
+    // still sees the failure via the in-flight request() rejection.
+    this.completion.catch(() => {});
 
     this.child = this.spawn();
 

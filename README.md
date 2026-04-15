@@ -15,9 +15,54 @@ A long-running daemon that polls Linear for issues, provisions isolated workspac
 
 ```sh
 pnpm install
-supabase start
-pnpm db:types
-pnpm -r build
+supabase start                 # ports bumped to 54421+ to avoid collisions
+pnpm db:types                  # regenerate packages/shared/src/db-types.ts
+pnpm -r build                  # build everything
 ```
+
+Local Supabase URLs and keys: `supabase status`. Studio is at http://127.0.0.1:54423.
+
+### Worker
+
+Set environment, then run:
+
+```sh
+export SUPABASE_URL=http://127.0.0.1:54421
+export SUPABASE_SERVICE_ROLE_KEY=$(supabase status -o env | grep ^SERVICE_ROLE_KEY | cut -d'"' -f2)
+export LINEAR_API_KEY=lin_api_xxx
+export WORKFLOW_PATH=$(pwd)/WORKFLOW.md
+pnpm --filter @symphony/worker dev
+```
+
+Hit `Ctrl-C` to drain (loop.stop runs with a 30 s grace deadline).
+
+### Dashboard
+
+```sh
+cp apps/dashboard/.env.local.example apps/dashboard/.env.local
+# fill in NEXT_PUBLIC_SUPABASE_ANON_KEY (see `supabase status` -> Publishable)
+pnpm --filter @symphony/dashboard dev
+# open http://localhost:3000
+```
+
+Sign in with a magic link via Supabase Auth (Mailpit captures emails locally at http://127.0.0.1:54424).
+
+### Smoke test the dashboard with seeded data
+
+```sh
+SUPABASE_SERVICE_ROLE_KEY=... pnpm --filter @symphony/worker exec tsx scripts/seed.ts
+```
+
+Inserts two issues, a successful attempt with events, a failed attempt, and a queued retry — enough to render every dashboard surface.
+
+### Tests
+
+```sh
+TEST_SUPABASE_URL=http://127.0.0.1:54421 \
+TEST_SUPABASE_SERVICE_ROLE_KEY=... \
+pnpm test
+```
+
+Integration tests (Repo, OrchestratorLoop, recovery) run against local Supabase. Without `TEST_SUPABASE_SERVICE_ROLE_KEY` they're skipped automatically.
 
 See [SPEC.md](https://github.com/openai/symphony/blob/main/SPEC.md) for the source spec; `WORKFLOW.md` is the per-repo policy file.

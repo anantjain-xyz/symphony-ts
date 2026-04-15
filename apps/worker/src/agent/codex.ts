@@ -229,7 +229,7 @@ export class CodexRunner {
   }
 
   private onExit(exitCode: number, err: Error | null): void {
-    if (this.completion && this.resolveCompletion && this.turnId === null) {
+    if (this.completion && this.turnId === null) {
       // Process died before we even started a turn.
       this.rejectCompletion(
         err ?? new Error(`codex exited with code ${exitCode} before handshake completed`),

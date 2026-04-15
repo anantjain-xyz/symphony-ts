@@ -17,3 +17,6 @@ supabase/seed.sql
 
 # build artifacts
 *.tsbuildinfo
+
+# playwright MCP artifacts
+.playwright-mcp/

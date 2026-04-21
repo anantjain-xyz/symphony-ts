@@ -108,13 +108,7 @@ async function main(): Promise<void> {
   // Last-resort cleanup. Runs synchronously on every exit path — normal
   // shutdown, forced 2nd-signal, uncaught/unhandled — and force-kills any
   // codex process groups still alive so we don't leak orphans to launchd.
-  process.on('exit', () => {
-    try {
-      loop.killAllNow();
-    } catch {
-      // Swallow: we're already exiting.
-    }
-  });
+  process.on('exit', () => loop.killAllNow());
 
   log.info(
     {

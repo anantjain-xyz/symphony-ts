@@ -190,13 +190,12 @@ export class CodexRunner {
   private signalGroup(signal: NodeJS.Signals): void {
     const pid = this.child?.pid;
     if (typeof pid !== 'number') return;
-    try {
-      process.kill(-pid, signal);
-    } catch {
+    for (const target of [-pid, pid]) {
       try {
-        process.kill(pid, signal);
+        process.kill(target, signal);
+        return;
       } catch {
-        // Already dead.
+        // Try pid fallback, or give up if already dead.
       }
     }
   }
@@ -281,6 +280,8 @@ export class CodexRunner {
       });
     }
     this.rejectAllPending(new Error(`codex exited (${exitCode})`));
+    // Release the handle so later signalGroup() calls can't hit a recycled pgid.
+    this.child = null;
   }
 
   private rejectAllPending(err: Error): void {

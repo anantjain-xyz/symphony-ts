@@ -278,10 +278,7 @@ export function dispatchAttempt(
       const timeout = new Promise<'timeout'>((resolve) => {
         timer = setTimeout(() => resolve('timeout'), CANCEL_INTERRUPT_GRACE_MS);
       });
-      // Swallow rejection from `done` so it doesn't escape cancel() as an
-      // unhandled rejection. The catch handler inside the IIFE does DB writes
-      // (finishAttempt, scheduleRetry) that can throw, and callers invoke us
-      // with `void handle.cancel(...)` without a .catch.
+      // done may reject (IIFE catch does DB writes); we only care that it settled.
       const doneSettled = done.then(
         () => 'done' as const,
         () => 'done' as const,
@@ -289,7 +286,10 @@ export function dispatchAttempt(
       try {
         const winner = await Promise.race([doneSettled, timeout]);
         if (winner === 'timeout') {
-          log.warn({ attemptId: attempt.id, reason }, 'cancel: interrupt grace expired; force-killing runner');
+          log.warn(
+            { attemptId: attempt.id, reason },
+            'cancel: interrupt grace expired; force-killing runner',
+          );
           await r.kill();
         }
       } finally {

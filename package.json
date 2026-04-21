@@ -8,13 +8,15 @@
   },
   "scripts": {
     "build": "pnpm -r build",
-    "test": "pnpm -r test",
-    "lint": "pnpm -r lint",
+    "format": "pnpm dlx @biomejs/biome@2.2.3 format --write .",
+    "format:check": "pnpm dlx @biomejs/biome@2.2.3 format --check .",
+    "lint": "pnpm dlx @biomejs/biome@2.2.3 lint .",
+    "test": "pnpm -r test && node --test tests/**/*.test.mjs",
     "typecheck": "pnpm -r typecheck",
     "db:types": "supabase gen types typescript --local > packages/shared/src/db-types.ts"
   },
   "devDependencies": {
-    "typescript": "^5.6.3",
-    "@types/node": "^22.10.2"
+    "@types/node": "^22.10.2",
+    "typescript": "^5.6.3"
   }
 }

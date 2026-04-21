@@ -6,13 +6,22 @@
       "Bash(pnpm lint *)",
       "Bash(pnpm test *)",
       "Bash(pnpm format:check *)",
+      "Bash(pnpm biome lint *)",
+      "Bash(pnpm exec vitest *)",
+      "Bash(pnpm --filter @symphony/worker typecheck *)",
+      "Bash(pnpm --filter @symphony/worker test *)",
+      "Bash(pnpm --filter @symphony/dashboard typecheck *)",
       "Bash(npx tsc --noEmit *)",
       "Bash(npm test *)",
+      "Bash(npm run typecheck *)",
+      "Bash(npm ls *)",
       "Bash(supabase status *)",
       "mcp__plugin_playwright_playwright__browser_take_screenshot",
       "mcp__plugin_playwright_playwright__browser_resize",
       "mcp__plugin_playwright_playwright__browser_close",
-      "mcp__plugin_playwright_playwright__browser_hover"
+      "mcp__plugin_playwright_playwright__browser_hover",
+      "mcp__plugin_playwright_playwright__browser_navigate",
+      "mcp__plugin_playwright_playwright__browser_snapshot"
     ]
   }
 }

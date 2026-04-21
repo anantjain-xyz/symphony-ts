@@ -74,6 +74,26 @@ prompt`;
     expect(() => parseWorkflowSource(bad)).toThrow();
   });
 
+  it('preserves $VAR tokens in hook scripts so bash expands them at runtime', () => {
+    const src = `---
+tracker:
+  kind: linear
+  api_key: k
+  active_states: [a]
+  terminal_states: [b]
+hooks:
+  after_create: |
+    git clone "$REPO_URL" .
+    git checkout -B "symphony/\${ISSUE_IDENTIFIER}"
+  before_run: echo "\${ISSUE_IDENTIFIER}"
+---
+prompt`;
+    const w = parseWorkflowSource(src);
+    expect(w.frontMatter.hooks.after_create).toContain('$REPO_URL');
+    expect(w.frontMatter.hooks.after_create).toContain('${ISSUE_IDENTIFIER}');
+    expect(w.frontMatter.hooks.before_run).toContain('${ISSUE_IDENTIFIER}');
+  });
+
   it('preserves unknown top-level keys', () => {
     const src = MINIMAL.replace('---\n', '---\nfuture_thing:\n  enabled: true\n');
     const w = parseWorkflowSource(src);

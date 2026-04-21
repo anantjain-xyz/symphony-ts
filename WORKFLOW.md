@@ -18,8 +18,8 @@ workspace:
 
 hooks:
   after_create: |
-    git init -q
-    git remote add origin "$REPO_URL" || true
+    git clone "$REPO_URL" .
+    git checkout -B "symphony/${ISSUE_IDENTIFIER}"
   before_run: |
     echo "starting attempt for ${ISSUE_IDENTIFIER}"
   after_run: |
@@ -57,4 +57,4 @@ State: {{state}}
 {{/blockers}}
 {{/blockers.length}}
 
-Open a pull request when ready. Update the Linear issue with a comment linking the PR.
+Open a pull request when ready. Update the Linear issue with a comment linking the PR, then transition the issue from `todo` to `in progress` so this attempt isn't re-dispatched while the PR awaits review.

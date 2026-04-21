@@ -77,6 +77,24 @@ describe('runHook', () => {
     }
   });
 
+  it('exposes REPO_URL to the script when set in the process env', async () => {
+    process.env.REPO_URL = 'https://example.com/fake.git';
+    try {
+      const result = await runHook(
+        'after_create',
+        'echo "$REPO_URL" > repo.txt',
+        { issue: ISSUE, workspacePath: ws, attemptNumber: 1 },
+        { timeoutMs: 5000 },
+      );
+      expect(result.exitCode).toBe(0);
+      expect((await readFile(path.join(ws, 'repo.txt'), 'utf8')).trim()).toBe(
+        'https://example.com/fake.git',
+      );
+    } finally {
+      delete process.env.REPO_URL;
+    }
+  });
+
   it('enforces timeoutMs and reports timedOut=true', async () => {
     const result = await runHook(
       'before_remove',

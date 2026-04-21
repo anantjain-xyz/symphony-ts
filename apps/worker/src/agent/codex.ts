@@ -53,7 +53,10 @@ export class CodexRunner {
   private child: ResultPromise | null = null;
   private nextId = 1;
   private parser = new NdjsonParser();
-  private pending = new Map<number, { resolve: (m: RpcMessage) => void; reject: (e: Error) => void }>();
+  private pending = new Map<
+    number,
+    { resolve: (m: RpcMessage) => void; reject: (e: Error) => void }
+  >();
   private completion: Promise<TurnCompleteParams> | null = null;
   private resolveCompletion!: (p: TurnCompleteParams) => void;
   private rejectCompletion!: (e: Error) => void;

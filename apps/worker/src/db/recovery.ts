@@ -14,8 +14,8 @@ export interface RecoveryDeps {
 }
 
 export interface RecoveryOutcome {
-  orphansAdopted: number;          // run_attempts that were 'running' at startup
-  workspacesRemoved: number;       // terminal-state issue workspaces cleaned
+  orphansAdopted: number; // run_attempts that were 'running' at startup
+  workspacesRemoved: number; // terminal-state issue workspaces cleaned
 }
 
 /**
@@ -42,7 +42,10 @@ export async function recover(deps: RecoveryDeps): Promise<RecoveryOutcome> {
 
   const orphans = await repo.listRunning();
   for (const o of orphans) {
-    log.warn({ attemptId: o.id, issueId: o.issue_id }, 'orphan run_attempt; marking as crashed and scheduling retry');
+    log.warn(
+      { attemptId: o.id, issueId: o.issue_id },
+      'orphan run_attempt; marking as crashed and scheduling retry',
+    );
     await repo.deleteLiveSession(o.id).catch(() => {});
     await repo.finishAttempt({
       attemptId: o.id,

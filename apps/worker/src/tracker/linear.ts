@@ -111,11 +111,18 @@ function byPriorityThenIdentifier(a: Issue, b: Issue): number {
 
 function classify(err: unknown): Error {
   // graphql-request throws ClientError with .response containing status + errors.
-  const e = err as { response?: { status?: number; errors?: Array<{ message: string }> }; message?: string };
+  const e = err as {
+    response?: { status?: number; errors?: Array<{ message: string }> };
+    message?: string;
+  };
   const status = e.response?.status;
   if (status === 401 || status === 403) return new LinearAuthError(e.message ?? 'auth failed');
   if (status === 429) {
-    const retry = Number((e.response as { headers?: { get?: (k: string) => string | null } } | undefined)?.headers?.get?.('retry-after') ?? '5');
+    const retry = Number(
+      (
+        e.response as { headers?: { get?: (k: string) => string | null } } | undefined
+      )?.headers?.get?.('retry-after') ?? '5',
+    );
     return new LinearRateLimitError(retry * 1000);
   }
   return err instanceof Error ? err : new Error(String(err));

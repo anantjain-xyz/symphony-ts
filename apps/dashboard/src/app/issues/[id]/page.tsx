@@ -25,8 +25,7 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
           {' · '}priority: <span className="text-zinc-200">{issue.priority}</span>
           {issue.blockers.length > 0 && (
             <>
-              {' · '}blocked by:{' '}
-              <span className="text-amber-300">{issue.blockers.join(', ')}</span>
+              {' · '}blocked by: <span className="text-amber-300">{issue.blockers.join(', ')}</span>
             </>
           )}
         </div>

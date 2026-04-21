@@ -18,7 +18,7 @@ import { randomUUID } from 'node:crypto';
 const rl = readline.createInterface({ input: process.stdin, terminal: false });
 
 let thread = null; // { id, cwd, approvalPolicy, threadSandbox }
-let turn = null;   // { id, child, completed }
+let turn = null; // { id, child, completed }
 
 function send(obj) {
   process.stdout.write(JSON.stringify(obj) + '\n');
@@ -241,8 +241,7 @@ function mapItem(ev) {
       return;
     case 'command_execution': {
       if (ev.type !== 'item.started' && ev.type !== 'item.completed') return;
-      const summary =
-        ev.type === 'item.completed' ? `exit ${item.exit_code ?? '?'}` : 'running';
+      const summary = ev.type === 'item.completed' ? `exit ${item.exit_code ?? '?'}` : 'running';
       send(
         notif('turn/event', {
           kind: 'tool_call',

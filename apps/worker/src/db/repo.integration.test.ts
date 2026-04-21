@@ -78,7 +78,10 @@ d('Repo integration', () => {
 
     // Cascading FKs handle the children; explicit deletes keep things obvious.
     await db.from('agent_events').delete().neq('id', 0);
-    await db.from('live_sessions').delete().neq('run_attempt_id', '00000000-0000-0000-0000-000000000000');
+    await db
+      .from('live_sessions')
+      .delete()
+      .neq('run_attempt_id', '00000000-0000-0000-0000-000000000000');
     await db.from('hook_runs').delete().neq('id', 0);
     await db.from('retry_queue').delete().neq('issue_id', '');
     await db.from('run_attempts').delete().neq('id', '00000000-0000-0000-0000-000000000000');

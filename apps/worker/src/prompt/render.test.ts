@@ -16,7 +16,9 @@ const ISSUE: Issue = {
 
 describe('renderPrompt', () => {
   it('substitutes simple fields', () => {
-    expect(renderPrompt('Hello {{identifier}}: {{title}}', ISSUE)).toBe('Hello ENG-42: Fix the bug');
+    expect(renderPrompt('Hello {{identifier}}: {{title}}', ISSUE)).toBe(
+      'Hello ENG-42: Fix the bug',
+    );
   });
 
   it('renders truthy section', () => {

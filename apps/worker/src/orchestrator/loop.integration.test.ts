@@ -17,8 +17,9 @@ const skip = !SERVICE_ROLE;
 const d = skip ? describe.skip : describe;
 
 if (skip) {
-  // eslint-disable-next-line no-console
-  console.warn('orchestrator integration tests skipped (set TEST_SUPABASE_SERVICE_ROLE_KEY to enable)');
+  console.warn(
+    'orchestrator integration tests skipped (set TEST_SUPABASE_SERVICE_ROLE_KEY to enable)',
+  );
 }
 
 const STUB = path.resolve(
@@ -41,7 +42,11 @@ function makeWorkflow(wsRoot: string, scenario: string, codexCommand: string): P
       polling: { interval_ms: 50 },
       workspace: { root: wsRoot },
       hooks: { timeout_ms: 5000 },
-      agent: { max_concurrent_agents: 2, max_retry_backoff_ms: 1000, max_concurrent_agents_by_state: {} },
+      agent: {
+        max_concurrent_agents: 2,
+        max_retry_backoff_ms: 1000,
+        max_concurrent_agents_by_state: {},
+      },
       codex: {
         command: codexCommand,
         approval_policy: 'never',
@@ -97,7 +102,10 @@ d('OrchestratorLoop integration', () => {
     }
 
     await db.from('agent_events').delete().neq('id', 0);
-    await db.from('live_sessions').delete().neq('run_attempt_id', '00000000-0000-0000-0000-000000000000');
+    await db
+      .from('live_sessions')
+      .delete()
+      .neq('run_attempt_id', '00000000-0000-0000-0000-000000000000');
     await db.from('hook_runs').delete().neq('id', 0);
     await db.from('retry_queue').delete().neq('issue_id', '');
     await db.from('run_attempts').delete().neq('id', '00000000-0000-0000-0000-000000000000');
@@ -154,7 +162,11 @@ d('OrchestratorLoop integration', () => {
   });
 
   it('respects max_concurrent_agents=2 with 3 eligible issues', async () => {
-    const ISSUE_3: Issue = { ...ISSUE_2, id: '55555555-5555-5555-5555-555555555555', identifier: 'LOOP-3' };
+    const ISSUE_3: Issue = {
+      ...ISSUE_2,
+      id: '55555555-5555-5555-5555-555555555555',
+      identifier: 'LOOP-3',
+    };
     const codexCmd = `STUB_SCENARIO=happy node ${STUB}`;
     const config = resolveConfig(makeWorkflow(wsRoot, 'happy', codexCmd));
     const loop = new OrchestratorLoop({

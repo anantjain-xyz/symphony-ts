@@ -31,10 +31,7 @@ async function main(): Promise<void> {
   const workflowPath = resolve(repoRoot, process.env.WORKFLOW_PATH ?? 'WORKFLOW.md');
 
   const workflow = await loadWorkflowFile(workflowPath);
-  log.info(
-    { workflowPath, sourceHash: workflow.sourceHash.slice(0, 12) },
-    'workflow loaded',
-  );
+  log.info({ workflowPath, sourceHash: workflow.sourceHash.slice(0, 12) }, 'workflow loaded');
   const config = resolveConfig(workflow);
 
   const db = createServiceClient({
@@ -82,7 +79,10 @@ async function main(): Promise<void> {
         }
         // Hot reload not yet hooked into resolveConfig swap; v1 logs and asks
         // operator to restart. Recorded as a TODO in the plan.
-        log.warn({ newHash: next.sourceHash.slice(0, 12) }, 'SIGHUP: WORKFLOW.md changed; restart worker to apply');
+        log.warn(
+          { newHash: next.sourceHash.slice(0, 12) },
+          'SIGHUP: WORKFLOW.md changed; restart worker to apply',
+        );
       } catch (err) {
         log.error({ err: errToString(err) }, 'SIGHUP: failed to reload workflow');
       }
@@ -131,8 +131,7 @@ function errToString(err: unknown): string {
 }
 
 main().catch((err) => {
-  // Last-resort catcher; logger may not be initialized.
-  // eslint-disable-next-line no-console
+  // biome-ignore lint/suspicious/noConsole: last-resort catcher; logger may not be initialized
   console.error('fatal:', err);
   process.exit(1);
 });

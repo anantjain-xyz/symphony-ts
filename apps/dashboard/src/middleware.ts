@@ -25,7 +25,9 @@ export async function middleware(request: NextRequest) {
     { cookies: cookieMethods },
   );
 
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   const path = request.nextUrl.pathname;
 
   // Skip auth on the login page and the auth callback.

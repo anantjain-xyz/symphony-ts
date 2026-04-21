@@ -40,9 +40,7 @@ describe('WorkflowFrontMatter', () => {
   });
 
   it('rejects missing required tracker fields', () => {
-    expect(() =>
-      WorkflowFrontMatter.parse({ tracker: { kind: 'linear' } }),
-    ).toThrow();
+    expect(() => WorkflowFrontMatter.parse({ tracker: { kind: 'linear' } })).toThrow();
   });
 });
 

@@ -105,6 +105,17 @@ async function main(): Promise<void> {
     process.exit(1);
   });
 
+  // Last-resort cleanup. Runs synchronously on every exit path — normal
+  // shutdown, forced 2nd-signal, uncaught/unhandled — and force-kills any
+  // codex process groups still alive so we don't leak orphans to launchd.
+  process.on('exit', () => {
+    try {
+      loop.killAllNow();
+    } catch {
+      // Swallow: we're already exiting.
+    }
+  });
+
   log.info(
     {
       pollIntervalMs: config.pollIntervalMs(),

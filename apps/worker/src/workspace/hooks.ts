@@ -49,10 +49,6 @@ export async function runHook(
   childEnv.ISSUE_STATE = env.issue.state;
   childEnv.ATTEMPT_NUMBER = String(env.attemptNumber);
   childEnv.WORKSPACE_PATH = env.workspacePath;
-  // Passed through explicitly rather than relying on filterEnv — this is the
-  // canonical input to the default after_create `git clone` hook, so surfacing
-  // it here makes the contract obvious at the call site.
-  if (process.env.REPO_URL) childEnv.REPO_URL = process.env.REPO_URL;
 
   try {
     const result = await execa('bash', ['-lc', script], {

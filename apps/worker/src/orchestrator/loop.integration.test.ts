@@ -16,6 +16,11 @@ const SERVICE_ROLE = process.env.TEST_SUPABASE_SERVICE_ROLE_KEY;
 const skip = !SERVICE_ROLE;
 const d = skip ? describe.skip : describe;
 
+if (skip) {
+  // eslint-disable-next-line no-console
+  console.warn('orchestrator integration tests skipped (set TEST_SUPABASE_SERVICE_ROLE_KEY to enable)');
+}
+
 const STUB = path.resolve(
   fileURLToPath(new URL('.', import.meta.url)),
   '../agent/__fixtures__/stub-codex.mjs',
@@ -82,11 +87,15 @@ const ISSUE_2: Issue = {
 };
 
 d('OrchestratorLoop integration', () => {
-  const db = createServiceClient({ url: SUPA_URL, serviceRoleKey: SERVICE_ROLE! });
-  const repo = new Repo(db);
+  let db: ReturnType<typeof createServiceClient>;
+  let repo: Repo;
   let wsRoot: string;
 
   async function clean() {
+    if (!db) {
+      return;
+    }
+
     await db.from('agent_events').delete().neq('id', 0);
     await db.from('live_sessions').delete().neq('run_attempt_id', '00000000-0000-0000-0000-000000000000');
     await db.from('hook_runs').delete().neq('id', 0);
@@ -96,6 +105,8 @@ d('OrchestratorLoop integration', () => {
   }
 
   beforeAll(async () => {
+    db = createServiceClient({ url: SUPA_URL, serviceRoleKey: SERVICE_ROLE! });
+    repo = new Repo(db);
     await clean();
   });
 

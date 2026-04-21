@@ -17,7 +17,13 @@ export async function loadWorkflowFile(workflowPath: string): Promise<ParsedWork
 
 export function parseWorkflowSource(raw: string): ParsedWorkflow {
   const { data, content } = matter(raw);
+  // Hook scripts are bash source; their `$VAR` tokens are meant to be expanded
+  // by the shell at hook runtime (where ISSUE_IDENTIFIER etc. are in scope).
+  // Pulling them out before interpolation prevents the loader from eagerly
+  // replacing `${ISSUE_IDENTIFIER}` with `""` from the worker's process env.
+  const rawHooks = extractHooks(data);
   const interpolated = interpolateEnv(data) as Record<string, unknown>;
+  restoreHooks(interpolated, rawHooks);
   const frontMatter = WorkflowFrontMatter.parse(interpolated);
   // Post-parse so we also process the schema default (which contains ${TMPDIR}).
   frontMatter.workspace.root = resolveWorkspaceRoot(frontMatter.workspace.root);
@@ -26,6 +32,27 @@ export function parseWorkflowSource(raw: string): ParsedWorkflow {
     promptTemplate: content.trimStart(),
     sourceHash: hash(raw),
   };
+}
+
+function extractHooks(data: unknown): Record<string, unknown> | null {
+  if (!data || typeof data !== 'object') return null;
+  const hooks = (data as Record<string, unknown>).hooks;
+  if (!hooks || typeof hooks !== 'object') return null;
+  return { ...(hooks as Record<string, unknown>) };
+}
+
+function restoreHooks(
+  target: Record<string, unknown>,
+  rawHooks: Record<string, unknown> | null,
+): void {
+  if (!rawHooks) return;
+  const hooks = target.hooks;
+  if (!hooks || typeof hooks !== 'object') return;
+  // Only restore the script-valued fields; preserve interpolation for scalars
+  // like `timeout_ms` if they're ever added.
+  for (const [k, v] of Object.entries(rawHooks)) {
+    if (typeof v === 'string') (hooks as Record<string, unknown>)[k] = v;
+  }
 }
 
 /**

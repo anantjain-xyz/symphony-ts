@@ -2,7 +2,7 @@ import type { Issue } from '@symphony/shared';
 import type { Logger } from 'pino';
 import { CodexRunner, TurnTimeoutError } from '../agent/codex.js';
 import { mapTurnEvent } from '../agent/events.js';
-import type { Repo, RunAttemptRow } from '../db/repo.js';
+import { AlreadyRunningError, type Repo, type RunAttemptRow } from '../db/repo.js';
 import { runHook, type HookResult } from '../workspace/hooks.js';
 import { WorkspaceManager } from '../workspace/manager.js';
 import { renderPrompt, appendRetryContext } from '../prompt/render.js';
@@ -53,11 +53,11 @@ export function dispatchAttempt(
     try {
       const ws = await workspaces.createOrReuse(issue.identifier);
       log.info(
-        { attemptId: attempt.id, ws: ws.path, createdNow: ws.createdNow },
+        { attemptId: attempt.id, ws: ws.path, createdNow: ws.createdNow, needsInit: ws.needsInit },
         'workspace ready',
       );
 
-      if (ws.createdNow) {
+      if (ws.needsInit) {
         const hookScript = config.workflow().frontMatter.hooks.after_create;
         if (hookScript) {
           const r = await runHook(
@@ -79,9 +79,27 @@ export function dispatchAttempt(
             return;
           }
         }
+        await workspaces.markReady(issue.identifier);
       }
 
-      await repo.markRunning(attempt.id);
+      try {
+        await repo.markRunning(attempt.id);
+      } catch (err) {
+        if (err instanceof AlreadyRunningError) {
+          log.warn(
+            { attemptId: attempt.id, issueId: issue.id },
+            'another attempt for this issue is already running; cancelling this one',
+          );
+          await repo.finishAttempt({
+            attemptId: attempt.id,
+            status: 'cancelled',
+            errorClass: 'reconciled',
+            errorMessage: 'lost race to another running attempt for the same issue',
+          });
+          return;
+        }
+        throw err;
+      }
 
       const beforeRun = config.workflow().frontMatter.hooks.before_run;
       if (beforeRun) {

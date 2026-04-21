@@ -34,6 +34,13 @@ async function main(): Promise<void> {
   log.info({ workflowPath, sourceHash: workflow.sourceHash.slice(0, 12) }, 'workflow loaded');
   const config = resolveConfig(workflow);
 
+  const afterCreate = workflow.frontMatter.hooks.after_create ?? '';
+  if (afterCreate.includes('$REPO_URL') && !process.env.REPO_URL) {
+    log.warn(
+      'after_create references $REPO_URL but REPO_URL env var is empty; workspace init will fail',
+    );
+  }
+
   const db = createServiceClient({
     url: env.SUPABASE_URL,
     serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,

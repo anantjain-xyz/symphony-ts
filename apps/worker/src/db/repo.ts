@@ -9,6 +9,13 @@ import {
   type TablesInsert,
 } from '@symphony/shared';
 
+export class AlreadyRunningError extends Error {
+  constructor(public readonly attemptId: string) {
+    super(`another attempt for the same issue is already running (lost race for ${attemptId})`);
+    this.name = 'AlreadyRunningError';
+  }
+}
+
 export type RunAttemptRow = Tables<'run_attempts'>;
 export type IssueRow = Tables<'issues'>;
 export type WorkflowRow = Tables<'workflows'>;
@@ -95,12 +102,22 @@ export class Repo {
     return data;
   }
 
+  /**
+   * Transition an attempt from `pending` to `running`. Throws
+   * {@link AlreadyRunningError} if another attempt for the same issue is
+   * already `running` (enforced by the `run_attempts_one_running_per_issue`
+   * partial unique index). Callers should treat that as "lost the race; this
+   * attempt should be cancelled" rather than a fatal error.
+   */
   async markRunning(attemptId: string): Promise<void> {
     const { error } = await this.db
       .from('run_attempts')
       .update({ status: 'running', started_at: new Date().toISOString() })
       .eq('id', attemptId);
-    if (error) throw error;
+    if (error) {
+      if (error.code === '23505') throw new AlreadyRunningError(attemptId);
+      throw error;
+    }
   }
 
   async finishAttempt(input: {

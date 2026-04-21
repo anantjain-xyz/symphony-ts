@@ -24,7 +24,7 @@ jobs:
           - name: formatting
             command: pnpm format:check
           - name: lint
-            command: pnpm lint
+            command: pnpm lint && pnpm typecheck
           - name: test
             command: pnpm test
 

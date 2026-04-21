@@ -11,6 +11,7 @@
     "./supabase": "./src/supabase.ts"
   },
   "scripts": {
+    "lint": "node ../../scripts/lint.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

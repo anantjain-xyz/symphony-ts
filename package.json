@@ -8,10 +8,10 @@
   },
   "scripts": {
     "build": "pnpm -r build",
-    "format": "pnpm dlx @biomejs/biome@1.9.4 format --write .",
-    "format:check": "pnpm dlx @biomejs/biome@1.9.4 format --check .",
+    "format": "node scripts/check-format.mjs --write",
+    "format:check": "node scripts/check-format.mjs",
     "test": "pnpm -r test",
-    "lint": "pnpm dlx @biomejs/biome@1.9.4 lint .",
+    "lint": "node scripts/lint.mjs .github scripts README.md WORKFLOW.md package.json pnpm-workspace.yaml tsconfig.base.json && pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
     "db:types": "supabase gen types typescript --local > packages/shared/src/db-types.ts"
   },

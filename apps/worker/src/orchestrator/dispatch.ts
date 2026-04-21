@@ -12,11 +12,23 @@ export interface DispatchHandle {
   /** Issue this dispatch is for (so the loop can match it during reconciliation). */
   issueId: string;
   attemptId: string;
-  /** Cooperative cancellation; called when reconciliation invalidates the attempt. */
+  /**
+   * Cooperative cancellation. Sends turn/interrupt to codex, waits a bounded
+   * grace for clean shutdown, then force-kills the process group. Resolves
+   * once the underlying runner is dead (or was already gone).
+   */
   cancel(reason: string): Promise<void>;
+  /**
+   * Synchronous best-effort SIGKILL of the runner's process group. For use
+   * from contexts that cannot await — notably process.on('exit').
+   */
+  killNow(): void;
   /** Resolves when dispatch finishes (success, failure, timeout, cancelled). */
   done: Promise<void>;
 }
+
+/** How long cancel() waits for codex to honor turn/interrupt before force-killing. */
+const CANCEL_INTERRUPT_GRACE_MS = 5_000;
 
 export interface DispatchDeps {
   repo: Repo;
@@ -255,12 +267,37 @@ export function dispatchAttempt(
     async cancel(reason) {
       cancelled = true;
       cancelReason = reason;
-      if (runner) {
-        await runner.interrupt();
-        // If the agent doesn't honor interrupt within turnTimeoutMs, the timeout
-        // path above will kill it. We don't force-kill here to give graceful
-        // shutdown a chance.
+      const r = runner;
+      if (!r) return;
+      try {
+        await r.interrupt();
+      } catch {
+        // interrupt failing is not fatal; we'll escalate to kill below.
       }
+      let timer: NodeJS.Timeout | undefined;
+      const timeout = new Promise<'timeout'>((resolve) => {
+        timer = setTimeout(() => resolve('timeout'), CANCEL_INTERRUPT_GRACE_MS);
+      });
+      // done may reject (IIFE catch does DB writes); we only care that it settled.
+      const doneSettled = done.then(
+        () => 'done' as const,
+        () => 'done' as const,
+      );
+      try {
+        const winner = await Promise.race([doneSettled, timeout]);
+        if (winner === 'timeout') {
+          log.warn(
+            { attemptId: attempt.id, reason },
+            'cancel: interrupt grace expired; force-killing runner',
+          );
+          await r.kill();
+        }
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    },
+    killNow() {
+      runner?.killNow();
     },
     done,
   };

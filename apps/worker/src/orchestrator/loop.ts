@@ -69,19 +69,37 @@ export class OrchestratorLoop {
     if (handles.length === 0) return;
     this.deps.log.info({ count: handles.length }, 'draining dispatches');
     const drainAll = Promise.all(handles.map((h) => h.done));
+    let timedOut = false;
     await Promise.race([
       drainAll,
       new Promise<void>((resolve) =>
         setTimeout(() => {
-          this.deps.log.warn(
-            { remaining: this.active.size },
-            'drain deadline; cancelling remainder',
-          );
-          for (const h of this.active.values()) void h.cancel('worker shutdown');
+          timedOut = true;
           resolve();
         }, graceMs),
       ),
     ]);
+    if (!timedOut) return;
+    const remaining = [...this.active.values()];
+    this.deps.log.warn({ remaining: remaining.length }, 'drain deadline; cancelling remainder');
+    // cancel() internally escalates to force-kill after its own bounded grace,
+    // so awaiting here guarantees the children are dead before stop() returns.
+    await Promise.all(remaining.map((h) => h.cancel('worker shutdown')));
+  }
+
+  /**
+   * Synchronously SIGKILL every active runner's process group. Callable from
+   * process.on('exit'), which cannot await. Last line of defense for paths
+   * that skip stop() — uncaughtException, unhandledRejection, second signal.
+   */
+  killAllNow(): void {
+    for (const h of this.active.values()) {
+      try {
+        h.killNow();
+      } catch {
+        // Best effort.
+      }
+    }
   }
 
   /** Single tick: poll, upsert, reconcile, dispatch eligible, run retries. */

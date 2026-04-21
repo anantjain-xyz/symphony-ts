@@ -135,14 +135,14 @@ export class CodexRunner {
     }
   }
 
-  /** Hard terminate. SIGTERM, then SIGKILL after grace period. */
+  /** Hard terminate. SIGTERM to the whole process group, then SIGKILL after grace. */
   async kill(signal: NodeJS.Signals = 'SIGTERM', graceMs = 5000): Promise<void> {
     const c = this.child;
     if (!c) return;
-    c.kill(signal);
+    this.signalGroup(signal);
     await new Promise<void>((resolve) => {
       const t = setTimeout(() => {
-        c.kill('SIGKILL');
+        this.signalGroup('SIGKILL');
         resolve();
       }, graceMs);
       c.then(
@@ -158,6 +158,16 @@ export class CodexRunner {
     });
   }
 
+  /**
+   * Synchronous best-effort SIGKILL for the whole process group. Safe to call
+   * from process.on('exit'), which forbids awaiting. Skips the SIGTERM grace
+   * period — use only when the worker is already exiting abnormally.
+   */
+  killNow(): void {
+    if (!this.child) return;
+    this.signalGroup('SIGKILL');
+  }
+
   // ---------- internals ----------
 
   private spawn(): ResultPromise {
@@ -168,9 +178,26 @@ export class CodexRunner {
       stdout: 'pipe',
       stderr: 'pipe',
       reject: false,
+      // Own process group: lets kill() reach grandchildren (e.g. when bash
+      // forks rather than execs, or when codex spawns its own subprocesses)
+      // via process.kill(-pid, signal).
+      detached: true,
       // Inherits parent env intentionally: codex needs PATH, OPENAI_API_KEY, etc.
       // The hooks runner is the spec-defined boundary for env stripping.
     });
+  }
+
+  private signalGroup(signal: NodeJS.Signals): void {
+    const pid = this.child?.pid;
+    if (typeof pid !== 'number') return;
+    for (const target of [-pid, pid]) {
+      try {
+        process.kill(target, signal);
+        return;
+      } catch {
+        // Try pid fallback, or give up if already dead.
+      }
+    }
   }
 
   private onStdout(chunk: string): void {
@@ -253,6 +280,8 @@ export class CodexRunner {
       });
     }
     this.rejectAllPending(new Error(`codex exited (${exitCode})`));
+    // Release the handle so later signalGroup() calls can't hit a recycled pgid.
+    this.child = null;
   }
 
   private rejectAllPending(err: Error): void {

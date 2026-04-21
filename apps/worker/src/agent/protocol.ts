@@ -58,6 +58,7 @@ export interface ThreadStartParams {
   approval_policy: 'never' | 'on-request' | 'on-failure' | 'always';
   thread_sandbox: 'none' | 'workspace-write' | 'read-only';
   cwd: string;
+  network_access?: boolean;
 }
 export interface ThreadStartResult {
   thread_id: string;

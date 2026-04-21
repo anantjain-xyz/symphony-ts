@@ -29,6 +29,7 @@ function makeRunner(scenario: string, timeoutMs = 5000) {
     approvalPolicy: 'never',
     threadSandbox: 'workspace-write',
     turnSandboxPolicy: 'inherit',
+    networkAccess: false,
     turnTimeoutMs: timeoutMs,
     onEvent: (ev) => {
       events.push(ev);
@@ -81,6 +82,7 @@ describe('CodexRunner', () => {
         approvalPolicy: 'never',
         threadSandbox: 'workspace-write',
         turnSandboxPolicy: 'inherit',
+        networkAccess: false,
         turnTimeoutMs: 5000,
         onEvent: () => {},
         spawnOverride: () =>

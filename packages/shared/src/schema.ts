@@ -67,6 +67,10 @@ export const CodexConfig = z
       .enum(['inherit', 'workspace-write', 'read-only', 'danger-full-access'])
       .default('inherit'),
     turn_timeout_ms: z.number().int().positive().default(3_600_000),
+    // Codex 0.120.0 gates outbound network as a single blanket toggle under
+    // the workspace-write sandbox mode; no per-host allowlist is available.
+    // Default off preserves the stricter sandbox for repos that don't need it.
+    network_access: z.boolean().default(false),
   })
   .strict()
   .default({
@@ -75,6 +79,7 @@ export const CodexConfig = z
     thread_sandbox: 'workspace-write',
     turn_sandbox_policy: 'inherit',
     turn_timeout_ms: 3_600_000,
+    network_access: false,
   });
 export type CodexConfig = z.infer<typeof CodexConfig>;
 

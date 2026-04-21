@@ -76,7 +76,6 @@ Integration tests (Repo, OrchestratorLoop, recovery) run against local Supabase.
 ```sh
 pnpm format:check
 pnpm lint
-pnpm typecheck
 pnpm test
 ```
 

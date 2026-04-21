@@ -14,6 +14,12 @@
     "enabled": true,
     "indentStyle": "space"
   },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true
+    }
+  },
   "javascript": {
     "formatter": {
       "quoteStyle": "single",

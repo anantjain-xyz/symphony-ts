@@ -63,6 +63,7 @@ const WORKFLOW: ParsedWorkflow = {
       thread_sandbox: 'workspace-write',
       turn_sandbox_policy: 'inherit',
       turn_timeout_ms: 3600000,
+      network_access: false,
     },
   },
 };

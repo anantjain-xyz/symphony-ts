@@ -46,6 +46,7 @@ rl.on('line', (line) => {
         cwd: p.cwd,
         approvalPolicy: p.approval_policy,
         threadSandbox: p.thread_sandbox,
+        networkAccess: p.network_access === true,
       };
       send(reply(msg.id, { thread_id: thread.id }));
       return;
@@ -148,6 +149,12 @@ function buildCodexArgs(turnSandboxPolicy) {
   } else if (sandbox === 'workspace-write') {
     // --full-auto === -s workspace-write with approvals bypassed
     args.push('--full-auto');
+    // Codex 0.120.0 gates outbound network under the workspace-write sandbox
+    // via a single TOML toggle. Pass it through as a -c override so WORKFLOW.md
+    // stays authoritative (vs. mutating ~/.codex/config.toml).
+    if (thread.networkAccess) {
+      args.push('-c', 'sandbox_workspace_write.network_access=true');
+    }
   } else {
     args.push('-s', 'read-only');
   }

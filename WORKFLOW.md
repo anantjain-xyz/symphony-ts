@@ -36,6 +36,7 @@ codex:
   command: node ${SYMPHONY_CODEX_ADAPTER}
   approval_policy: never
   thread_sandbox: workspace-write
+  network_access: true
   turn_timeout_ms: 3600000
 ---
 

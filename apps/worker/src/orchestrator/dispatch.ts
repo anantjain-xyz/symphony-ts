@@ -139,6 +139,7 @@ export function dispatchAttempt(
         approvalPolicy: config.workflow().frontMatter.codex.approval_policy,
         threadSandbox: config.workflow().frontMatter.codex.thread_sandbox,
         turnSandboxPolicy: config.workflow().frontMatter.codex.turn_sandbox_policy,
+        networkAccess: config.workflow().frontMatter.codex.network_access,
         turnTimeoutMs: config.turnTimeoutMs(),
         log: (msg, ctx) => log.debug({ ...ctx, attemptId: attempt.id }, msg),
         onEvent: async (ev) => {

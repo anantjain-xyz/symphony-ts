@@ -21,6 +21,7 @@ export interface CodexRunnerOptions {
   approvalPolicy: ThreadStartParams['approval_policy'];
   threadSandbox: ThreadStartParams['thread_sandbox'];
   turnSandboxPolicy: TurnStartParams['turn_sandbox_policy'];
+  networkAccess: boolean;
   turnTimeoutMs: number;
   /** Hook subscribed to every turn/event notification. */
   onEvent: (ev: TurnEventParams) => void | Promise<void>;
@@ -103,6 +104,7 @@ export class CodexRunner {
       approval_policy: this.opts.approvalPolicy,
       thread_sandbox: this.opts.threadSandbox,
       cwd: this.opts.cwd,
+      network_access: this.opts.networkAccess,
     } satisfies ThreadStartParams);
     this.threadId = thread.thread_id;
 

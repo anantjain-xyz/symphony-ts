@@ -8,13 +8,16 @@
   },
   "scripts": {
     "build": "pnpm -r build",
+    "format": "biome format --write",
+    "format:check": "biome format",
     "test": "pnpm -r test",
-    "lint": "pnpm -r lint",
+    "lint": "biome lint",
     "typecheck": "pnpm -r typecheck",
     "db:types": "supabase gen types typescript --local > packages/shared/src/db-types.ts"
   },
   "devDependencies": {
-    "typescript": "^5.6.3",
-    "@types/node": "^22.10.2"
+    "@biomejs/biome": "^2.4.12",
+    "@types/node": "^22.10.2",
+    "typescript": "^5.6.3"
   }
 }

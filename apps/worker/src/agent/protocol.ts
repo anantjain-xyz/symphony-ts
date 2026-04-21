@@ -76,9 +76,22 @@ export interface TurnStartResult {
 
 export type TurnEventParams =
   | { kind: 'status'; turn_id: string; message: string }
-  | { kind: 'tool_call'; turn_id: string; tool: string; args?: unknown; call_id?: string; result_summary?: string }
+  | {
+      kind: 'tool_call';
+      turn_id: string;
+      tool: string;
+      args?: unknown;
+      call_id?: string;
+      result_summary?: string;
+    }
   | { kind: 'approval'; turn_id: string; reason: string; call_id?: string }
-  | { kind: 'token_count'; turn_id: string; input_tokens: number; output_tokens: number; total_tokens: number }
+  | {
+      kind: 'token_count';
+      turn_id: string;
+      input_tokens: number;
+      output_tokens: number;
+      total_tokens: number;
+    }
   | { kind: 'error'; turn_id: string; class: string; message: string; recoverable?: boolean }
   | { kind: 'user_input'; turn_id: string; text: string };
 

@@ -46,7 +46,8 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
             <span className="text-zinc-200">{attempt.status}</span>
             {attempt.error_class && (
               <>
-                {' '}· <span className="text-red-400">{attempt.error_class}</span>
+                {' '}
+                · <span className="text-red-400">{attempt.error_class}</span>
               </>
             )}
           </div>

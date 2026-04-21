@@ -3,10 +3,7 @@ import { createHash } from 'node:crypto';
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import matter from 'gray-matter';
-import {
-  WorkflowFrontMatter,
-  type ParsedWorkflow,
-} from '@symphony/shared';
+import { WorkflowFrontMatter, type ParsedWorkflow } from '@symphony/shared';
 
 /**
  * Read WORKFLOW.md from disk, parse front matter, expand env vars and ~ in

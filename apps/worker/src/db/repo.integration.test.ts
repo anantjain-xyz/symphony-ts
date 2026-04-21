@@ -68,13 +68,20 @@ const WORKFLOW: ParsedWorkflow = {
 };
 
 d('Repo integration', () => {
-  const db = createServiceClient({ url: URL, serviceRoleKey: SERVICE_ROLE! });
-  const repo = new Repo(db);
+  let db: ReturnType<typeof createServiceClient>;
+  let repo: Repo;
 
   async function clean() {
+    if (!db) {
+      return;
+    }
+
     // Cascading FKs handle the children; explicit deletes keep things obvious.
     await db.from('agent_events').delete().neq('id', 0);
-    await db.from('live_sessions').delete().neq('run_attempt_id', '00000000-0000-0000-0000-000000000000');
+    await db
+      .from('live_sessions')
+      .delete()
+      .neq('run_attempt_id', '00000000-0000-0000-0000-000000000000');
     await db.from('hook_runs').delete().neq('id', 0);
     await db.from('retry_queue').delete().neq('issue_id', '');
     await db.from('run_attempts').delete().neq('id', '00000000-0000-0000-0000-000000000000');
@@ -82,7 +89,11 @@ d('Repo integration', () => {
     await db.from('workflows').delete().neq('id', '00000000-0000-0000-0000-000000000000');
   }
 
-  beforeAll(clean);
+  beforeAll(async () => {
+    db = createServiceClient({ url: URL, serviceRoleKey: SERVICE_ROLE! });
+    repo = new Repo(db);
+    await clean();
+  });
 
   beforeEach(async () => {
     await clean();

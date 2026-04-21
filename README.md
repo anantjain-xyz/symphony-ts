@@ -71,4 +71,15 @@ pnpm test
 
 Integration tests (Repo, OrchestratorLoop, recovery) run against local Supabase. Without `TEST_SUPABASE_SERVICE_ROLE_KEY` they're skipped automatically.
 
+### Quality checks
+
+```sh
+pnpm format:check
+pnpm lint
+pnpm typecheck
+pnpm test
+```
+
+`.github/workflows/ci.yml` runs the same format, lint, typecheck, and test gates on pull requests and pushes to `main`.
+
 See [SPEC.md](https://github.com/openai/symphony/blob/main/SPEC.md) for the source spec; `WORKFLOW.md` is the per-repo policy file.

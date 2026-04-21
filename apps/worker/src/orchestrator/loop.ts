@@ -50,7 +50,10 @@ export class OrchestratorLoop {
   async run(): Promise<void> {
     while (!this.stopping) {
       this.currentTick = this.tick().catch((err) => {
-        this.deps.log.error({ err: err instanceof Error ? err.message : String(err) }, 'tick failed');
+        this.deps.log.error(
+          { err: err instanceof Error ? err.message : String(err) },
+          'tick failed',
+        );
       });
       await this.currentTick;
       if (this.stopping) break;
@@ -70,7 +73,10 @@ export class OrchestratorLoop {
       drainAll,
       new Promise<void>((resolve) =>
         setTimeout(() => {
-          this.deps.log.warn({ remaining: this.active.size }, 'drain deadline; cancelling remainder');
+          this.deps.log.warn(
+            { remaining: this.active.size },
+            'drain deadline; cancelling remainder',
+          );
           for (const h of this.active.values()) void h.cancel('worker shutdown');
           resolve();
         }, graceMs),
@@ -92,16 +98,17 @@ export class OrchestratorLoop {
     const activeIds = new Set(active.map((i) => i.id));
     for (const [issueId, handle] of this.active) {
       if (!activeIds.has(issueId)) {
-        log.info({ issueId, attemptId: handle.attemptId }, 'reconciling: issue no longer active, cancelling');
+        log.info(
+          { issueId, attemptId: handle.attemptId },
+          'reconciling: issue no longer active, cancelling',
+        );
         void handle.cancel('issue state changed');
       }
     }
 
     // 3. Compute eligible (not blocked, not already in flight). Issues are
     //    already in priority order from the tracker.
-    const eligible = active.filter(
-      (i) => i.blockers.length === 0 && !this.active.has(i.id),
-    );
+    const eligible = active.filter((i) => i.blockers.length === 0 && !this.active.has(i.id));
 
     // 4. Compute current per-state load from the in-flight handles.
     const byState = new Map<string, number>();
@@ -119,7 +126,10 @@ export class OrchestratorLoop {
       config.maxConcurrentAgents(),
       config.maxConcurrentByState(),
     );
-    log.debug({ active: this.active.size, eligible: eligible.length, slate: slate.length }, 'tick slate');
+    log.debug(
+      { active: this.active.size, eligible: eligible.length, slate: slate.length },
+      'tick slate',
+    );
 
     // 6. Reserve and dispatch each.
     for (const issue of slate) {
@@ -156,11 +166,7 @@ export class OrchestratorLoop {
       log.debug({ issueId: issue.id, attemptNumber }, 'reservation lost (race); skipping');
       return null;
     }
-    return dispatchAttempt(
-      { repo, workspaces, config, log },
-      issue,
-      reserved,
-    );
+    return dispatchAttempt({ repo, workspaces, config, log }, issue, reserved);
   }
 }
 

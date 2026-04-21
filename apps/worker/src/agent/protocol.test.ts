@@ -4,7 +4,9 @@ import { NdjsonParser, encodeRequest, isResult, isError, isNotification } from '
 describe('NdjsonParser', () => {
   it('parses one message per line', () => {
     const p = new NdjsonParser();
-    const out = p.push('{"jsonrpc":"2.0","id":1,"result":{}}\n{"jsonrpc":"2.0","method":"x","params":{}}\n');
+    const out = p.push(
+      '{"jsonrpc":"2.0","id":1,"result":{}}\n{"jsonrpc":"2.0","method":"x","params":{}}\n',
+    );
     expect(out).toHaveLength(2);
     expect(isResult(out[0]!)).toBe(true);
     expect(isNotification(out[1]!)).toBe(true);
@@ -18,7 +20,9 @@ describe('NdjsonParser', () => {
 
   it('handles multiple newlines in one chunk', () => {
     const p = new NdjsonParser();
-    const out = p.push('{"jsonrpc":"2.0","id":1,"result":1}\n\n{"jsonrpc":"2.0","id":2,"result":2}\n');
+    const out = p.push(
+      '{"jsonrpc":"2.0","id":1,"result":1}\n\n{"jsonrpc":"2.0","id":2,"result":2}\n',
+    );
     expect(out).toHaveLength(2);
   });
 

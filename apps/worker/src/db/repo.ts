@@ -122,10 +122,7 @@ export class Repo {
   }
 
   async listRunning(): Promise<RunAttemptRow[]> {
-    const { data, error } = await this.db
-      .from('run_attempts')
-      .select('*')
-      .eq('status', 'running');
+    const { data, error } = await this.db.from('run_attempts').select('*').eq('status', 'running');
     if (error) throw error;
     return data ?? [];
   }
@@ -162,7 +159,9 @@ export class Repo {
   }
 
   // ---- live_sessions ----
-  async upsertLiveSession(input: Omit<LiveSessionRow, 'started_at' | 'last_event_at'>): Promise<void> {
+  async upsertLiveSession(
+    input: Omit<LiveSessionRow, 'started_at' | 'last_event_at'>,
+  ): Promise<void> {
     const { error } = await this.db.from('live_sessions').upsert({
       ...input,
       last_event_at: new Date().toISOString(),
@@ -190,11 +189,7 @@ export class Repo {
   }
 
   // ---- agent_events ----
-  async appendEvent(
-    runAttemptId: string,
-    kind: AgentEventKind,
-    payload: unknown,
-  ): Promise<void> {
+  async appendEvent(runAttemptId: string, kind: AgentEventKind, payload: unknown): Promise<void> {
     const { error } = await this.db.from('agent_events').insert({
       run_attempt_id: runAttemptId,
       kind,

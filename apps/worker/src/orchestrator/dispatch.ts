@@ -52,7 +52,10 @@ export function dispatchAttempt(
   const done = (async () => {
     try {
       const ws = await workspaces.createOrReuse(issue.identifier);
-      log.info({ attemptId: attempt.id, ws: ws.path, createdNow: ws.createdNow }, 'workspace ready');
+      log.info(
+        { attemptId: attempt.id, ws: ws.path, createdNow: ws.createdNow },
+        'workspace ready',
+      );
 
       if (ws.createdNow) {
         const hookScript = config.workflow().frontMatter.hooks.after_create;
@@ -65,7 +68,14 @@ export function dispatchAttempt(
           );
           await recordHook(deps, attempt.id, 'after_create', r);
           if (r.exitCode !== 0) {
-            await fail(deps, attempt.id, issue, attempt.attempt_number, 'after_create_failed', r.stderrTail ?? 'after_create non-zero');
+            await fail(
+              deps,
+              attempt.id,
+              issue,
+              attempt.attempt_number,
+              'after_create_failed',
+              r.stderrTail ?? 'after_create non-zero',
+            );
             return;
           }
         }
@@ -83,7 +93,10 @@ export function dispatchAttempt(
         );
         await recordHook(deps, attempt.id, 'before_run', r);
         if (r.exitCode !== 0) {
-          log.warn({ attemptId: attempt.id, stderr: r.stderrTail }, 'before_run hook failed (non-fatal)');
+          log.warn(
+            { attemptId: attempt.id, stderr: r.stderrTail },
+            'before_run hook failed (non-fatal)',
+          );
         }
       }
 
@@ -94,7 +107,11 @@ export function dispatchAttempt(
           attemptNumber: attempt.attempt_number,
           priorErrorClass: attempt.error_class,
           priorErrorMessage: attempt.error_message,
-          recentEvents: recent.map((r) => ({ kind: r.kind, payload: r.payload, created_at: r.created_at })),
+          recentEvents: recent.map((r) => ({
+            kind: r.kind,
+            payload: r.payload,
+            created_at: r.created_at,
+          })),
         });
       }
 
@@ -147,7 +164,10 @@ export function dispatchAttempt(
         );
         await recordHook(deps, attempt.id, 'after_run', r);
         if (r.exitCode !== 0) {
-          log.warn({ attemptId: attempt.id, stderr: r.stderrTail }, 'after_run hook failed (non-fatal)');
+          log.warn(
+            { attemptId: attempt.id, stderr: r.stderrTail },
+            'after_run hook failed (non-fatal)',
+          );
         }
       }
 
@@ -191,7 +211,13 @@ export function dispatchAttempt(
           errorClass: 'turn_timeout',
           errorMessage: (err as Error).message,
         });
-        await scheduleRetry(deps, issue.id, attempt.attempt_number, 'turn_timeout', (err as Error).message);
+        await scheduleRetry(
+          deps,
+          issue.id,
+          attempt.attempt_number,
+          'turn_timeout',
+          (err as Error).message,
+        );
       } else {
         await fail(
           deps,

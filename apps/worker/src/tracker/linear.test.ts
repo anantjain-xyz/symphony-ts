@@ -1,19 +1,17 @@
 import { describe, it, expect } from 'vitest';
 import { GraphQLClient } from 'graphql-request';
-import {
-  createLinearClient,
-  normalize,
-  LinearAuthError,
-  LinearRateLimitError,
-} from './linear.js';
+import { createLinearClient, normalize, LinearAuthError, LinearRateLimitError } from './linear.js';
 
 function stubClient(impl: (op: string, vars: unknown) => unknown): GraphQLClient {
   return {
-    request: (doc: { definitions?: Array<{ name?: { value?: string } }> } | string, vars?: unknown) => {
+    request: (
+      doc: { definitions?: Array<{ name?: { value?: string } }> } | string,
+      vars?: unknown,
+    ) => {
       const opName =
         typeof doc === 'string'
           ? extractOpName(doc)
-          : doc.definitions?.[0]?.name?.value ?? 'unknown';
+          : (doc.definitions?.[0]?.name?.value ?? 'unknown');
       return Promise.resolve(impl(opName, vars));
     },
   } as unknown as GraphQLClient;

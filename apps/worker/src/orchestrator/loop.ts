@@ -124,9 +124,18 @@ export class OrchestratorLoop {
       }
     }
 
-    // 3. Compute eligible (not blocked, not already in flight). Issues are
-    //    already in priority order from the tracker.
-    const eligible = active.filter((i) => i.blockers.length === 0 && !this.active.has(i.id));
+    // 3. Compute eligible: not blocked, not already in flight, and not
+    //    currently holding a future retry-queue slot. The last check is what
+    //    makes exponential backoff actually take effect — without it, a
+    //    fast-failing issue is still "active, unblocked, not in-flight" at
+    //    the next poll and gets redispatched regardless of due_at. Tick step
+    //    7 (dueRetries) remains the one-and-only path that fires retries
+    //    once their due_at passes. Issues are already in priority order from
+    //    the tracker.
+    const pendingRetries = await repo.pendingRetryIssueIds();
+    const eligible = active.filter(
+      (i) => i.blockers.length === 0 && !this.active.has(i.id) && !pendingRetries.has(i.id),
+    );
 
     // 4. Compute current per-state load from the in-flight handles.
     const byState = new Map<string, number>();

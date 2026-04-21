@@ -256,6 +256,21 @@ export class Repo {
     return data ?? [];
   }
 
+  /**
+   * Issue ids that have a scheduled retry in the future. Used by the
+   * orchestrator tick to suppress tracker-driven dispatch while backoff is
+   * still in effect — without this, a fast-failing issue would be
+   * re-dispatched every poll interval regardless of the scheduled due_at.
+   */
+  async pendingRetryIssueIds(): Promise<Set<string>> {
+    const { data, error } = await this.db
+      .from('retry_queue')
+      .select('issue_id')
+      .gt('due_at', new Date().toISOString());
+    if (error) throw error;
+    return new Set((data ?? []).map((r) => r.issue_id));
+  }
+
   async clearRetry(issueId: string): Promise<void> {
     const { error } = await this.db.from('retry_queue').delete().eq('issue_id', issueId);
     if (error) throw error;

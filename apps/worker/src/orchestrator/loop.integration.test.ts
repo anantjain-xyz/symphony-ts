@@ -203,4 +203,49 @@ d('OrchestratorLoop integration', () => {
     expect(q![0]!.attempt_number).toBe(2);
     await rm(wsRoot, { recursive: true, force: true });
   });
+
+  it('does not redispatch while retry_queue.due_at is still in the future', async () => {
+    // Regression for the SYM-1 infinite-loop bug: a fast-failing issue was
+    // redispatched every pollIntervalMs because tick() eligibility only
+    // checked blockers + in-flight map, never the retry_queue's due_at.
+    const codexCmd = `STUB_SCENARIO=error node ${STUB}`;
+    // maxRetryBackoffMs=60s ensures attempt-1's backoff lands ~4-6s out, far
+    // beyond the sub-second window this test completes in.
+    const wf = makeWorkflow(wsRoot, 'error', codexCmd);
+    wf.frontMatter.agent.max_retry_backoff_ms = 60_000;
+    const config = resolveConfig(wf);
+    const loop = new OrchestratorLoop({
+      tracker: stubTracker([ISSUE_1]),
+      repo,
+      workspaces: new WorkspaceManager(wsRoot),
+      config,
+      log: pino({ level: 'silent' }),
+    });
+
+    // First tick: dispatch + fail + schedule retry.
+    await loop.tick();
+    const active = (loop as unknown as { active: Map<string, { done: Promise<void> }> }).active;
+    await Promise.all([...active.values()].map((h) => h.done));
+
+    const { data: afterFirst } = await db
+      .from('run_attempts')
+      .select('*')
+      .eq('issue_id', ISSUE_1.id);
+    expect(afterFirst!.length).toBe(1);
+    const { data: q } = await db.from('retry_queue').select('*').eq('issue_id', ISSUE_1.id);
+    expect(q!.length).toBe(1);
+    const dueAtMs = new Date(q![0]!.due_at).getTime();
+    expect(dueAtMs).toBeGreaterThan(Date.now() + 1_000); // clearly in the future
+
+    // Second tick while the retry is still pending: no new attempt should fire.
+    await loop.tick();
+    await Promise.all([...active.values()].map((h) => h.done));
+    const { data: afterSecond } = await db
+      .from('run_attempts')
+      .select('*')
+      .eq('issue_id', ISSUE_1.id);
+    expect(afterSecond!.length).toBe(1); // still exactly one — no redispatch
+
+    await rm(wsRoot, { recursive: true, force: true });
+  });
 });

@@ -224,8 +224,9 @@ export function dispatchAttempt(
       await repo.deleteLiveSession(attempt.id);
     } catch (err) {
       const isTimeout = err instanceof TurnTimeoutError;
+      const formatted = formatError(err);
       log.error(
-        { attemptId: attempt.id, err: err instanceof Error ? err.message : String(err) },
+        { attemptId: attempt.id, err: formatted },
         isTimeout ? 'turn timed out' : 'dispatch failed',
       );
       try {
@@ -239,24 +240,11 @@ export function dispatchAttempt(
           attemptId: attempt.id,
           status: 'timeout',
           errorClass: 'turn_timeout',
-          errorMessage: (err as Error).message,
+          errorMessage: formatted,
         });
-        await scheduleRetry(
-          deps,
-          issue.id,
-          attempt.attempt_number,
-          'turn_timeout',
-          (err as Error).message,
-        );
+        await scheduleRetry(deps, issue.id, attempt.attempt_number, 'turn_timeout', formatted);
       } else {
-        await fail(
-          deps,
-          attempt.id,
-          issue,
-          attempt.attempt_number,
-          'dispatch_error',
-          err instanceof Error ? err.message : String(err),
-        );
+        await fail(deps, attempt.id, issue, attempt.attempt_number, 'dispatch_error', formatted);
       }
     }
   })();
@@ -351,4 +339,22 @@ async function scheduleRetry(
     errorClass,
     errorMessage,
   });
+}
+
+// Prior implementation fell through to `String(err)` for non-Error throws,
+// which renders plain objects as the useless literal "[object Object]" in
+// run_attempts.error_message. Handle the common non-Error shapes explicitly.
+function formatError(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'string') return err;
+  if (err && typeof err === 'object') {
+    const maybeMsg = (err as { message?: unknown }).message;
+    if (typeof maybeMsg === 'string' && maybeMsg.length > 0) return maybeMsg;
+    try {
+      return JSON.stringify(err);
+    } catch {
+      return Object.prototype.toString.call(err);
+    }
+  }
+  return String(err);
 }

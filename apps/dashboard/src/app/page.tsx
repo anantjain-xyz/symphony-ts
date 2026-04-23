@@ -10,7 +10,6 @@ type RunAttemptWithIssue = Tables<'run_attempts'> & { issues: IssueSummary | nul
 type RetryWithIssue = Tables<'retry_queue'> & {
   issues: Pick<Tables<'issues'>, 'identifier' | 'title'> | null;
 };
-type RateLimitRow = Tables<'rate_limit_state'>;
 type AgentEventRow = Tables<'agent_events'>;
 type LatestEventRow = Tables<'agent_events_latest'>;
 
@@ -26,7 +25,6 @@ export default async function FleetPage() {
     sessions,
     issuesCount,
     heartbeatRes,
-    rateLimitsRes,
     workflowRes,
   ] = await Promise.all([
     supabase
@@ -48,7 +46,6 @@ export default async function FleetPage() {
     supabase.from('live_sessions').select('*'),
     supabase.from('issues').select('id', { count: 'exact', head: true }),
     supabase.from('worker_heartbeat').select('*').eq('id', 'worker').maybeSingle(),
-    supabase.from('rate_limit_state').select('*'),
     supabase
       .from('workflows')
       .select('parsed')
@@ -82,9 +79,6 @@ export default async function FleetPage() {
   const runtimeMs = heartbeat ? Date.now() - new Date(heartbeat.started_at).getTime() : null;
   const stalenessMs = heartbeat ? Date.now() - new Date(heartbeat.last_beat_at).getTime() : null;
   const workerAlive = stalenessMs !== null && stalenessMs <= HEARTBEAT_STALE_MS;
-
-  const rateLimits = new Map<string, RateLimitRow>();
-  for (const row of rateLimitsRes.data ?? []) rateLimits.set(row.source, row);
 
   const frontMatter = extractFrontMatter(workflowRes.data?.parsed);
   const maxConcurrent = frontMatter?.agent?.max_concurrent_agents ?? null;
@@ -162,16 +156,6 @@ export default async function FleetPage() {
             </a>
           </div>
         )}
-        <div className="mt-3 smallcaps text-[10px] text-ink-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          rate limits
-          <RateLimitCell label="codex" row={rateLimits.get('codex')} />
-          <span className="text-ink-4">|</span>
-          <RateLimitCell label="primary" row={rateLimits.get('codex_primary')} />
-          <span className="text-ink-4">|</span>
-          <RateLimitCell label="secondary" row={rateLimits.get('codex_secondary')} />
-          <span className="text-ink-4">|</span>
-          <RateLimitCell label="credits" row={rateLimits.get('codex_credits')} />
-        </div>
       </header>
 
       <div className="space-y-10">
@@ -459,30 +443,6 @@ function KpiBlock({
         {value}
       </div>
     </div>
-  );
-}
-
-function RateLimitCell({ label, row }: { label: string; row: RateLimitRow | undefined }) {
-  if (!row || row.remaining === null) {
-    return (
-      <span className="inline-flex items-baseline gap-1">
-        {label}
-        <span className="font-mono normal-case tracking-normal text-ink-4">n/a</span>
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex items-baseline gap-1">
-      {label}
-      <span className="font-mono normal-case tracking-normal text-ink-1 tabular">
-        {row.remaining.toLocaleString()}
-      </span>
-      {row.reset_at ? (
-        <span className="font-mono normal-case tracking-normal text-ink-4">
-          @ {new Date(row.reset_at).toLocaleTimeString()}
-        </span>
-      ) : null}
-    </span>
   );
 }
 

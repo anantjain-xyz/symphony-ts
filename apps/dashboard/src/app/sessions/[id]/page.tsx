@@ -28,13 +28,7 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
     .select('*')
     .eq('run_attempt_id', id)
     .order('id', { ascending: true })
-    .limit(500);
-
-  const { data: liveSession } = await supabase
-    .from('live_sessions')
-    .select('*')
-    .eq('run_attempt_id', id)
-    .maybeSingle();
+    .limit(10000);
 
   const issue = attempt.issues;
   const terminal = TERMINAL.has(attempt.status);
@@ -46,7 +40,6 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
         attemptId={id}
         attempt={attempt}
         initialEvents={initialEvents ?? []}
-        initialTokens={liveSession?.total_tokens ?? 0}
         attemptIsTerminal={terminal}
       />
     </>

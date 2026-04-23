@@ -14,7 +14,7 @@ const TERMINAL = new Set(['success', 'failure', 'timeout', 'cancelled']);
 
 export default async function SessionPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const supabase = await createSupabaseServerClient();
+  const supabase = createSupabaseServerClient();
   const { data: rawAttempt } = await supabase
     .from('run_attempts')
     .select('*, issues(identifier, title, state)')

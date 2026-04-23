@@ -14,7 +14,7 @@ const TERMINAL = new Set(['success', 'failure', 'timeout', 'cancelled']);
 
 export default async function IssuePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const supabase = await createSupabaseServerClient();
+  const supabase = createSupabaseServerClient();
   const { data: issueRaw } = await supabase.from('issues').select('*').eq('id', id).maybeSingle();
   if (!issueRaw) notFound();
   const issue = issueRaw as Issue;

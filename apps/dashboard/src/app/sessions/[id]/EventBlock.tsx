@@ -79,7 +79,9 @@ function HumanizedBlock({ time, payload }: { time: string; payload: HumanizedPay
     <div className="flex justify-start">
       <div className="max-w-[85%]">
         <div className="flex items-center gap-2 mb-1 text-[11px] text-zinc-500">
-          <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-emerald-300">assistant</span>
+          <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-emerald-300">
+            assistant
+          </span>
           <span>{time}</span>
         </div>
         <div className="rounded-lg border border-emerald-500/20 bg-zinc-900 px-4 py-2 text-sm text-zinc-100">
@@ -100,7 +102,9 @@ function StatusBlock({
   groupedWithPrev: boolean;
 }) {
   return (
-    <div className={`flex items-baseline gap-2 text-xs text-zinc-400 ${groupedWithPrev ? '-mt-2' : ''}`}>
+    <div
+      className={`flex items-baseline gap-2 text-xs text-zinc-400 ${groupedWithPrev ? '-mt-2' : ''}`}
+    >
       <span className="text-zinc-600 shrink-0 w-16 tabular-nums">{time}</span>
       <span className="text-zinc-600">▸</span>
       <span className="break-words">{payload.message ?? ''}</span>
@@ -155,7 +159,9 @@ function ErrorBlock({ time, payload }: { time: string; payload: ErrorPayload }) 
         <span>✕</span>
         <span className="font-medium font-mono">{payload.class ?? 'error'}</span>
         {payload.recoverable && (
-          <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">recoverable</span>
+          <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">
+            recoverable
+          </span>
         )}
         <span className="ml-auto text-[11px] text-zinc-500 tabular-nums">{time}</span>
       </div>
@@ -202,7 +208,9 @@ function JsonBlock({ value }: { value: unknown }) {
 }
 
 const markdownComponents: Components = {
-  p: ({ children }) => <p className="text-zinc-100 leading-relaxed my-1 first:mt-0 last:mb-0">{children}</p>,
+  p: ({ children }) => (
+    <p className="text-zinc-100 leading-relaxed my-1 first:mt-0 last:mb-0">{children}</p>
+  ),
   a: ({ children, href }) => (
     <a href={href} className="text-blue-400 underline" target="_blank" rel="noreferrer">
       {children}
@@ -227,11 +235,19 @@ const markdownComponents: Components = {
   ul: ({ children }) => <ul className="list-disc ml-5 my-1 space-y-0.5">{children}</ul>,
   ol: ({ children }) => <ol className="list-decimal ml-5 my-1 space-y-0.5">{children}</ol>,
   li: ({ children }) => <li className="text-zinc-100">{children}</li>,
-  h1: ({ children }) => <h1 className="text-base font-semibold text-zinc-100 mt-2 mb-1">{children}</h1>,
-  h2: ({ children }) => <h2 className="text-sm font-semibold text-zinc-100 mt-2 mb-1">{children}</h2>,
-  h3: ({ children }) => <h3 className="text-sm font-semibold text-zinc-200 mt-2 mb-1">{children}</h3>,
+  h1: ({ children }) => (
+    <h1 className="text-base font-semibold text-zinc-100 mt-2 mb-1">{children}</h1>
+  ),
+  h2: ({ children }) => (
+    <h2 className="text-sm font-semibold text-zinc-100 mt-2 mb-1">{children}</h2>
+  ),
+  h3: ({ children }) => (
+    <h3 className="text-sm font-semibold text-zinc-200 mt-2 mb-1">{children}</h3>
+  ),
   blockquote: ({ children }) => (
-    <blockquote className="border-l-2 border-zinc-700 pl-3 text-zinc-400 my-1">{children}</blockquote>
+    <blockquote className="border-l-2 border-zinc-700 pl-3 text-zinc-400 my-1">
+      {children}
+    </blockquote>
   ),
   hr: () => <hr className="my-2 border-zinc-800" />,
   table: ({ children }) => (
@@ -239,8 +255,12 @@ const markdownComponents: Components = {
       <table className="text-xs border-collapse">{children}</table>
     </div>
   ),
-  th: ({ children }) => <th className="border border-zinc-800 px-2 py-1 text-left text-zinc-300">{children}</th>,
-  td: ({ children }) => <td className="border border-zinc-800 px-2 py-1 text-zinc-200">{children}</td>,
+  th: ({ children }) => (
+    <th className="border border-zinc-800 px-2 py-1 text-left text-zinc-300">{children}</th>
+  ),
+  td: ({ children }) => (
+    <td className="border border-zinc-800 px-2 py-1 text-zinc-200">{children}</td>
+  ),
 };
 
 function Markdown({ children }: { children: string }) {

@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { WorkspaceManager, WORKSPACE_READY_SENTINEL, sanitizeKey } from './manager.js';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { sanitizeKey, WORKSPACE_READY_SENTINEL, WorkspaceManager } from './manager.js';
 
 describe('sanitizeKey', () => {
   it.each([

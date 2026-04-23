@@ -27,6 +27,10 @@ hooks:
   timeout_ms: 60000
 
 agent:
+  # Which backend to drive. `codex` spawns `codex-adapter.mjs`; `claude` spawns
+  # `claude-adapter.mjs` and supports `pnpm --filter @symphony/worker attach
+  # <issue>` to resume the same session from your own terminal.
+  backend: codex
   max_concurrent_agents: 4
   max_retry_backoff_ms: 300000
   max_concurrent_agents_by_state:
@@ -37,6 +41,15 @@ codex:
   approval_policy: never
   thread_sandbox: workspace-write
   network_access: true
+  turn_timeout_ms: 3600000
+
+claude:
+  command: node ${SYMPHONY_CLAUDE_ADAPTER}
+  # default | acceptEdits | bypassPermissions | plan
+  permission_mode: acceptEdits
+  allowed_tools: []
+  disallowed_tools: []
+  add_dirs: []
   turn_timeout_ms: 3600000
 ---
 

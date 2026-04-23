@@ -1,12 +1,13 @@
+import { randomUUID } from 'node:crypto';
 import type { Issue } from '@symphony/shared';
 import type { Logger } from 'pino';
-import { CodexRunner, TurnTimeoutError } from '../agent/codex.js';
 import { mapTurnEvent } from '../agent/events.js';
-import { AlreadyRunningError, type Repo, type RunAttemptRow } from '../db/repo.js';
-import { runHook, type HookResult } from '../workspace/hooks.js';
-import { WorkspaceManager } from '../workspace/manager.js';
-import { renderPrompt, appendRetryContext } from '../prompt/render.js';
+import { AgentRunner, TurnTimeoutError } from '../agent/runner.js';
 import type { ResolvedConfig } from '../config/resolve.js';
+import { AlreadyRunningError, type Repo, type RunAttemptRow } from '../db/repo.js';
+import { appendRetryContext, renderPrompt } from '../prompt/render.js';
+import { type HookResult, runHook } from '../workspace/hooks.js';
+import { WorkspaceManager } from '../workspace/manager.js';
 
 export interface DispatchHandle {
   /** Issue this dispatch is for (so the loop can match it during reconciliation). */
@@ -44,7 +45,8 @@ export interface DispatchDeps {
  *   3. mark running
  *   4. before_run hook
  *   5. build prompt (with retry context if attempt > 1)
- *   6. spawn CodexRunner; stream events to agent_events + live_sessions
+ *   6. spawn AgentRunner against the selected backend (codex or claude);
+ *      stream events to agent_events + live_sessions
  *   7. after_run hook (warning only)
  *   8. finalize attempt status; on failure, schedule retry
  *
@@ -57,7 +59,7 @@ export function dispatchAttempt(
   attempt: RunAttemptRow,
 ): DispatchHandle {
   const { repo, workspaces, config, log } = deps;
-  let runner: CodexRunner | null = null;
+  let runner: AgentRunner | null = null;
   let cancelled = false;
   let cancelReason: string | null = null;
 
@@ -145,14 +147,22 @@ export function dispatchAttempt(
         });
       }
 
-      runner = new CodexRunner({
-        command: config.codexCommand(),
+      const backend = config.agentBackend();
+      // Claude supports session pinning via --session-id; pre-generate a uuid
+      // so live_sessions.thread_id is known before any events land and
+      // `attach` can resume the same session.
+      const preSessionId = backend === 'claude' ? randomUUID() : undefined;
+
+      runner = new AgentRunner({
+        command: config.agentCommand(),
         cwd: ws.path,
         approvalPolicy: config.workflow().frontMatter.codex.approval_policy,
         threadSandbox: config.workflow().frontMatter.codex.thread_sandbox,
         turnSandboxPolicy: config.workflow().frontMatter.codex.turn_sandbox_policy,
         networkAccess: config.workflow().frontMatter.codex.network_access,
         turnTimeoutMs: config.turnTimeoutMs(),
+        sessionId: preSessionId,
+        adapterEnv: backend === 'claude' ? buildClaudeEnv(config) : undefined,
         log: (msg, ctx) => log.debug({ ...ctx, attemptId: attempt.id }, msg),
         onEvent: async (ev) => {
           const mapped = mapTurnEvent(ev);
@@ -160,9 +170,11 @@ export function dispatchAttempt(
           if (mapped.tokens) {
             await repo.upsertLiveSession({
               run_attempt_id: attempt.id,
-              session_id: `pending-${attempt.id}`, // overwritten when thread/turn known; see below
-              thread_id: '',
-              turn_id: '',
+              session_id: preSessionId
+                ? `${preSessionId}-${preSessionId}`
+                : `pending-${attempt.id}`,
+              thread_id: preSessionId ?? '',
+              turn_id: preSessionId ?? '',
               ...mapped.tokens,
             });
             await repo.updateTokens(attempt.id, mapped.tokens);
@@ -340,6 +352,27 @@ async function scheduleRetry(
     errorClass,
     errorMessage,
   });
+}
+
+/**
+ * Build env vars the claude-adapter reads to configure the `claude` CLI.
+ * Kept out of the JSON-RPC protocol to avoid leaking backend-specific fields.
+ */
+function buildClaudeEnv(config: ResolvedConfig): Record<string, string> {
+  const c = config.claude();
+  const env: Record<string, string> = {
+    SYMPHONY_CLAUDE_PERMISSION_MODE: c.permission_mode,
+  };
+  if (c.allowed_tools.length > 0) {
+    env.SYMPHONY_CLAUDE_ALLOWED_TOOLS = c.allowed_tools.join(',');
+  }
+  if (c.disallowed_tools.length > 0) {
+    env.SYMPHONY_CLAUDE_DISALLOWED_TOOLS = c.disallowed_tools.join(',');
+  }
+  if (c.add_dirs.length > 0) {
+    env.SYMPHONY_CLAUDE_ADD_DIRS = c.add_dirs.join(':');
+  }
+  return env;
 }
 
 // Prior implementation fell through to `String(err)` for non-Error throws,

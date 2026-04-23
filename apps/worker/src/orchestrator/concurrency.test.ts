@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import { selectDispatchable } from './concurrency.js';
 import type { Issue } from '@symphony/shared';
+import { describe, expect, it } from 'vitest';
+import { selectDispatchable } from './concurrency.js';
 
 function mk(id: string, state: string, priority = 2): Issue {
   return {

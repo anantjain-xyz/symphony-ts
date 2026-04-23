@@ -1,5 +1,5 @@
-import { GraphQLClient, gql } from 'graphql-request';
 import { Issue } from '@symphony/shared';
+import { GraphQLClient, gql } from 'graphql-request';
 
 // =========================================================================
 // Public interface

@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { tmpdir } from 'node:os';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { parseWorkflowSource } from './workflow.js';
 
 const MINIMAL = `---

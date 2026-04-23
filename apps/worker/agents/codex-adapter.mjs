@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+
 /**
  * Symphony <-> Codex exec adapter.
  *
@@ -11,9 +12,9 @@
  * attempt, so we exit when the child exits.
  */
 
-import readline from 'node:readline';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import readline from 'node:readline';
 
 const rl = readline.createInterface({ input: process.stdin, terminal: false });
 

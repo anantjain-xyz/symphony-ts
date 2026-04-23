@@ -1,5 +1,5 @@
-import { execa } from 'execa';
 import type { HookName, Issue } from '@symphony/shared';
+import { execa } from 'execa';
 
 export interface HookResult {
   exitCode: number;

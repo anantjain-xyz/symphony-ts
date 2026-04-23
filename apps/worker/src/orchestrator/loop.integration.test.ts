@@ -1,15 +1,15 @@
-import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
-import { createServiceClient, type Issue, type ParsedWorkflow } from '@symphony/shared';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createServiceClient, type Issue, type ParsedWorkflow } from '@symphony/shared';
 import pino from 'pino';
-import { Repo } from '../db/repo.js';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { resolveConfig } from '../config/resolve.js';
+import { Repo } from '../db/repo.js';
+import type { TrackerClient } from '../tracker/linear.js';
 import { WorkspaceManager } from '../workspace/manager.js';
 import { OrchestratorLoop } from './loop.js';
-import type { TrackerClient } from '../tracker/linear.js';
 
 const SUPA_URL = process.env.TEST_SUPABASE_URL ?? 'http://127.0.0.1:54421';
 const SERVICE_ROLE = process.env.TEST_SUPABASE_SERVICE_ROLE_KEY;
@@ -43,6 +43,7 @@ function makeWorkflow(wsRoot: string, scenario: string, codexCommand: string): P
       workspace: { root: wsRoot },
       hooks: { timeout_ms: 5000 },
       agent: {
+        backend: 'codex',
         max_concurrent_agents: 2,
         max_retry_backoff_ms: 1000,
         max_concurrent_agents_by_state: {},
@@ -54,6 +55,14 @@ function makeWorkflow(wsRoot: string, scenario: string, codexCommand: string): P
         turn_sandbox_policy: 'inherit',
         turn_timeout_ms: 5000,
         network_access: false,
+      },
+      claude: {
+        command: 'claude',
+        permission_mode: 'acceptEdits',
+        allowed_tools: [],
+        disallowed_tools: [],
+        add_dirs: [],
+        turn_timeout_ms: 3600000,
       },
     },
   };

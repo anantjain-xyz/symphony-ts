@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
 import { GraphQLClient } from 'graphql-request';
-import { createLinearClient, normalize, LinearAuthError, LinearRateLimitError } from './linear.js';
+import { describe, expect, it } from 'vitest';
+import { createLinearClient, LinearAuthError, LinearRateLimitError, normalize } from './linear.js';
 
 function stubClient(impl: (op: string, vars: unknown) => unknown): GraphQLClient {
   return {

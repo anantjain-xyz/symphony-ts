@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
-import { createServiceClient } from '@symphony/shared';
-import { Repo } from './repo.js';
 import type { Issue, ParsedWorkflow } from '@symphony/shared';
+import { createServiceClient } from '@symphony/shared';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { Repo } from './repo.js';
 
 const URL = process.env.TEST_SUPABASE_URL ?? 'http://127.0.0.1:54421';
 const SERVICE_ROLE = process.env.TEST_SUPABASE_SERVICE_ROLE_KEY;
@@ -53,6 +53,7 @@ const WORKFLOW: ParsedWorkflow = {
     workspace: { root: '/tmp/symphony-tests' },
     hooks: { timeout_ms: 60000 },
     agent: {
+      backend: 'codex',
       max_concurrent_agents: 4,
       max_retry_backoff_ms: 300000,
       max_concurrent_agents_by_state: {},
@@ -64,6 +65,14 @@ const WORKFLOW: ParsedWorkflow = {
       turn_sandbox_policy: 'inherit',
       turn_timeout_ms: 3600000,
       network_access: false,
+    },
+    claude: {
+      command: 'claude',
+      permission_mode: 'acceptEdits',
+      allowed_tools: [],
+      disallowed_tools: [],
+      add_dirs: [],
+      turn_timeout_ms: 3600000,
     },
   },
 };

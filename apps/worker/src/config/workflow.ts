@@ -1,9 +1,9 @@
-import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
+import { type ParsedWorkflow, WorkflowFrontMatter } from '@symphony/shared';
 import matter from 'gray-matter';
-import { WorkflowFrontMatter, type ParsedWorkflow } from '@symphony/shared';
 
 /**
  * Read WORKFLOW.md from disk, parse front matter, expand env vars and ~ in

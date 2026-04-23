@@ -40,7 +40,7 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
   const terminal = TERMINAL.has(attempt.status);
 
   return (
-    <div className="max-w-[1500px] mx-auto">
+    <>
       <Header attempt={attempt} issue={issue} terminal={terminal} />
       <LiveStream
         attemptId={id}
@@ -49,7 +49,7 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
         initialTokens={liveSession?.total_tokens ?? 0}
         attemptIsTerminal={terminal}
       />
-    </div>
+    </>
   );
 }
 

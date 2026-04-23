@@ -46,7 +46,7 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
   const totalTokens = [...tokensByAttempt.values()].reduce((a, b) => a + b, 0);
 
   return (
-    <div className="max-w-[1500px] mx-auto">
+    <>
       <Header issue={issue} lastAttempt={lastAttempt} />
 
       <div className="grid grid-cols-1 lg:grid-cols-[220px_minmax(0,1fr)] gap-6">
@@ -148,7 +148,7 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
         </section>
 
       </div>
-    </div>
+    </>
   );
 }
 

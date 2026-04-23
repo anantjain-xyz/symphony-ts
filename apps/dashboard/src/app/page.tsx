@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
 import type { Tables, WorkflowFrontMatter } from '@symphony/shared';
 import { trackerProjectUrl } from '@symphony/shared/schema';
+import { RealtimeRefresh } from './RealtimeRefresh';
 
 export const dynamic = 'force-dynamic';
 
@@ -106,6 +107,7 @@ export default async function FleetPage() {
 
   return (
     <>
+      <RealtimeRefresh />
       <header className="mb-10">
         <div className="flex items-baseline gap-3 mb-2">
           <span className="smallcaps text-[10px] text-ink-3">fleet</span>

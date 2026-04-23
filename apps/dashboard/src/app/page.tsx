@@ -178,14 +178,16 @@ export default async function FleetPage() {
           empty="No retries pending."
         >
           {retryRows.map((r) => (
-            <RetryRow
+            <RunRow
               key={r.issue_id}
               href={`/issues/${r.issue_id}`}
               identifier={r.issues?.identifier ?? r.issue_id}
               title={r.issues?.title ?? '—'}
               attemptNumber={r.attempt_number}
+              status="queued"
               errorClass={r.error_class}
-              due={r.due_at}
+              when={relativeTime(r.due_at)}
+              whenLabel="due"
             />
           ))}
         </Section>
@@ -281,7 +283,7 @@ function RunRow({
   return (
     <Link
       href={href}
-      className="grid grid-cols-[140px_minmax(0,1fr)_140px_140px_180px_120px] gap-4 items-center px-1 py-3 border-b border-hairline group hover:bg-surface-1 transition-colors"
+      className="grid grid-cols-[140px_minmax(0,1fr)_120px_130px_180px_130px] gap-4 items-center px-1 py-3 border-b border-hairline group hover:bg-surface-1 transition-colors"
     >
       <span className="font-mono text-[12px] text-ink-1 group-hover:text-ink-0 truncate">
         {identifier}
@@ -298,7 +300,7 @@ function RunRow({
       <StatusBadge status={status} />
       <div className="font-mono text-[11px] text-ink-3 tabular truncate">
         {errorClass ? (
-          <span className="text-danger">{errorClass}</span>
+          <ErrorClassBadge value={errorClass} />
         ) : pid != null ? (
           <>
             <span className="text-ink-4">pid</span> {pid}
@@ -315,50 +317,11 @@ function RunRow({
   );
 }
 
-function RetryRow({
-  href,
-  identifier,
-  title,
-  attemptNumber,
-  errorClass,
-  due,
-}: {
-  href: string;
-  identifier: string;
-  title: string;
-  attemptNumber: number;
-  errorClass: string | null;
-  due: string;
-}) {
-  const dueMs = new Date(due).getTime() - Date.now();
-  const dueSoon = dueMs < 5 * 60 * 1000;
-  return (
-    <Link
-      href={href}
-      className="grid grid-cols-[140px_minmax(0,1fr)_140px_180px_180px_120px] gap-4 items-center px-1 py-3 border-b border-hairline group hover:bg-surface-1 transition-colors"
-    >
-      <span className="font-mono text-[12px] text-ink-1 group-hover:text-ink-0 truncate">
-        {identifier}
-      </span>
-      <span className="text-[13px] text-ink-0 truncate">{title}</span>
-      <AttemptCounter n={attemptNumber} label="next attempt" />
-      <span className="font-mono text-[11.5px] text-danger truncate">{errorClass ?? '—'}</span>
-      <div className="font-mono text-[11px] tabular truncate">
-        <span className="text-ink-4">due</span>{' '}
-        <span className={dueSoon ? 'text-signal' : 'text-ink-2'}>{relativeTime(due)}</span>
-      </div>
-      <div className="text-right text-ink-4 group-hover:text-signal smallcaps text-[10px]">
-        issue →
-      </div>
-    </Link>
-  );
-}
-
-function AttemptCounter({ n, label = 'attempt' }: { n: number; label?: string }) {
+function AttemptCounter({ n }: { n: number }) {
   return (
     <span className="inline-flex items-baseline gap-1.5">
-      <span className="font-display text-[18px] tabular text-ink-0 leading-none">{n}</span>
-      <span className="smallcaps text-[9px] text-ink-3">{label}</span>
+      <span className="font-display text-[18px] tabular text-ink-0 leading-none">#{n}</span>
+      <span className="smallcaps text-[9px] text-ink-3">attempt</span>
     </span>
   );
 }
@@ -366,6 +329,7 @@ function AttemptCounter({ n, label = 'attempt' }: { n: number; label?: string })
 function StatusBadge({ status }: { status: string }) {
   const conf: Record<string, { color: string; dot: string; label?: string }> = {
     running: { color: 'text-success', dot: 'bg-success dot-live' },
+    queued: { color: 'text-signal', dot: 'bg-signal' },
     pending: { color: 'text-signal', dot: 'bg-signal' },
     success: { color: 'text-success', dot: 'bg-success' },
     failure: { color: 'text-danger', dot: 'bg-danger' },
@@ -378,6 +342,12 @@ function StatusBadge({ status }: { status: string }) {
       <span className={`h-1.5 w-1.5 rounded-full ${c.dot}`} aria-hidden />
       <span className={`smallcaps text-[10px] ${c.color}`}>{c.label ?? status}</span>
     </span>
+  );
+}
+
+function ErrorClassBadge({ value }: { value: string }) {
+  return (
+    <span className="smallcaps text-[10px] text-danger truncate">{value.replace(/_/g, ' ')}</span>
   );
 }
 

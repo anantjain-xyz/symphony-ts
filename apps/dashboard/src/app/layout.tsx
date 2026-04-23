@@ -35,7 +35,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={`${sans.variable} ${display.variable} ${mono.variable}`}>
       <body className="min-h-screen font-sans">
-        <header className="border-b border-hairline px-8 py-3 flex items-center justify-between">
+        <header className="border-b border-hairline px-8 py-3 flex items-center">
           <Link href="/" className="flex items-center gap-3 group">
             <span
               className="block w-2 h-2 rounded-full bg-signal"
@@ -45,12 +45,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             <span className="font-display text-[17px] tracking-tight text-ink-0 group-hover:text-white">
               Symphony
             </span>
-            <span className="smallcaps text-[10px] text-ink-3 ml-2">control room</span>
           </Link>
-          <div className="smallcaps text-[10px] text-ink-3 tabular">
-            <span aria-hidden>↳ </span>
-            orchestrator
-          </div>
         </header>
         <main className="px-8 py-6">{children}</main>
       </body>

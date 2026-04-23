@@ -200,6 +200,27 @@ export type Database = {
           },
         ]
       }
+      rate_limit_state: {
+        Row: {
+          remaining: number | null
+          reset_at: string | null
+          source: string
+          updated_at: string
+        }
+        Insert: {
+          remaining?: number | null
+          reset_at?: string | null
+          source: string
+          updated_at?: string
+        }
+        Update: {
+          remaining?: number | null
+          reset_at?: string | null
+          source?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       run_attempts: {
         Row: {
           attempt_number: number
@@ -211,6 +232,7 @@ export type Database = {
           issue_id: string
           started_at: string | null
           status: Database["public"]["Enums"]["run_attempt_status"]
+          worker_pid: number | null
           workspace_path: string
         }
         Insert: {
@@ -223,6 +245,7 @@ export type Database = {
           issue_id: string
           started_at?: string | null
           status?: Database["public"]["Enums"]["run_attempt_status"]
+          worker_pid?: number | null
           workspace_path: string
         }
         Update: {
@@ -235,6 +258,7 @@ export type Database = {
           issue_id?: string
           started_at?: string | null
           status?: Database["public"]["Enums"]["run_attempt_status"]
+          worker_pid?: number | null
           workspace_path?: string
         }
         Relationships: [
@@ -246,6 +270,27 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      worker_heartbeat: {
+        Row: {
+          id: string
+          last_beat_at: string
+          started_at: string
+          worker_pid: number | null
+        }
+        Insert: {
+          id?: string
+          last_beat_at?: string
+          started_at: string
+          worker_pid?: number | null
+        }
+        Update: {
+          id?: string
+          last_beat_at?: string
+          started_at?: string
+          worker_pid?: number | null
+        }
+        Relationships: []
       }
       workflows: {
         Row: {
@@ -273,7 +318,24 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      agent_events_latest: {
+        Row: {
+          created_at: string | null
+          id: number | null
+          kind: Database["public"]["Enums"]["agent_event_kind"] | null
+          payload: Json | null
+          run_attempt_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_events_run_attempt_id_fkey"
+            columns: ["run_attempt_id"]
+            isOneToOne: false
+            referencedRelation: "run_attempts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       [_ in never]: never
@@ -287,6 +349,7 @@ export type Database = {
         | "error"
         | "user_input"
         | "humanized"
+        | "rate_limit"
       hook_name: "after_create" | "before_run" | "after_run" | "before_remove"
       run_attempt_status:
         | "pending"
@@ -430,6 +493,7 @@ export const Constants = {
         "error",
         "user_input",
         "humanized",
+        "rate_limit",
       ],
       hook_name: ["after_create", "before_run", "after_run", "before_remove"],
       run_attempt_status: [

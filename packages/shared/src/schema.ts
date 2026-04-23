@@ -10,11 +10,26 @@ export const TrackerConfig = z
     endpoint: z.string().url().default('https://api.linear.app/graphql'),
     api_key: z.string().min(1),
     project_slug: z.string().optional(),
+    // Optional explicit override for the dashboard's "Project:" link. When
+    // unset, the dashboard falls back to a best-effort URL derived from
+    // project_slug (see trackerProjectUrl below).
+    project_url: z.string().url().optional(),
     active_states: z.array(z.string()).min(1),
     terminal_states: z.array(z.string()).min(1),
   })
   .strict();
 export type TrackerConfig = z.infer<typeof TrackerConfig>;
+
+/**
+ * Best-effort Linear project URL for the dashboard header. Users can pin the
+ * exact URL via `tracker.project_url`; otherwise we construct one from the
+ * configured slug. Returns null when no signal is available.
+ */
+export function trackerProjectUrl(tracker: TrackerConfig): string | null {
+  if (tracker.project_url) return tracker.project_url;
+  if (tracker.project_slug) return `https://linear.app/project/${tracker.project_slug}`;
+  return null;
+}
 
 export const PollingConfig = z
   .object({
@@ -181,6 +196,7 @@ export const AgentEventKind = z.enum([
   'error',
   'user_input',
   'humanized',
+  'rate_limit',
 ]);
 export type AgentEventKind = z.infer<typeof AgentEventKind>;
 
@@ -211,6 +227,18 @@ export const ErrorPayload = z.object({
 });
 export const UserInputPayload = z.object({ text: z.string() });
 export const HumanizedPayload = z.object({ summary: z.string() });
+
+/**
+ * Rate-limit signal emitted by an adapter. `source` identifies which bucket
+ * is being reported (e.g. `codex_primary`, `codex_credits`). `remaining` and
+ * `reset_at` are both optional because different providers surface different
+ * subsets of the information.
+ */
+export const RateLimitPayload = z.object({
+  source: z.string().min(1),
+  remaining: z.number().int().nonnegative().nullable().optional(),
+  reset_at: z.string().datetime().nullable().optional(),
+});
 
 // =========================================================================
 // Retry entry

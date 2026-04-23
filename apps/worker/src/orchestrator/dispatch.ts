@@ -164,6 +164,7 @@ export function dispatchAttempt(
         sessionId: preSessionId,
         adapterEnv: backend === 'claude' ? buildClaudeEnv(config) : undefined,
         log: (msg, ctx) => log.debug({ ...ctx, attemptId: attempt.id }, msg),
+        onSpawn: (pid) => repo.setWorkerPid(attempt.id, pid),
         onEvent: async (ev) => {
           const mapped = mapTurnEvent(ev);
           await repo.appendEvent(attempt.id, mapped.kind, mapped.payload);
@@ -182,6 +183,9 @@ export function dispatchAttempt(
               });
             }
             await repo.updateTokens(attempt.id, mapped.tokens);
+          }
+          if (mapped.rateLimit) {
+            await repo.upsertRateLimit(mapped.rateLimit);
           }
           if (mapped.humanized) {
             await repo.appendEvent(attempt.id, 'humanized', { summary: mapped.humanized });

@@ -175,6 +175,49 @@ export class Repo {
     return (count ?? 0) > 0;
   }
 
+  async setWorkerPid(attemptId: string, pid: number): Promise<void> {
+    const { error } = await this.db
+      .from('run_attempts')
+      .update({ worker_pid: pid })
+      .eq('id', attemptId);
+    if (error) throw error;
+  }
+
+  // ---- worker_heartbeat ----
+  async upsertWorkerHeartbeat(input: { startedAt: Date; workerPid: number }): Promise<void> {
+    const now = new Date().toISOString();
+    const { error } = await this.db.from('worker_heartbeat').upsert({
+      id: 'worker',
+      started_at: input.startedAt.toISOString(),
+      last_beat_at: now,
+      worker_pid: input.workerPid,
+    });
+    if (error) throw error;
+  }
+
+  async beatWorkerHeartbeat(): Promise<void> {
+    const { error } = await this.db
+      .from('worker_heartbeat')
+      .update({ last_beat_at: new Date().toISOString() })
+      .eq('id', 'worker');
+    if (error) throw error;
+  }
+
+  // ---- rate_limit_state ----
+  async upsertRateLimit(input: {
+    source: string;
+    remaining: number | null;
+    resetAt: Date | null;
+  }): Promise<void> {
+    const { error } = await this.db.from('rate_limit_state').upsert({
+      source: input.source,
+      remaining: input.remaining,
+      reset_at: input.resetAt?.toISOString() ?? null,
+      updated_at: new Date().toISOString(),
+    });
+    if (error) throw error;
+  }
+
   // ---- live_sessions ----
   async upsertLiveSession(
     input: Omit<LiveSessionRow, 'started_at' | 'last_event_at'>,

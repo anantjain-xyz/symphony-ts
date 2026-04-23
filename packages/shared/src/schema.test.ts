@@ -78,7 +78,7 @@ describe('Enums match Postgres', () => {
     ]);
   });
 
-  it('AgentEventKind has the seven expected values', () => {
+  it('AgentEventKind covers every agent_event_kind enum value', () => {
     expect(AgentEventKind.options).toEqual([
       'status',
       'tool_call',
@@ -87,6 +87,7 @@ describe('Enums match Postgres', () => {
       'error',
       'user_input',
       'humanized',
+      'rate_limit',
     ]);
   });
 });

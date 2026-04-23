@@ -201,6 +201,35 @@ function handleCodexEvent(ev) {
           total_tokens: input + output,
         }),
       );
+      // Newer codex builds attach a `rate_limits` object to turn.completed.
+      // Forward it best-effort; shape varies across versions, so we only
+      // trust string/number fields we recognize. Unknown shapes drop through.
+      if (ev.rate_limits && typeof ev.rate_limits === 'object') {
+        for (const [bucket, info] of Object.entries(ev.rate_limits)) {
+          if (!info || typeof info !== 'object') continue;
+          const remaining =
+            typeof info.remaining === 'number'
+              ? info.remaining
+              : typeof info.remaining_tokens === 'number'
+                ? info.remaining_tokens
+                : null;
+          const resetAt =
+            typeof info.reset_at === 'string'
+              ? info.reset_at
+              : typeof info.reset === 'string'
+                ? info.reset
+                : null;
+          send(
+            notif('turn/event', {
+              kind: 'rate_limit',
+              turn_id: turn.id,
+              source: `codex_${bucket}`,
+              remaining,
+              reset_at: resetAt,
+            }),
+          );
+        }
+      }
       if (!turn.completed) {
         turn.completed = true;
         send(

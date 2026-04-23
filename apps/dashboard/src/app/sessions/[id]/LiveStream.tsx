@@ -11,7 +11,6 @@ interface Props {
   attemptId: string;
   attempt: Attempt;
   initialEvents: EventRow[];
-  initialTokens: number;
   attemptIsTerminal: boolean;
 }
 
@@ -19,18 +18,8 @@ const RUN_GROUP_THRESHOLD = 3; // collapse N+ consecutive same-tool calls
 
 type Item = { kind: 'single'; ev: EventRow } | { kind: 'group'; events: EventRow[] };
 
-export function LiveStream({
-  attemptId,
-  attempt,
-  initialEvents,
-  initialTokens,
-  attemptIsTerminal,
-}: Props) {
+export function LiveStream({ attemptId, attempt, initialEvents, attemptIsTerminal }: Props) {
   const [events, setEvents] = useState<EventRow[]>(initialEvents);
-  const [tokens, setTokens] = useState(initialTokens);
-  const [tokenSeries, setTokenSeries] = useState<number[]>(
-    initialTokens > 0 ? [initialTokens] : [],
-  );
   const [connected, setConnected] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -66,24 +55,6 @@ export function LiveStream({
         },
         (payload) => {
           setEvents((prev) => [...prev, payload.new as EventRow]);
-        },
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'live_sessions',
-          filter: `run_attempt_id=eq.${attemptId}`,
-        },
-        (payload) => {
-          const row = payload.new as { total_tokens?: number } | null;
-          if (row?.total_tokens !== undefined) {
-            setTokens(row.total_tokens);
-            setTokenSeries((s) =>
-              s.length > 80 ? [...s.slice(1), row.total_tokens!] : [...s, row.total_tokens!],
-            );
-          }
         },
       )
       .subscribe((status) => {
@@ -148,20 +119,8 @@ export function LiveStream({
       {/* Left telemetry rail */}
       <aside className="lg:sticky lg:top-4 lg:self-start space-y-5">
         <TelemetryBlock label="elapsed" value={formatDuration(elapsedMs)} live={isLive} />
-        <TelemetryBlock label="tokens" value={tokens.toLocaleString()}>
-          <Sparkline series={tokenSeries} />
-        </TelemetryBlock>
         <TelemetryBlock label="events" value={events.length.toLocaleString()} />
-        <TelemetryBlock label="tools" value={stats.toolTotal.toLocaleString()}>
-          <div className="font-mono text-[11px] tabular text-ink-3 flex flex-col gap-1 mt-1">
-            {stats.toolBreakdown.slice(0, 6).map(([tool, count]) => (
-              <div key={tool} className="flex items-center justify-between">
-                <span className="truncate text-ink-2">{tool}</span>
-                <span className="text-ink-1">{count}</span>
-              </div>
-            ))}
-          </div>
-        </TelemetryBlock>
+        <TelemetryBlock label="tools" value={stats.toolTotal.toLocaleString()} />
         <ConnectionDot connected={connected} terminal={attemptIsTerminal} />
         <button
           type="button"
@@ -227,7 +186,7 @@ export function LiveStream({
       <aside className="lg:sticky lg:top-4 lg:self-start space-y-4">
         <Inspector ev={selectedEvent} onClose={() => selectEvent(null)} />
         {attemptIsTerminal && (
-          <TerminalSummary attempt={attempt} tokens={tokens} stats={stats} elapsedMs={elapsedMs} />
+          <TerminalSummary attempt={attempt} stats={stats} elapsedMs={elapsedMs} />
         )}
       </aside>
     </div>
@@ -236,12 +195,10 @@ export function LiveStream({
 
 function TerminalSummary({
   attempt,
-  tokens,
   stats,
   elapsedMs,
 }: {
   attempt: Attempt;
-  tokens: number;
   stats: { toolTotal: number };
   elapsedMs: number;
 }) {
@@ -250,7 +207,6 @@ function TerminalSummary({
       <div className="smallcaps text-[10px] text-ink-3 mb-2">summary</div>
       <div className="grid grid-cols-2 gap-3">
         <Cell label="duration" value={formatDuration(elapsedMs)} />
-        <Cell label="tokens" value={tokens.toLocaleString()} />
         <Cell label="tool calls" value={stats.toolTotal.toLocaleString()} />
         <Cell
           label="status"
@@ -410,33 +366,6 @@ function ConnectionDot({ connected, terminal }: { connected: boolean; terminal: 
   );
 }
 
-function Sparkline({ series }: { series: number[] }) {
-  if (series.length < 2) {
-    return <div className="h-6 w-full mt-1 border-b border-dashed border-hairline" aria-hidden />;
-  }
-  const w = 180;
-  const h = 24;
-  const max = Math.max(...series);
-  const min = Math.min(...series);
-  const span = Math.max(1, max - min);
-  const points = series.map((v, i) => {
-    const x = (i / (series.length - 1)) * w;
-    const y = h - ((v - min) / span) * h;
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  });
-  return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-6 mt-1" preserveAspectRatio="none">
-      <polyline
-        points={points.join(' ')}
-        fill="none"
-        stroke="var(--signal)"
-        strokeWidth="1.25"
-        vectorEffect="non-scaling-stroke"
-      />
-    </svg>
-  );
-}
-
 /* ---------- empty ---------- */
 
 function EmptyState() {
@@ -531,28 +460,21 @@ function isMoreFinal(next: string | undefined, prev: string | undefined): boolea
   return score(next) >= score(prev);
 }
 
-function computeStats(events: EventRow[]): {
-  toolTotal: number;
-  toolBreakdown: [string, number][];
-} {
+function computeStats(events: EventRow[]): { toolTotal: number } {
   // A single tool invocation often emits two `tool_call` rows (started + completed)
   // that share a `call_id`. Dedupe by call_id so totals match what the timeline shows.
-  const counts = new Map<string, number>();
   const seenCallIds = new Set<string>();
   let total = 0;
   for (const e of events) {
     if (e.kind !== 'tool_call') continue;
-    const p = e.payload as { tool?: string; call_id?: string };
+    const p = e.payload as { call_id?: string };
     if (p.call_id) {
       if (seenCallIds.has(p.call_id)) continue;
       seenCallIds.add(p.call_id);
     }
-    const t = p.tool ?? '?';
-    counts.set(t, (counts.get(t) ?? 0) + 1);
     total++;
   }
-  const breakdown = [...counts.entries()].sort((a, b) => b[1] - a[1]);
-  return { toolTotal: total, toolBreakdown: breakdown };
+  return { toolTotal: total };
 }
 
 function formatDuration(ms: number): string {

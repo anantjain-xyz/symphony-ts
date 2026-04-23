@@ -8,6 +8,8 @@ export interface MappedEvent {
   humanized?: string;
   /** When present, the live_session token counters should be set to this. */
   tokens?: { input_tokens: number; output_tokens: number; total_tokens: number };
+  /** When present, upsert into rate_limit_state so the dashboard header can render it. */
+  rateLimit?: { source: string; remaining: number | null; resetAt: Date | null };
 }
 
 /**
@@ -67,10 +69,33 @@ export function mapTurnEvent(ev: TurnEventParams): MappedEvent {
         kind: 'user_input',
         payload: { text: ev.text },
       };
+    case 'rate_limit': {
+      const remaining = typeof ev.remaining === 'number' ? ev.remaining : null;
+      // Adapters may forward `reset_at` verbatim from upstream responses, so
+      // the shape varies. Parse defensively — an unparseable string would
+      // otherwise propagate `Invalid Date` to repo.upsertRateLimit, where
+      // `.toISOString()` throws and drops the event entirely.
+      const resetAt = parseIsoDate(ev.reset_at);
+      return {
+        kind: 'rate_limit',
+        payload: {
+          source: ev.source,
+          remaining,
+          reset_at: resetAt ? resetAt.toISOString() : null,
+        },
+        rateLimit: { source: ev.source, remaining, resetAt },
+      };
+    }
   }
 }
 
 function humanizeToolCall(tool: string, resultSummary?: string): string {
   if (resultSummary) return `${tool}: ${resultSummary}`;
   return `Calling ${tool}`;
+}
+
+function parseIsoDate(value: unknown): Date | null {
+  if (typeof value !== 'string') return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
 }

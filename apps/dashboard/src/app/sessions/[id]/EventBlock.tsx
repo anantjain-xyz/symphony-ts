@@ -21,6 +21,7 @@ type TokenCountPayload = {
 type ErrorPayload = { class?: string; message?: string; recoverable?: boolean };
 type UserInputPayload = { text?: string };
 type HumanizedPayload = { summary?: string };
+type RateLimitPayload = { source?: string; remaining?: number | null; reset_at?: string | null };
 
 interface Props {
   ev: EventRow;
@@ -84,6 +85,12 @@ export function EventBlock({ ev, isFresh, selected, onSelect }: Props) {
       return (
         <Row time={time} isFresh={isFresh} kind="meter" dense selected={selected} onSelect={toggle}>
           <TokenCountLine payload={payload as TokenCountPayload} />
+        </Row>
+      );
+    case 'rate_limit':
+      return (
+        <Row time={time} isFresh={isFresh} kind="meter" dense selected={selected} onSelect={toggle}>
+          <RateLimitLine payload={payload as RateLimitPayload} />
         </Row>
       );
     default:
@@ -335,6 +342,32 @@ function TokenCountLine({ payload }: { payload: TokenCountPayload }) {
         <span className="text-ink-4">Σ</span>{' '}
         <span className="text-ink-0">{payload.total_tokens.toLocaleString()}</span>
       </span>
+    </div>
+  );
+}
+
+function RateLimitLine({ payload }: { payload: RateLimitPayload }) {
+  const source = payload.source ?? 'unknown';
+  const remaining = payload.remaining;
+  const resetAt = payload.reset_at ? new Date(payload.reset_at) : null;
+  const resetValid = resetAt !== null && !Number.isNaN(resetAt.getTime());
+  return (
+    <div className="font-mono text-[11px] text-ink-3 tabular flex items-center gap-3">
+      <span>
+        <span className="text-ink-4">rate limit</span> <span className="text-ink-1">{source}</span>
+      </span>
+      <span>
+        <span className="text-ink-4">remaining</span>{' '}
+        <span className="text-ink-1">
+          {typeof remaining === 'number' ? remaining.toLocaleString() : 'n/a'}
+        </span>
+      </span>
+      {resetValid ? (
+        <span>
+          <span className="text-ink-4">resets</span>{' '}
+          <span className="text-ink-1">{resetAt.toLocaleTimeString()}</span>
+        </span>
+      ) : null}
     </div>
   );
 }

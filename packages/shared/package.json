@@ -8,6 +8,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./db-types": "./src/db-types.ts",
+    "./schema": "./src/schema.ts",
     "./supabase": "./src/supabase.ts"
   },
   "scripts": {

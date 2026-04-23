@@ -38,6 +38,13 @@ export interface AgentRunnerOptions {
   adapterEnv?: Record<string, string>;
   /** Hook subscribed to every turn/event notification. */
   onEvent: (ev: TurnEventParams) => void | Promise<void>;
+  /**
+   * Fires once with the child's PID immediately after spawn. Used by the
+   * orchestrator to persist run_attempts.worker_pid for the dashboard's
+   * terminal-style status view. Errors are swallowed so a failing callback
+   * never breaks dispatch.
+   */
+  onSpawn?: (pid: number) => void | Promise<void>;
   /** Optional logger; defaults to no-op. */
   log?: (msg: string, ctx?: Record<string, unknown>) => void;
   /** Override for tests: launch this script instead of `command` via bash -lc. */
@@ -97,6 +104,15 @@ export class AgentRunner {
     this.completion.catch(() => {});
 
     this.child = this.spawn();
+
+    if (this.opts.onSpawn) {
+      const pid = this.child.pid;
+      if (typeof pid === 'number') {
+        void Promise.resolve(this.opts.onSpawn(pid)).catch((e) =>
+          this.log('onSpawn threw', { error: (e as Error).message }),
+        );
+      }
+    }
 
     this.child.stdout?.setEncoding('utf8');
     this.child.stdout?.on('data', (chunk: string) => this.onStdout(chunk));

@@ -64,7 +64,7 @@ function Header({
 }) {
   const status = attempt.status;
   return (
-    <header className="mb-6 pb-5 border-b border-hairline">
+    <header className="-mx-8 px-8 mb-6 pb-5 border-b border-hairline">
       <div className="flex items-baseline gap-3 mb-2">
         <Link
           href={`/issues/${attempt.issue_id}`}

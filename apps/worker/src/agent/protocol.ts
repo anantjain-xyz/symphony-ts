@@ -101,7 +101,17 @@ export type TurnEventParams =
       total_tokens: number;
     }
   | { kind: 'error'; turn_id: string; class: string; message: string; recoverable?: boolean }
-  | { kind: 'user_input'; turn_id: string; text: string };
+  | { kind: 'user_input'; turn_id: string; text: string }
+  | {
+      kind: 'rate_limit';
+      turn_id: string;
+      /** Bucket name, e.g. `codex_primary`, `codex_secondary`, `codex_credits`. */
+      source: string;
+      /** Requests/tokens remaining in the bucket, when known. */
+      remaining?: number | null;
+      /** ISO timestamp when the bucket resets, when known. */
+      reset_at?: string | null;
+    };
 
 export interface TurnCompleteParams {
   thread_id: string;

@@ -24,6 +24,7 @@ import { loadWorkflowFile } from './config/workflow.js';
 import { recover } from './db/recovery.js';
 import { Repo } from './db/repo.js';
 import { createLogger } from './logging.js';
+import { Heartbeat } from './orchestrator/heartbeat.js';
 import { OrchestratorLoop } from './orchestrator/loop.js';
 import { createLinearClient } from './tracker/linear.js';
 import { WorkspaceManager } from './workspace/manager.js';
@@ -64,6 +65,9 @@ async function main(): Promise<void> {
   const outcome = await recover({ repo, tracker, workspaces, config, log });
   log.info(outcome, 'recovery complete');
 
+  const heartbeat = new Heartbeat(repo, log);
+  await heartbeat.start();
+
   const loop = new OrchestratorLoop({ tracker, repo, workspaces, config, log });
 
   let stopRequested = false;
@@ -74,6 +78,7 @@ async function main(): Promise<void> {
     }
     stopRequested = true;
     log.info({ signal }, 'shutdown signal; draining');
+    heartbeat.stop();
     await loop.stop(30_000);
     log.info('drain complete; exiting');
     process.exit(0);

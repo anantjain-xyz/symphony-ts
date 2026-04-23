@@ -16,7 +16,7 @@ type LatestEventRow = Tables<'agent_events_latest'>;
 const HEARTBEAT_STALE_MS = 15_000;
 
 export default async function FleetPage() {
-  const supabase = await createSupabaseServerClient();
+  const supabase = createSupabaseServerClient();
 
   const [running, retries, recentFails, sessions, issuesCount, heartbeatRes, workflowRes] =
     await Promise.all([

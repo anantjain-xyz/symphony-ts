@@ -16,8 +16,8 @@
 --                                     ON is cheap. The dashboard joins this
 --                                     into the running-attempts table.
 --
--- Publication `symphony_live` is extended to include the new mutable tables so
--- the dashboard can rerender in response to Realtime events.
+-- Publication `supabase_realtime` is extended to include the new mutable
+-- tables so the dashboard can rerender in response to Realtime events.
 
 alter table run_attempts
   add column worker_pid integer;
@@ -56,5 +56,20 @@ order by run_attempt_id, id desc;
 
 grant select on agent_events_latest to authenticated;
 
-alter publication symphony_live add table rate_limit_state;
-alter publication symphony_live add table worker_heartbeat;
+do $$
+declare
+  t text;
+begin
+  foreach t in array array['rate_limit_state', 'worker_heartbeat']
+  loop
+    if not exists (
+      select 1
+      from pg_publication_tables
+      where pubname = 'supabase_realtime'
+        and schemaname = 'public'
+        and tablename = t
+    ) then
+      execute format('alter publication supabase_realtime add table public.%I', t);
+    end if;
+  end loop;
+end$$;

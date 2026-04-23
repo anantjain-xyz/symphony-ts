@@ -25,7 +25,7 @@ describe('WorkflowFrontMatter', () => {
     expect(parsed.agent.backend).toBe('codex');
     expect(parsed.codex.command).toBe('codex');
     expect(parsed.codex.turn_timeout_ms).toBe(3_600_000);
-    expect(parsed.claude.command).toBe('claude');
+    expect(parsed.claude.command).toBe('node ${SYMPHONY_CLAUDE_ADAPTER}');
     expect(parsed.claude.permission_mode).toBe('acceptEdits');
     expect(parsed.claude.allowed_tools).toEqual([]);
     expect(parsed.claude.turn_timeout_ms).toBe(3_600_000);

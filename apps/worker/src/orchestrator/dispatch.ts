@@ -168,15 +168,19 @@ export function dispatchAttempt(
           const mapped = mapTurnEvent(ev);
           await repo.appendEvent(attempt.id, mapped.kind, mapped.payload);
           if (mapped.tokens) {
-            await repo.upsertLiveSession({
-              run_attempt_id: attempt.id,
-              session_id: preSessionId
-                ? `${preSessionId}-${preSessionId}`
-                : `pending-${attempt.id}`,
-              thread_id: preSessionId ?? '',
-              turn_id: preSessionId ?? '',
-              ...mapped.tokens,
-            });
+            // Codex doesn't know thread/turn ids until turn/start returns, so
+            // it inserts a placeholder row on first token event. Claude
+            // already has its row from the eager upsert below; just refresh
+            // the counters.
+            if (!preSessionId) {
+              await repo.upsertLiveSession({
+                run_attempt_id: attempt.id,
+                session_id: `pending-${attempt.id}`,
+                thread_id: '',
+                turn_id: '',
+                ...mapped.tokens,
+              });
+            }
             await repo.updateTokens(attempt.id, mapped.tokens);
           }
           if (mapped.humanized) {
@@ -184,6 +188,22 @@ export function dispatchAttempt(
           }
         },
       });
+
+      // Claude emits its token counts only at turn end, so without an eager
+      // upsert a stuck run would have no live_sessions row for `attach` to
+      // discover the resumable session id. Insert it as soon as the id is
+      // pinned (we generated it above) — well before run() resolves.
+      if (preSessionId) {
+        await repo.upsertLiveSession({
+          run_attempt_id: attempt.id,
+          session_id: `${preSessionId}-${preSessionId}`,
+          thread_id: preSessionId,
+          turn_id: preSessionId,
+          input_tokens: 0,
+          output_tokens: 0,
+          total_tokens: 0,
+        });
+      }
 
       const result = await runner.run(prompt);
 

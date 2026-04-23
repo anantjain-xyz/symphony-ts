@@ -93,7 +93,11 @@ export type ClaudePermissionMode = z.infer<typeof ClaudePermissionMode>;
 
 export const ClaudeConfig = z
   .object({
-    command: z.string().default('claude'),
+    // Default targets the bundled adapter (resolved via the env var the worker
+    // populates in index.ts) so flipping `agent.backend: claude` works without
+    // the user having to wire up a `command:` line. The adapter speaks our
+    // JSON-RPC protocol; the raw `claude` CLI does not, so don't use that.
+    command: z.string().default('node ${SYMPHONY_CLAUDE_ADAPTER}'),
     permission_mode: ClaudePermissionMode.default('acceptEdits'),
     allowed_tools: z.array(z.string()).default([]),
     disallowed_tools: z.array(z.string()).default([]),
@@ -102,7 +106,7 @@ export const ClaudeConfig = z
   })
   .strict()
   .default({
-    command: 'claude',
+    command: 'node ${SYMPHONY_CLAUDE_ADAPTER}',
     permission_mode: 'acceptEdits',
     allowed_tools: [],
     disallowed_tools: [],

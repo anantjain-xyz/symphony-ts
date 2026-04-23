@@ -89,35 +89,21 @@ function Header({
       <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 smallcaps text-[10px] text-ink-3">
         <Stat label="attempt" value={`${attempt.attempt_number}`} />
         <Stat label="started" value={formatRelative(attempt.started_at)} />
-        {attempt.ended_at && (
-          <Stat label="ended" value={formatRelative(attempt.ended_at)} />
-        )}
+        {attempt.ended_at && <Stat label="ended" value={formatRelative(attempt.ended_at)} />}
         <Stat label="duration" value={formatDuration(attempt.started_at, attempt.ended_at)} />
-        {terminal && (
-          <Stat
-            label="state"
-            value="terminal"
-            valueClass="text-ink-2"
-          />
-        )}
+        {terminal && <Stat label="state" value="terminal" valueClass="text-ink-2" />}
       </div>
     </header>
   );
 }
 
-function Stat({
-  label,
-  value,
-  valueClass,
-}: {
-  label: string;
-  value: string;
-  valueClass?: string;
-}) {
+function Stat({ label, value, valueClass }: { label: string; value: string; valueClass?: string }) {
   return (
     <span className="inline-flex items-baseline gap-1.5">
       <span className="text-ink-4">{label}</span>
-      <span className={`font-mono normal-case text-[12px] tracking-normal tabular ${valueClass ?? 'text-ink-1'}`}>
+      <span
+        className={`font-mono normal-case text-[12px] tracking-normal tabular ${valueClass ?? 'text-ink-1'}`}
+      >
         {value}
       </span>
     </span>
@@ -125,10 +111,7 @@ function Stat({
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const conf: Record<
-    string,
-    { label: string; dot: string; text: string }
-  > = {
+  const conf: Record<string, { label: string; dot: string; text: string }> = {
     running: { label: 'running', dot: 'bg-success dot-live', text: 'text-success' },
     pending: { label: 'pending', dot: 'bg-signal', text: 'text-signal' },
     success: { label: 'success', dot: 'bg-success', text: 'text-success' },

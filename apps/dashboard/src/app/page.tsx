@@ -58,7 +58,11 @@ export default async function FleetPage() {
           Control center
         </h1>
         <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-x-10 gap-y-4 max-w-3xl">
-          <KpiBlock label="active" value={runningRows.length.toLocaleString()} live={runningRows.length > 0} />
+          <KpiBlock
+            label="active"
+            value={runningRows.length.toLocaleString()}
+            live={runningRows.length > 0}
+          />
           <KpiBlock
             label="pending retry"
             value={retryRows.length.toLocaleString()}
@@ -304,13 +308,7 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function FleetStateBadge({
-  allQuiet,
-  runningCount,
-}: {
-  allQuiet: boolean;
-  runningCount: number;
-}) {
+function FleetStateBadge({ allQuiet, runningCount }: { allQuiet: boolean; runningCount: number }) {
   if (allQuiet) {
     return (
       <span className="inline-flex items-center gap-1.5">
@@ -322,9 +320,7 @@ function FleetStateBadge({
   return (
     <span className="inline-flex items-center gap-1.5">
       <span className="h-1.5 w-1.5 rounded-full bg-success dot-live" aria-hidden />
-      <span className="smallcaps text-[10px] text-success">
-        {runningCount} active
-      </span>
+      <span className="smallcaps text-[10px] text-success">{runningCount} active</span>
     </span>
   );
 }

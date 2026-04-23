@@ -17,9 +17,7 @@ interface Props {
 
 const RUN_GROUP_THRESHOLD = 3; // collapse N+ consecutive same-tool calls
 
-type Item =
-  | { kind: 'single'; ev: EventRow }
-  | { kind: 'group'; events: EventRow[] };
+type Item = { kind: 'single'; ev: EventRow } | { kind: 'group'; events: EventRow[] };
 
 export function LiveStream({
   attemptId,
@@ -82,7 +80,9 @@ export function LiveStream({
           const row = payload.new as { total_tokens?: number } | null;
           if (row?.total_tokens !== undefined) {
             setTokens(row.total_tokens);
-            setTokenSeries((s) => (s.length > 80 ? [...s.slice(1), row.total_tokens!] : [...s, row.total_tokens!]));
+            setTokenSeries((s) =>
+              s.length > 80 ? [...s.slice(1), row.total_tokens!] : [...s, row.total_tokens!],
+            );
           }
         },
       )
@@ -120,7 +120,11 @@ export function LiveStream({
       history.replaceState(null, '', window.location.pathname + window.location.search);
       setSelectedId(null);
     } else {
-      history.replaceState(null, '', `${window.location.pathname}${window.location.search}#event=${id}`);
+      history.replaceState(
+        null,
+        '',
+        `${window.location.pathname}${window.location.search}#event=${id}`,
+      );
       setSelectedId(id);
     }
   }
@@ -131,7 +135,7 @@ export function LiveStream({
   /* Aggregate counts for telemetry rail */
   const stats = useMemo(() => computeStats(events), [events]);
 
-  const selectedEvent = selectedId ? events.find((e) => e.id === selectedId) ?? null : null;
+  const selectedEvent = selectedId ? (events.find((e) => e.id === selectedId) ?? null) : null;
   const isLive = !attemptIsTerminal;
   const elapsedMs = useMemo(() => {
     if (!attempt.started_at) return 0;
@@ -172,10 +176,7 @@ export function LiveStream({
       </aside>
 
       {/* Center: timeline */}
-      <section
-        data-live={isLive ? 'true' : 'false'}
-        className="min-w-0"
-      >
+      <section data-live={isLive ? 'true' : 'false'} className="min-w-0">
         <div className="flex items-center justify-between mb-2">
           <div className="smallcaps text-[10px] text-ink-3">timeline</div>
           {isLive && !autoFollow && (
@@ -226,12 +227,7 @@ export function LiveStream({
       <aside className="lg:sticky lg:top-4 lg:self-start space-y-4">
         <Inspector ev={selectedEvent} onClose={() => selectEvent(null)} />
         {attemptIsTerminal && (
-          <TerminalSummary
-            attempt={attempt}
-            tokens={tokens}
-            stats={stats}
-            elapsedMs={elapsedMs}
-          />
+          <TerminalSummary attempt={attempt} tokens={tokens} stats={stats} elapsedMs={elapsedMs} />
         )}
       </aside>
     </div>
@@ -260,11 +256,7 @@ function TerminalSummary({
           label="status"
           value={attempt.status}
           tone={
-            attempt.status === 'success'
-              ? 'good'
-              : attempt.status === 'cancelled'
-                ? 'muted'
-                : 'bad'
+            attempt.status === 'success' ? 'good' : attempt.status === 'cancelled' ? 'muted' : 'bad'
           }
         />
       </div>
@@ -291,7 +283,13 @@ function Cell({
   tone?: 'good' | 'bad' | 'muted';
 }) {
   const color =
-    tone === 'good' ? 'text-success' : tone === 'bad' ? 'text-danger' : tone === 'muted' ? 'text-ink-2' : 'text-ink-0';
+    tone === 'good'
+      ? 'text-success'
+      : tone === 'bad'
+        ? 'text-danger'
+        : tone === 'muted'
+          ? 'text-ink-2'
+          : 'text-ink-0';
   return (
     <div>
       <div className="smallcaps text-[10px] text-ink-3">{label}</div>
@@ -318,9 +316,7 @@ function Inspector({ ev, onClose }: { ev: EventRow | null; onClose: () => void }
       <div className="flex items-center gap-2 px-3 py-2 border-b border-hairline">
         <span className="smallcaps text-[10px] text-ink-3">inspector</span>
         <span className="font-mono text-[11px] text-ink-1 ml-1">{ev.kind}</span>
-        {tool && (
-          <span className="font-mono text-[11px] text-ink-2">· {tool}</span>
-        )}
+        {tool && <span className="font-mono text-[11px] text-ink-2">· {tool}</span>}
         <button
           type="button"
           onClick={onClose}
@@ -340,9 +336,7 @@ function Inspector({ ev, onClose }: { ev: EventRow | null; onClose: () => void }
         )}
         {typeof payload.result_summary === 'string' && payload.result_summary.length > 0 && (
           <Field label="result">
-            <span className="font-mono text-[11.5px] text-ink-1">
-              {payload.result_summary}
-            </span>
+            <span className="font-mono text-[11.5px] text-ink-1">{payload.result_summary}</span>
           </Field>
         )}
         <Field label="payload">
@@ -475,7 +469,12 @@ function groupEvents(events: EventRow[]): Item[] {
         if (at !== undefined) {
           // Replace the prior row if the new one is more "final".
           const prev = collapsed[at];
-          if (isMoreFinal(p.result_summary, (prev?.payload as { result_summary?: string })?.result_summary)) {
+          if (
+            isMoreFinal(
+              p.result_summary,
+              (prev?.payload as { result_summary?: string })?.result_summary,
+            )
+          ) {
             collapsed[at] = e;
           }
           continue;
@@ -536,14 +535,21 @@ function computeStats(events: EventRow[]): {
   toolTotal: number;
   toolBreakdown: [string, number][];
 } {
+  // A single tool invocation often emits two `tool_call` rows (started + completed)
+  // that share a `call_id`. Dedupe by call_id so totals match what the timeline shows.
   const counts = new Map<string, number>();
+  const seenCallIds = new Set<string>();
   let total = 0;
   for (const e of events) {
-    if (e.kind === 'tool_call') {
-      const t = (e.payload as { tool?: string }).tool ?? '?';
-      counts.set(t, (counts.get(t) ?? 0) + 1);
-      total++;
+    if (e.kind !== 'tool_call') continue;
+    const p = e.payload as { tool?: string; call_id?: string };
+    if (p.call_id) {
+      if (seenCallIds.has(p.call_id)) continue;
+      seenCallIds.add(p.call_id);
     }
+    const t = p.tool ?? '?';
+    counts.set(t, (counts.get(t) ?? 0) + 1);
+    total++;
   }
   const breakdown = [...counts.entries()].sort((a, b) => b[1] - a[1]);
   return { toolTotal: total, toolBreakdown: breakdown };
@@ -558,4 +564,3 @@ function formatDuration(ms: number): string {
   if (m > 0) return `${m}m ${String(ss).padStart(2, '0')}s`;
   return `${ss}s`;
 }
-

@@ -146,19 +146,12 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
             )}
           </div>
         </section>
-
       </div>
     </>
   );
 }
 
-function Header({
-  issue,
-  lastAttempt,
-}: {
-  issue: Issue;
-  lastAttempt: Attempt | undefined;
-}) {
+function Header({ issue, lastAttempt }: { issue: Issue; lastAttempt: Attempt | undefined }) {
   return (
     <header className="mb-8">
       <div className="flex items-baseline gap-3 mb-2">
@@ -181,13 +174,13 @@ function Header({
         <Stat label="last seen" value={formatRelative(issue.last_seen_at)} />
         {lastAttempt && (
           <>
-            <Stat
-              label="latest"
-              value={`#${lastAttempt.attempt_number} · ${lastAttempt.status}`}
-            />
+            <Stat label="latest" value={`#${lastAttempt.attempt_number} · ${lastAttempt.status}`} />
             <Stat label="started" value={formatRelative(lastAttempt.started_at)} />
             {lastAttempt.ended_at && (
-              <Stat label="duration" value={formatDuration(lastAttempt.started_at, lastAttempt.ended_at)} />
+              <Stat
+                label="duration"
+                value={formatDuration(lastAttempt.started_at, lastAttempt.ended_at)}
+              />
             )}
           </>
         )}
@@ -262,16 +255,15 @@ function AttemptCard({ attempt, tokens }: { attempt: Attempt; tokens: number }) 
 function IssueStateBadge({ state }: { state: string }) {
   // Linear states are free-form strings; map common ones.
   const norm = state.toLowerCase();
-  const conf =
-    norm.includes('progress')
-      ? { color: 'text-info', dot: 'bg-info dot-live' }
-      : norm.includes('review')
-        ? { color: 'text-think', dot: 'bg-think' }
-        : norm.includes('done') || norm.includes('complete')
-          ? { color: 'text-success', dot: 'bg-success' }
-          : norm.includes('cancel') || norm.includes('block')
-            ? { color: 'text-ink-2', dot: 'bg-ink-3' }
-            : { color: 'text-signal', dot: 'bg-signal' };
+  const conf = norm.includes('progress')
+    ? { color: 'text-info', dot: 'bg-info dot-live' }
+    : norm.includes('review')
+      ? { color: 'text-think', dot: 'bg-think' }
+      : norm.includes('done') || norm.includes('complete')
+        ? { color: 'text-success', dot: 'bg-success' }
+        : norm.includes('cancel') || norm.includes('block')
+          ? { color: 'text-ink-2', dot: 'bg-ink-3' }
+          : { color: 'text-signal', dot: 'bg-signal' };
   return (
     <span className="inline-flex items-center gap-1.5">
       <span className={`h-1.5 w-1.5 rounded-full ${conf.dot}`} aria-hidden />

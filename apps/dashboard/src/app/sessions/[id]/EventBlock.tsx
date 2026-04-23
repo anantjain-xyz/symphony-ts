@@ -33,13 +33,15 @@ export function EventBlock({ ev, isFresh, selected, onSelect }: Props) {
   const time = formatTime(ev.created_at);
   const payload = ev.payload as Record<string, unknown>;
 
+  const toggle = () => onSelect(selected ? null : ev.id);
+
   switch (ev.kind) {
     // The `status` kind is a noisy duplicate of `humanized`; we keep humanized only.
     case 'status':
       return null;
     case 'user_input':
       return (
-        <Row time={time} isFresh={isFresh} kind="you">
+        <Row time={time} isFresh={isFresh} kind="you" selected={selected} onSelect={toggle}>
           <UserInputBlock payload={payload as UserInputPayload} />
         </Row>
       );
@@ -49,42 +51,44 @@ export function EventBlock({ ev, isFresh, selected, onSelect }: Props) {
       const summary = (payload as HumanizedPayload).summary ?? '';
       if (isCannedHumanized(summary)) return null;
       return (
-        <Row time={time} isFresh={isFresh} kind="say">
+        <Row time={time} isFresh={isFresh} kind="say" selected={selected} onSelect={toggle}>
           <HumanizedBlock payload={payload as HumanizedPayload} />
         </Row>
       );
     }
     case 'tool_call':
+      // ToolCallBlock renders its own inner button — Row stays a plain wrapper
+      // to avoid nested interactive elements.
       return (
         <Row time={time} isFresh={isFresh} kind="tool" dense>
           <ToolCallBlock
             payload={payload as ToolCallPayload}
             selected={selected}
-            onSelect={() => onSelect(selected ? null : ev.id)}
+            onSelect={toggle}
           />
         </Row>
       );
     case 'approval':
       return (
-        <Row time={time} isFresh={isFresh} kind="warn">
+        <Row time={time} isFresh={isFresh} kind="warn" selected={selected} onSelect={toggle}>
           <ApprovalBlock payload={payload as ApprovalPayload} />
         </Row>
       );
     case 'error':
       return (
-        <Row time={time} isFresh={isFresh} kind="err">
+        <Row time={time} isFresh={isFresh} kind="err" selected={selected} onSelect={toggle}>
           <ErrorBlock payload={payload as ErrorPayload} />
         </Row>
       );
     case 'token_count':
       return (
-        <Row time={time} isFresh={isFresh} kind="meter" dense>
+        <Row time={time} isFresh={isFresh} kind="meter" dense selected={selected} onSelect={toggle}>
           <TokenCountLine payload={payload as TokenCountPayload} />
         </Row>
       );
     default:
       return (
-        <Row time={time} isFresh={isFresh} kind="say" dense>
+        <Row time={time} isFresh={isFresh} kind="say" dense selected={selected} onSelect={toggle}>
           <UnknownBlock kind={ev.kind} payload={payload} />
         </Row>
       );
@@ -127,9 +131,7 @@ export function ToolRunGroup({
           <span className="ml-2 text-[11px] text-ink-3 truncate">
             {previewArgs((head.payload as ToolCallPayload).args)}
           </span>
-          <span className="ml-auto text-[10px] text-ink-3 smallcaps">
-            {events.length} actions
-          </span>
+          <span className="ml-auto text-[10px] text-ink-3 smallcaps">{events.length} actions</span>
         </summary>
         <div className="mt-1 ml-6 border-l border-hairline pl-3 space-y-0.5">
           {events.map((e) => (
@@ -167,9 +169,7 @@ function ToolCallChild({
     >
       <ExitChip status={status} summary={payload.result_summary} />
       <span className="font-mono text-ink-2 truncate">{previewArgs(payload.args)}</span>
-      <span className="ml-auto tabular text-[10px] text-ink-3">
-        {formatTime(ev.created_at)}
-      </span>
+      <span className="ml-auto tabular text-[10px] text-ink-3">{formatTime(ev.created_at)}</span>
     </button>
   );
 }
@@ -181,12 +181,16 @@ function Row({
   isFresh,
   kind,
   dense,
+  selected,
+  onSelect,
   children,
 }: {
   time: string;
   isFresh: boolean;
   kind: 'say' | 'you' | 'tool' | 'warn' | 'err' | 'meter';
   dense?: boolean;
+  selected?: boolean;
+  onSelect?: () => void;
   children: React.ReactNode;
 }) {
   const railColor: Record<typeof kind, string> = {
@@ -197,6 +201,12 @@ function Row({
     err: 'bg-danger',
     meter: 'bg-ink-4',
   };
+  const interactive = typeof onSelect === 'function';
+  const contentClass = interactive
+    ? `min-w-0 -mx-2 px-2 py-1 rounded transition-colors cursor-pointer ${
+        selected ? 'bg-signal-soft' : 'hover:bg-surface-1'
+      }`
+    : 'min-w-0';
   return (
     <div
       data-fresh={isFresh ? 'true' : 'false'}
@@ -210,7 +220,25 @@ function Row({
         />
         <span aria-hidden className="absolute top-3.5 bottom-0 w-px bg-hairline" />
       </div>
-      <div className="min-w-0">{children}</div>
+      {interactive ? (
+        <div
+          role="button"
+          tabIndex={0}
+          aria-pressed={selected ? true : false}
+          onClick={onSelect}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              onSelect?.();
+            }
+          }}
+          className={contentClass}
+        >
+          {children}
+        </div>
+      ) : (
+        <div className={contentClass}>{children}</div>
+      )}
     </div>
   );
 }
@@ -260,9 +288,7 @@ function ToolCallBlock({
       <ToolGlyph tool={tool} />
       <span className="font-mono text-[12.5px] text-ink-0 shrink-0">{tool}</span>
       <ExitChip status={status} summary={payload.result_summary} />
-      {cmd && (
-        <span className="font-mono text-[12px] text-ink-2 truncate min-w-0">{cmd}</span>
-      )}
+      {cmd && <span className="font-mono text-[12px] text-ink-2 truncate min-w-0">{cmd}</span>}
     </button>
   );
 }
@@ -316,8 +342,7 @@ function TokenCountLine({ payload }: { payload: TokenCountPayload }) {
 function UnknownBlock({ kind, payload }: { kind: string; payload: Record<string, unknown> }) {
   return (
     <div className="text-[12px] text-ink-2">
-      <span className="font-mono text-ink-3">{kind}</span>{' '}
-      <span className="text-ink-3">·</span>{' '}
+      <span className="font-mono text-ink-3">{kind}</span> <span className="text-ink-3">·</span>{' '}
       <span className="text-ink-1">{JSON.stringify(payload).slice(0, 140)}</span>
     </div>
   );
@@ -539,9 +564,7 @@ const markdownComponents: Components = {
   th: ({ children }) => (
     <th className="border border-hairline px-2 py-1 text-left text-ink-1">{children}</th>
   ),
-  td: ({ children }) => (
-    <td className="border border-hairline px-2 py-1 text-ink-0">{children}</td>
-  ),
+  td: ({ children }) => <td className="border border-hairline px-2 py-1 text-ink-0">{children}</td>,
 };
 
 function Markdown({ children }: { children: string }) {

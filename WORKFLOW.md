@@ -71,4 +71,4 @@ State: {{state}}
 {{/blockers}}
 {{/blockers.length}}
 
-Open a pull request when ready. Update the Linear issue with a comment linking the PR, then transition the issue from `todo` to `in progress` so this attempt isn't re-dispatched while the PR awaits review.
+Open a pull request when ready. Update the Linear issue with a comment linking the PR, then transition the issue to `in review` so this attempt isn't re-dispatched while the PR awaits review. (`in review` is not in `tracker.active_states`, so the orchestrator will stop polling it; `todo` and `in progress` both remain dispatchable.)

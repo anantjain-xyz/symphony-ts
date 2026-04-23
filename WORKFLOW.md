@@ -129,12 +129,13 @@ The agent must be able to talk to Linear, either via a configured Linear MCP ser
      - If a PR is already attached, start by reviewing all open PR comments and deciding required changes vs explicit pushback responses.
    - `In Progress` -> continue execution flow from the current workpad comment.
    - `In Review` -> wait and poll for decision/review updates.
-   - `Merging` -> follow the land procedure below; do not call `gh pr merge` directly.
+   - `Merging` -> if the branch PR is already `MERGED`, skip the land procedure, record the merge commit SHA in the workpad, and move the issue directly to `Done`. Otherwise follow the land procedure below; do not call `gh pr merge` directly.
    - `Rework` -> run the rework flow.
    - `Done` -> do nothing and shut down.
-4. Check whether a PR already exists for the current branch and whether it is closed.
+4. Check whether a PR already exists for the current branch and whether it is closed. This check only applies to pre-merge states (`Todo`, `In Progress`, `Rework`):
    - If a branch PR exists and is `CLOSED` or `MERGED`, treat prior branch work as non-reusable for this run.
    - Create a fresh branch from `origin/main` and restart execution flow as a new attempt.
+   - In `Merging` a `MERGED` PR is the expected terminal signal, not a trigger to restart; handle it per the `Merging` routing above.
 5. For `Todo` tickets, do startup sequencing in this exact order:
    - transition the issue to `In Progress`
    - find/create `## Symphony Workpad` bootstrap comment

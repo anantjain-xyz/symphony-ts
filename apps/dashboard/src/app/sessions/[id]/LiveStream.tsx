@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { getSupabaseBrowserClient } from '@/lib/supabase-browser';
 import type { Tables } from '@symphony/shared';
+import { EventBlock } from './EventBlock';
 
 type EventRow = Tables<'agent_events'>;
 
@@ -75,65 +76,18 @@ export function LiveStream({ attemptId, initialEvents, initialTokens, attemptIsT
           </span>
         )}
       </div>
-      <div className="rounded border border-zinc-800 bg-zinc-950 font-mono text-xs divide-y divide-zinc-900 max-h-[70vh] overflow-y-auto">
+      <div className="rounded-lg border border-zinc-800 bg-zinc-950 max-h-[70vh] overflow-y-auto">
         {events.length === 0 ? (
-          <div className="px-3 py-6 text-zinc-500">No events yet.</div>
+          <div className="px-4 py-8 text-zinc-500 text-sm">No events yet.</div>
         ) : (
-          events.map((e) => <EventLine key={e.id} ev={e} />)
+          <div className="space-y-3 px-4 py-4">
+            {events.map((e, i) => (
+              <EventBlock key={e.id} ev={e} prev={events[i - 1]} />
+            ))}
+          </div>
         )}
         <div ref={bottomRef} />
       </div>
     </div>
   );
-}
-
-function EventLine({ ev }: { ev: EventRow }) {
-  const time = new Date(ev.created_at).toLocaleTimeString();
-  const payload = ev.payload as Record<string, unknown>;
-  const summary = renderSummary(ev.kind, payload);
-  return (
-    <div className="px-3 py-1 flex gap-3">
-      <span className="text-zinc-600 shrink-0 w-20">{time}</span>
-      <span className={`shrink-0 w-24 ${kindColor(ev.kind)}`}>{ev.kind}</span>
-      <span className="text-zinc-200 break-words">{summary}</span>
-    </div>
-  );
-}
-
-function renderSummary(kind: string, payload: Record<string, unknown>): string {
-  switch (kind) {
-    case 'humanized':
-      return String(payload.summary ?? '');
-    case 'status':
-      return String(payload.message ?? '');
-    case 'tool_call':
-      return `${String(payload.tool ?? '?')}${payload.result_summary ? `: ${String(payload.result_summary)}` : ''}`;
-    case 'token_count':
-      return `in ${payload.input_tokens} · out ${payload.output_tokens} · total ${payload.total_tokens}`;
-    case 'approval':
-      return `approval requested: ${String(payload.reason ?? '')}`;
-    case 'error':
-      return `${String(payload.class ?? 'error')}: ${String(payload.message ?? '')}`;
-    case 'user_input':
-      return String(payload.text ?? '');
-    default:
-      return JSON.stringify(payload);
-  }
-}
-
-function kindColor(kind: string): string {
-  switch (kind) {
-    case 'error':
-      return 'text-red-400';
-    case 'approval':
-      return 'text-amber-400';
-    case 'tool_call':
-      return 'text-blue-400';
-    case 'token_count':
-      return 'text-zinc-500';
-    case 'humanized':
-      return 'text-emerald-400';
-    default:
-      return 'text-zinc-400';
-  }
 }

@@ -230,12 +230,7 @@ export default async function FleetPage() {
           ))}
         </Section>
 
-        <Section
-          title="Past runs"
-          count={pastRows.length}
-          tone="idle"
-          empty="No past runs yet."
-        >
+        <Section title="Past runs" count={pastRows.length} tone="idle" empty="No past runs yet.">
           {pastRows.map((r) => (
             <RunRow
               key={r.id}

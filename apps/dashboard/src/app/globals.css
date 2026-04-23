@@ -3,12 +3,136 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: light dark;
+  color-scheme: dark;
+
+  /* Surfaces */
+  --surface-0: #0a0b0d;
+  --surface-1: #101116;
+  --surface-2: #161821;
+  --surface-3: #1c1f29;
+  --hairline: #232733;
+  --hairline-strong: #2f3441;
+
+  /* Text */
+  --ink-0: #ece9e1; /* warm paper */
+  --ink-1: #d6d2c8;
+  --ink-2: #98969a;
+  --ink-3: #6b6a70;
+  --ink-4: #46464d;
+
+  /* Signals */
+  --signal: #e8a33d;
+  --signal-soft: rgba(232, 163, 61, 0.14);
+  --success: #6fbf6b;
+  --success-soft: rgba(111, 191, 107, 0.14);
+  --error: #e65d5d;
+  --error-soft: rgba(230, 93, 93, 0.14);
+  --info: #7aa2f7;
+  --info-soft: rgba(122, 162, 247, 0.14);
+  --think: #c39ad6;
+  --think-soft: rgba(195, 154, 214, 0.14);
 }
 
 html,
 body {
-  background: #0b0b0e;
-  color: #eaeaea;
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--surface-0);
+  color: var(--ink-1);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: "ss01", "ss02", "cv11";
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The faint paper grain that sits behind everything. Very subtle. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    radial-gradient(1200px 600px at 80% -10%, rgba(232, 163, 61, 0.06), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgba(122, 162, 247, 0.05), transparent 60%);
+}
+
+body > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Tabular numerals for anything we'd care to align in columns */
+.tabular,
+.font-mono,
+[data-tabular] {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Micro caps for tiny labels */
+.smallcaps {
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-feature-settings: "cpsp" on;
+}
+
+/* Scrollbar polish — only for the timeline scrollers */
+.scroller {
+  scrollbar-width: thin;
+  scrollbar-color: var(--hairline-strong) transparent;
+}
+.scroller::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.scroller::-webkit-scrollbar-thumb {
+  background: var(--hairline-strong);
+  border-radius: 6px;
+  border: 2px solid var(--surface-0);
+}
+.scroller::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Live event reveal — only fires when a brand new row mounts on a live page */
+@keyframes signal-in {
+  0% {
+    opacity: 0;
+    transform: translateY(2px);
+    box-shadow: inset -2px 0 0 0 var(--signal);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(0);
+    box-shadow: inset -2px 0 0 0 var(--signal);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    box-shadow: inset -2px 0 0 0 transparent;
+  }
+}
+
+[data-live="true"] [data-fresh="true"] {
+  animation: signal-in 700ms ease-out both;
+}
+
+/* Live status dot pulse */
+@keyframes pulse-dot {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(111, 191, 107, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(111, 191, 107, 0);
+  }
+}
+
+.dot-live {
+  animation: pulse-dot 1.6s infinite;
+}
+
+/* Generous link hover for inspector + chips */
+.link-hover {
+  transition: color 120ms ease;
+}
+.link-hover:hover {
+  color: var(--ink-0);
 }

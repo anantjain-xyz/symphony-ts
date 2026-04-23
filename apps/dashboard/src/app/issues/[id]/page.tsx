@@ -160,7 +160,7 @@ function Header({
   lastAttempt: Attempt | undefined;
 }) {
   return (
-    <header className="-mx-8 px-8 mb-6 pb-5 border-b border-hairline">
+    <header className="mb-8">
       <div className="flex items-baseline gap-3 mb-2">
         <span className="font-mono text-[12px] text-ink-2 tracking-wide">{issue.identifier}</span>
         <span className="text-ink-4">/</span>

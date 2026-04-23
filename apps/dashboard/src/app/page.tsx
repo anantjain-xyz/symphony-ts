@@ -48,7 +48,7 @@ export default async function FleetPage() {
 
   return (
     <>
-      <header className="-mx-8 px-8 mb-8 pb-6 border-b border-hairline">
+      <header className="mb-10">
         <div className="flex items-baseline gap-3 mb-2">
           <span className="smallcaps text-[10px] text-ink-3">fleet</span>
           <span className="text-ink-4">/</span>

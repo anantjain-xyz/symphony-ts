@@ -59,6 +59,13 @@ export interface ThreadStartParams {
   thread_sandbox: 'none' | 'workspace-write' | 'read-only';
   cwd: string;
   network_access?: boolean;
+  /**
+   * Optional pre-generated session id. Claude Code adapter uses it to pin the
+   * Claude session via `--session-id <uuid>` so the worker can pre-populate
+   * live_sessions.thread_id before the turn produces any events. Codex adapter
+   * ignores it.
+   */
+  session_id?: string;
 }
 export interface ThreadStartResult {
   thread_id: string;

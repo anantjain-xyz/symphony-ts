@@ -6,22 +6,27 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 loadDotenv({ path: resolve(repoRoot, '.env.local') });
 loadDotenv({ path: resolve(repoRoot, '.env') });
 
-// Expose the Codex adapter path so WORKFLOW.md can reference it via
-// `command: node ${SYMPHONY_CODEX_ADAPTER}`. Users can override in their own env.
+// Expose the adapter paths so WORKFLOW.md can reference them via
+// `command: node ${SYMPHONY_CODEX_ADAPTER}` / `${SYMPHONY_CLAUDE_ADAPTER}`.
+// Users can override in their own env.
 process.env.SYMPHONY_CODEX_ADAPTER ??= resolve(
   dirname(fileURLToPath(import.meta.url)),
   '../agents/codex-adapter.mjs',
 );
+process.env.SYMPHONY_CLAUDE_ADAPTER ??= resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '../agents/claude-adapter.mjs',
+);
 
 import { createServiceClient } from '@symphony/shared';
-import { loadWorkflowFile } from './config/workflow.js';
 import { resolveConfig } from './config/resolve.js';
-import { createLinearClient } from './tracker/linear.js';
-import { Repo } from './db/repo.js';
+import { loadWorkflowFile } from './config/workflow.js';
 import { recover } from './db/recovery.js';
-import { WorkspaceManager } from './workspace/manager.js';
-import { OrchestratorLoop } from './orchestrator/loop.js';
+import { Repo } from './db/repo.js';
 import { createLogger } from './logging.js';
+import { OrchestratorLoop } from './orchestrator/loop.js';
+import { createLinearClient } from './tracker/linear.js';
+import { WorkspaceManager } from './workspace/manager.js';
 
 async function main(): Promise<void> {
   const log = createLogger();

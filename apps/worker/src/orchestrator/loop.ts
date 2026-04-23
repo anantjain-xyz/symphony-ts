@@ -1,11 +1,11 @@
-import type { Logger } from 'pino';
 import type { Issue } from '@symphony/shared';
-import type { TrackerClient } from '../tracker/linear.js';
-import type { Repo } from '../db/repo.js';
+import type { Logger } from 'pino';
 import type { ResolvedConfig } from '../config/resolve.js';
+import type { Repo } from '../db/repo.js';
+import type { TrackerClient } from '../tracker/linear.js';
 import { WorkspaceManager } from '../workspace/manager.js';
-import { dispatchAttempt, type DispatchHandle } from './dispatch.js';
 import { selectDispatchable } from './concurrency.js';
+import { type DispatchHandle, dispatchAttempt } from './dispatch.js';
 
 export interface LoopDeps {
   tracker: TrackerClient;

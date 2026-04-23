@@ -1,11 +1,11 @@
 import { execa, type ResultPromise } from 'execa';
 import {
-  NdjsonParser,
   encodeRequest,
+  type InitializeResult,
   isError,
   isNotification,
   isResult,
-  type InitializeResult,
+  NdjsonParser,
   type RpcMessage,
   type ThreadStartParams,
   type ThreadStartResult,
@@ -15,14 +15,27 @@ import {
   type TurnStartResult,
 } from './protocol.js';
 
-export interface CodexRunnerOptions {
-  command: string; // e.g. "codex"
+export interface AgentRunnerOptions {
+  command: string; // adapter command, e.g. "node path/to/codex-adapter.mjs"
   cwd: string;
   approvalPolicy: ThreadStartParams['approval_policy'];
   threadSandbox: ThreadStartParams['thread_sandbox'];
   turnSandboxPolicy: TurnStartParams['turn_sandbox_policy'];
   networkAccess: boolean;
   turnTimeoutMs: number;
+  /**
+   * Optional pre-generated session id. Forwarded through `thread/start` so
+   * adapters that support session pinning (e.g. Claude Code via
+   * `--session-id`) can use it. Adapters that don't support it ignore the
+   * field.
+   */
+  sessionId?: string;
+  /**
+   * Extra environment variables to layer on top of the inherited env when
+   * spawning the adapter. Used to pass backend-specific config (e.g.
+   * SYMPHONY_CLAUDE_PERMISSION_MODE) without polluting the JSON-RPC protocol.
+   */
+  adapterEnv?: Record<string, string>;
   /** Hook subscribed to every turn/event notification. */
   onEvent: (ev: TurnEventParams) => void | Promise<void>;
   /** Optional logger; defaults to no-op. */
@@ -31,7 +44,7 @@ export interface CodexRunnerOptions {
   spawnOverride?: () => ResultPromise;
 }
 
-export interface CodexRunResult {
+export interface AgentRunResult {
   threadId: string;
   turnId: string;
   outcome: TurnCompleteParams['outcome'];
@@ -40,9 +53,11 @@ export interface CodexRunResult {
 }
 
 /**
- * Owns one Codex subprocess for the duration of a single turn. Lifecycle:
+ * Owns one agent adapter subprocess for the duration of a single turn. The
+ * adapter is backend-agnostic: any program that speaks the JSON-RPC contract
+ * in protocol.ts works here (codex-adapter.mjs, claude-adapter.mjs, stubs).
  *
- *   const runner = new CodexRunner(opts);
+ *   const runner = new AgentRunner(opts);
  *   const result = await runner.run(prompt);   // await turn completion
  *   // or, mid-flight from another async context:
  *   await runner.interrupt();                  // ask agent to cancel cleanly
@@ -50,7 +65,7 @@ export interface CodexRunResult {
  *
  * Stdin/stdout speak NDJSON-framed JSON-RPC; see protocol.ts.
  */
-export class CodexRunner {
+export class AgentRunner {
   private child: ResultPromise | null = null;
   private nextId = 1;
   private parser = new NdjsonParser();
@@ -63,14 +78,14 @@ export class CodexRunner {
   private rejectCompletion!: (e: Error) => void;
   private threadId: string | null = null;
   private turnId: string | null = null;
-  private log: NonNullable<CodexRunnerOptions['log']>;
+  private log: NonNullable<AgentRunnerOptions['log']>;
 
-  constructor(private readonly opts: CodexRunnerOptions) {
+  constructor(private readonly opts: AgentRunnerOptions) {
     this.log = opts.log ?? (() => {});
   }
 
-  async run(prompt: string): Promise<CodexRunResult> {
-    if (this.child) throw new Error('CodexRunner already started');
+  async run(prompt: string): Promise<AgentRunResult> {
+    if (this.child) throw new Error('AgentRunner already started');
     this.completion = new Promise<TurnCompleteParams>((resolve, reject) => {
       this.resolveCompletion = resolve;
       this.rejectCompletion = reject;
@@ -87,7 +102,7 @@ export class CodexRunner {
     this.child.stdout?.on('data', (chunk: string) => this.onStdout(chunk));
     this.child.stderr?.setEncoding('utf8');
     this.child.stderr?.on('data', (chunk: string) =>
-      this.log('codex stderr', { chunk: chunk.trimEnd() }),
+      this.log('agent stderr', { chunk: chunk.trimEnd() }),
     );
     this.child
       .then(
@@ -98,13 +113,14 @@ export class CodexRunner {
 
     // Handshake
     const init = await this.request<InitializeResult>('initialize', { version: '1' });
-    this.log('codex initialized', { capabilities: init.capabilities });
+    this.log('agent initialized', { capabilities: init.capabilities });
 
     const thread = await this.request<ThreadStartResult>('thread/start', {
       approval_policy: this.opts.approvalPolicy,
       thread_sandbox: this.opts.threadSandbox,
       cwd: this.opts.cwd,
       network_access: this.opts.networkAccess,
+      ...(this.opts.sessionId ? { session_id: this.opts.sessionId } : {}),
     } satisfies ThreadStartParams);
     this.threadId = thread.thread_id;
 
@@ -181,11 +197,13 @@ export class CodexRunner {
       stderr: 'pipe',
       reject: false,
       // Own process group: lets kill() reach grandchildren (e.g. when bash
-      // forks rather than execs, or when codex spawns its own subprocesses)
+      // forks rather than execs, or when the agent spawns its own subprocesses)
       // via process.kill(-pid, signal).
       detached: true,
-      // Inherits parent env intentionally: codex needs PATH, OPENAI_API_KEY, etc.
-      // The hooks runner is the spec-defined boundary for env stripping.
+      // Inherit parent env (PATH, OPENAI_API_KEY / ANTHROPIC_API_KEY, ...) and
+      // layer per-backend adapter config on top. The hooks runner is the
+      // spec-defined boundary for env stripping, not this one.
+      env: { ...process.env, ...(this.opts.adapterEnv ?? {}) } as NodeJS.ProcessEnv,
     });
   }
 
@@ -207,7 +225,7 @@ export class CodexRunner {
     try {
       messages = this.parser.push(chunk);
     } catch (err) {
-      this.rejectAllPending(new Error(`Codex emitted invalid JSON: ${(err as Error).message}`));
+      this.rejectAllPending(new Error(`agent emitted invalid JSON: ${(err as Error).message}`));
       return;
     }
     for (const msg of messages) this.dispatch(msg);
@@ -217,7 +235,7 @@ export class CodexRunner {
     if (isResult(msg) || isError(msg)) {
       const waiter = this.pending.get(msg.id);
       if (!waiter) {
-        this.log('codex unmatched response', { id: msg.id });
+        this.log('agent unmatched response', { id: msg.id });
         return;
       }
       this.pending.delete(msg.id);
@@ -235,7 +253,7 @@ export class CodexRunner {
           this.resolveCompletion(msg.params as TurnCompleteParams);
           return;
         default:
-          this.log('codex unknown notification', { method: msg.method });
+          this.log('agent unknown notification', { method: msg.method });
       }
     }
   }
@@ -248,9 +266,9 @@ export class CodexRunner {
     });
     this.writeStdin(line);
     const msg = await promise;
-    if (isError(msg)) throw new Error(`codex ${method} failed: ${msg.error.message}`);
+    if (isError(msg)) throw new Error(`agent ${method} failed: ${msg.error.message}`);
     if (isResult(msg)) return msg.result as R;
-    throw new Error('Unexpected codex response shape');
+    throw new Error('Unexpected agent response shape');
   }
 
   private async notify(method: string, params: unknown): Promise<void> {
@@ -260,7 +278,7 @@ export class CodexRunner {
 
   private writeStdin(line: string): void {
     if (!this.child?.stdin || this.child.stdin.destroyed) {
-      throw new Error('codex stdin closed');
+      throw new Error('agent stdin closed');
     }
     this.child.stdin.write(line);
   }
@@ -269,7 +287,7 @@ export class CodexRunner {
     if (this.completion && this.turnId === null) {
       // Process died before we even started a turn.
       this.rejectCompletion(
-        err ?? new Error(`codex exited with code ${exitCode} before handshake completed`),
+        err ?? new Error(`agent exited with code ${exitCode} before handshake completed`),
       );
     } else if (this.completion && this.turnId) {
       // If completion is still pending, treat exit as failure.
@@ -281,7 +299,7 @@ export class CodexRunner {
         error_message: err ? err.message : exitCode === 0 ? undefined : `exit ${exitCode}`,
       });
     }
-    this.rejectAllPending(new Error(`codex exited (${exitCode})`));
+    this.rejectAllPending(new Error(`agent exited (${exitCode})`));
     // Release the handle so later signalGroup() calls can't hit a recycled pgid.
     this.child = null;
   }

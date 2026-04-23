@@ -1,10 +1,10 @@
 import {
-  type SymphonyClient,
-  type Issue,
-  type RunAttemptStatus,
   type AgentEventKind,
   type HookName,
+  type Issue,
   type ParsedWorkflow,
+  type RunAttemptStatus,
+  type SymphonyClient,
   type Tables,
   type TablesInsert,
 } from '@symphony/shared';

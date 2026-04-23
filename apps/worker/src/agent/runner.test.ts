@@ -1,9 +1,9 @@
-import { describe, it, expect } from 'vitest';
-import { execa } from 'execa';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CodexRunner, TurnTimeoutError } from './codex.js';
+import { execa } from 'execa';
+import { describe, expect, it } from 'vitest';
 import type { TurnEventParams } from './protocol.js';
+import { AgentRunner, TurnTimeoutError } from './runner.js';
 
 const STUB = path.resolve(
   fileURLToPath(new URL('.', import.meta.url)),
@@ -23,7 +23,7 @@ function spawnStub(scenario: string) {
 
 function makeRunner(scenario: string, timeoutMs = 5000) {
   const events: TurnEventParams[] = [];
-  const runner = new CodexRunner({
+  const runner = new AgentRunner({
     command: 'unused',
     cwd: process.cwd(),
     approvalPolicy: 'never',
@@ -39,7 +39,7 @@ function makeRunner(scenario: string, timeoutMs = 5000) {
   return { runner, events };
 }
 
-describe('CodexRunner', () => {
+describe('AgentRunner', () => {
   it('happy path: handshake, events stream, success', async () => {
     const { runner, events } = makeRunner('happy');
     const result = await runner.run('do the thing');
@@ -76,7 +76,7 @@ describe('CodexRunner', () => {
     const onUnhandled = (reason: unknown) => unhandled.push(reason);
     process.on('unhandledRejection', onUnhandled);
     try {
-      const runner = new CodexRunner({
+      const runner = new AgentRunner({
         command: 'unused',
         cwd: process.cwd(),
         approvalPolicy: 'never',

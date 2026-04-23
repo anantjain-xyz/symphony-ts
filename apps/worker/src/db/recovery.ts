@@ -1,9 +1,9 @@
 import type { Logger } from 'pino';
-import type { Repo } from './repo.js';
-import type { TrackerClient } from '../tracker/linear.js';
 import type { ResolvedConfig } from '../config/resolve.js';
-import type { WorkspaceManager } from '../workspace/manager.js';
 import { backoffMs } from '../orchestrator/backoff.js';
+import type { TrackerClient } from '../tracker/linear.js';
+import type { WorkspaceManager } from '../workspace/manager.js';
+import type { Repo } from './repo.js';
 
 export interface RecoveryDeps {
   repo: Repo;

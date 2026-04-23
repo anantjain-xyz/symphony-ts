@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { runHook } from './hooks.js';
 import type { Issue } from '@symphony/shared';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { runHook } from './hooks.js';
 
 const ISSUE: Issue = {
   id: 'uuid-1',

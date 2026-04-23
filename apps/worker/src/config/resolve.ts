@@ -1,4 +1,4 @@
-import type { ParsedWorkflow } from '@symphony/shared';
+import type { AgentBackend, ClaudeConfig, ParsedWorkflow } from '@symphony/shared';
 
 /**
  * Typed view over a parsed workflow with explicit overrides applied on top.
@@ -19,8 +19,16 @@ export interface ResolvedConfig {
   trackerApiKey(): string;
   activeStates(): string[];
   terminalStates(): string[];
+  /** Selected agent backend. */
+  agentBackend(): AgentBackend;
+  /** Command to spawn for the selected backend's adapter. */
+  agentCommand(): string;
   codexCommand(): string;
+  claudeCommand(): string;
+  /** Turn timeout for the selected backend. */
   turnTimeoutMs(): number;
+  /** Full claude block (used by dispatch to build adapter flags). */
+  claude(): ClaudeConfig;
   promptTemplate(): string;
   sourceHash(): string;
   workflow(): ParsedWorkflow;
@@ -48,8 +56,18 @@ export function resolveConfig(
     trackerApiKey: () => workflow.frontMatter.tracker.api_key,
     activeStates: () => workflow.frontMatter.tracker.active_states.map((s) => s.toLowerCase()),
     terminalStates: () => workflow.frontMatter.tracker.terminal_states.map((s) => s.toLowerCase()),
+    agentBackend: () => workflow.frontMatter.agent.backend,
+    agentCommand: () =>
+      workflow.frontMatter.agent.backend === 'claude'
+        ? workflow.frontMatter.claude.command
+        : workflow.frontMatter.codex.command,
     codexCommand: () => workflow.frontMatter.codex.command,
-    turnTimeoutMs: () => workflow.frontMatter.codex.turn_timeout_ms,
+    claudeCommand: () => workflow.frontMatter.claude.command,
+    turnTimeoutMs: () =>
+      workflow.frontMatter.agent.backend === 'claude'
+        ? workflow.frontMatter.claude.turn_timeout_ms
+        : workflow.frontMatter.codex.turn_timeout_ms,
+    claude: () => workflow.frontMatter.claude,
     promptTemplate: () => workflow.promptTemplate,
     sourceHash: () => workflow.sourceHash,
     workflow: () => workflow,

@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import { renderPrompt, appendRetryContext } from './render.js';
 import type { Issue } from '@symphony/shared';
+import { describe, expect, it } from 'vitest';
+import { appendRetryContext, renderPrompt } from './render.js';
 
 const ISSUE: Issue = {
   id: 'uuid',

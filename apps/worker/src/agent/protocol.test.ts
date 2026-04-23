@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { NdjsonParser, encodeRequest, isResult, isError, isNotification } from './protocol.js';
+import { describe, expect, it } from 'vitest';
+import { encodeRequest, isError, isNotification, isResult, NdjsonParser } from './protocol.js';
 
 describe('NdjsonParser', () => {
   it('parses one message per line', () => {

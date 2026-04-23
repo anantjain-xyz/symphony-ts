@@ -1,10 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
-  WorkflowFrontMatter,
+  AgentEventKind,
   Issue,
   RunAttemptStatus,
-  AgentEventKind,
   TokenCountPayload,
+  WorkflowFrontMatter,
 } from './schema.js';
 
 describe('WorkflowFrontMatter', () => {
@@ -22,8 +22,13 @@ describe('WorkflowFrontMatter', () => {
     expect(parsed.hooks.timeout_ms).toBe(60_000);
     expect(parsed.agent.max_concurrent_agents).toBe(10);
     expect(parsed.agent.max_retry_backoff_ms).toBe(300_000);
+    expect(parsed.agent.backend).toBe('codex');
     expect(parsed.codex.command).toBe('codex');
     expect(parsed.codex.turn_timeout_ms).toBe(3_600_000);
+    expect(parsed.claude.command).toBe('node ${SYMPHONY_CLAUDE_ADAPTER}');
+    expect(parsed.claude.permission_mode).toBe('acceptEdits');
+    expect(parsed.claude.allowed_tools).toEqual([]);
+    expect(parsed.claude.turn_timeout_ms).toBe(3_600_000);
   });
 
   it('passes through unknown top-level keys (forward compat)', () => {

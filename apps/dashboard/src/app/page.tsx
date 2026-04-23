@@ -61,9 +61,6 @@ export default async function FleetPage() {
       ? await supabase.from('agent_events_latest').select('*').in('run_attempt_id', runningIds)
       : { data: [] as LatestEventRow[] };
 
-  const tokensByAttempt = new Map<string, number>(
-    sessionRows.map((s) => [s.run_attempt_id, s.total_tokens]),
-  );
   const liveTokens = sessionRows.reduce((sum, s) => sum + s.total_tokens, 0);
   const trackedIssues = issuesCount.count ?? 0;
   const allQuiet = runningRows.length === 0 && retryRows.length === 0;
@@ -166,7 +163,6 @@ export default async function FleetPage() {
               title={r.issues?.title ?? '—'}
               attemptNumber={r.attempt_number}
               status={r.status}
-              tokens={tokensByAttempt.get(r.id) ?? 0}
               pid={r.worker_pid}
               latestEvent={formatLatestEvent(latestEventByAttempt.get(r.id))}
               when={relativeTime(r.started_at)}
@@ -265,7 +261,6 @@ function RunRow({
   title,
   attemptNumber,
   status,
-  tokens,
   pid,
   latestEvent,
   errorClass,
@@ -277,7 +272,6 @@ function RunRow({
   title: string;
   attemptNumber: number;
   status: string;
-  tokens?: number;
   pid?: number | null;
   latestEvent?: string;
   errorClass?: string | null;
@@ -287,7 +281,7 @@ function RunRow({
   return (
     <Link
       href={href}
-      className="grid grid-cols-[140px_minmax(0,1fr)_140px_140px_110px_180px_120px] gap-4 items-center px-1 py-3 border-b border-hairline group hover:bg-surface-1 transition-colors"
+      className="grid grid-cols-[140px_minmax(0,1fr)_140px_140px_180px_120px] gap-4 items-center px-1 py-3 border-b border-hairline group hover:bg-surface-1 transition-colors"
     >
       <span className="font-mono text-[12px] text-ink-1 group-hover:text-ink-0 truncate">
         {identifier}
@@ -302,21 +296,12 @@ function RunRow({
       </span>
       <AttemptCounter n={attemptNumber} />
       <StatusBadge status={status} />
-      <span className="font-mono text-[11px] text-ink-3 tabular truncate">
-        {pid != null ? (
-          <>
-            <span className="text-ink-4">pid</span> {pid}
-          </>
-        ) : (
-          '—'
-        )}
-      </span>
       <div className="font-mono text-[11px] text-ink-3 tabular truncate">
         {errorClass ? (
           <span className="text-danger">{errorClass}</span>
-        ) : tokens !== undefined ? (
+        ) : pid != null ? (
           <>
-            <span className="text-ink-4">tok</span> {tokens.toLocaleString()}
+            <span className="text-ink-4">pid</span> {pid}
           </>
         ) : (
           '—'

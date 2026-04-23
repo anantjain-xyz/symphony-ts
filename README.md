@@ -1,6 +1,6 @@
 # symphony-ts
 
-TypeScript port of [Symphony](https://github.com/openai/symphony), backed by Supabase for persistence, realtime, and operator auth.
+TypeScript port of [Symphony](https://github.com/openai/symphony), backed by Supabase for persistence and realtime.
 
 A long-running daemon that polls Linear for active issues, provisions isolated workspaces per issue, and runs Codex coding-agent sessions against them with retries, concurrency caps, and live operator observability.
 
@@ -53,7 +53,7 @@ symphony-ts/
 ```
 
 - `apps/worker/` — Node daemon (poll loop, orchestrator, workspace manager, Codex runner)
-- `apps/dashboard/` — Next.js operator console (Supabase Auth, live session view)
+- `apps/dashboard/` — Next.js operator console (live session view)
 - `packages/shared/` — zod schemas, generated DB types, Supabase client factory
 - `supabase/` — local Supabase config + SQL migrations
 
@@ -97,7 +97,7 @@ pnpm --filter @symphony/dashboard dev
 # open http://localhost:3000
 ```
 
-Sign in with a magic link via Supabase Auth (Mailpit captures emails locally at http://127.0.0.1:54424).
+The dashboard is open to anyone who can reach the port — auth is disabled because this stack is intended to run on a local machine.
 
 ### Smoke test the dashboard with seeded data
 
@@ -249,38 +249,32 @@ Test files (`*.test.ts`) live next to sources. Integration tests (`*.integration
 
 ### `apps/dashboard` — the operator console
 
-Next.js 15 + React 19 + Tailwind. Auth is Supabase magic-link (OTP).
+Next.js 15 + React 19 + Tailwind. No auth — the app is local-only.
 
 ```
 apps/dashboard/src/
-├── middleware.ts                 Supabase SSR auth gate
-│
 ├── app/
 │   ├── layout.tsx                shell + header
 │   ├── globals.css               Tailwind + dark theme
 │   ├── page.tsx                  ⭐ fleet view: running / retries / failures
-│   ├── login/page.tsx            OTP form
-│   ├── auth/callback/route.ts    code exchange → redirect
 │   ├── issues/[id]/page.tsx      one issue, all its attempts
 │   └── sessions/[id]/
 │       ├── page.tsx              attempt metadata (SSR)
 │       └── LiveStream.tsx        ⭐ client component, Supabase Realtime
 │
 └── lib/
-    ├── env.ts                    env validation + isAllowedEmail()
-    ├── supabase-server.ts        SSR client (reads cookies)
-    └── supabase-browser.ts       browser singleton
+    ├── env.ts                    env validation
+    ├── supabase-server.ts        server-side client (anon key)
+    └── supabase-browser.ts       browser singleton (anon key)
 ```
 
 | Route | File | What you see |
 |---|---|---|
 | `/` | `app/page.tsx` | Three tables: Running, Pending Retries, Recent Failures |
-| `/login` | `app/login/page.tsx` | Email form → OTP link |
-| `/auth/callback` | `app/auth/callback/route.ts` | OAuth code exchange |
 | `/issues/[id]` | `app/issues/[id]/page.tsx` | Issue header + attempts list w/ status colors |
 | `/sessions/[id]` | `app/sessions/[id]/page.tsx` + `LiveStream.tsx` | Live event firehose — subscribes to `agent_events` (INSERT) and `live_sessions` (*) for this attempt |
 
-RLS gates everything. Worker uses service-role (bypasses RLS); dashboard uses anon key + authenticated user.
+Worker uses service-role (bypasses RLS). Dashboard uses the anon key and reads tables directly (RLS disabled).
 
 ### `supabase/` — the schema
 
@@ -346,7 +340,7 @@ The second migration adds a **partial unique index** on `run_attempts` where `st
 2. **Workspaces are per-issue, reusable across retries.** A `.ready` sentinel means `after_create` succeeded once; retries skip the expensive clone.
 3. **Races are caught by a DB invariant, not an in-memory lock.** The partial unique index is the only thing you trust.
 4. **Events are append-only; live_sessions is ephemeral.** History is immutable; "what's happening now" is a projection that dies on completion.
-5. **Two auth modes.** Worker = service-role (bypasses RLS). Dashboard = anon + Supabase auth + RLS.
+5. **Local-only, no auth.** Worker uses the service-role key; dashboard uses the anon key and reads tables with RLS disabled. Don't expose the dashboard to an untrusted network.
 6. **Graceful shutdown drains in-flight.** SIGTERM waits 30s, then SIGKILL.
 7. **Boot recovery assumes crash-unsafe state.** Any row stuck `running` at startup is an orphan → fail + retry.
 

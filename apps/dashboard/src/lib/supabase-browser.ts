@@ -1,15 +1,16 @@
 'use client';
 
-import { createBrowserClient } from '@supabase/ssr';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@symphony/shared';
 
-let client: ReturnType<typeof createBrowserClient<Database>> | null = null;
+let client: SupabaseClient<Database> | null = null;
 
 export function getSupabaseBrowserClient() {
   if (client) return client;
-  client = createBrowserClient<Database>(
+  client = createClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { auth: { persistSession: false, autoRefreshToken: false } },
   );
   return client;
 }

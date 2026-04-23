@@ -12,7 +12,6 @@
   },
   "dependencies": {
     "@next/env": "^16.2.3",
-    "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "2.47.10",
     "@symphony/shared": "workspace:*",
     "next": "^15.1.3",

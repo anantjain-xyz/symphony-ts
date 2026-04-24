@@ -124,6 +124,23 @@ export class OrchestratorLoop {
       }
     }
 
+    // 2a. Sweep stale retry_queue rows: any queued retry whose issue is no
+    //     longer active (most commonly because it moved to a terminal state
+    //     like Done/Canceled) is dead work — the tracker is the source of
+    //     truth for what runs next. Skip the sweep entirely when fetchActive
+    //     returned nothing: that's almost certainly a transient tracker blip,
+    //     and wiping the whole queue because of it would lose real backoff
+    //     schedules.
+    if (active.length > 0) {
+      const retryIds = await repo.allRetryIssueIds();
+      for (const issueId of retryIds) {
+        if (!activeIds.has(issueId)) {
+          log.info({ issueId }, 'clearing retry: issue no longer active');
+          await repo.clearRetry(issueId);
+        }
+      }
+    }
+
     // 3. Compute eligible: not blocked, not already in flight, and not
     //    currently holding a future retry-queue slot. The last check is what
     //    makes exponential backoff actually take effect — without it, a
@@ -169,7 +186,18 @@ export class OrchestratorLoop {
     for (const r of due) {
       if (this.active.has(r.issue_id)) continue;
       const issue = active.find((i) => i.id === r.issue_id);
-      if (!issue) continue; // issue no longer active; let cleanup remove it
+      if (!issue) {
+        // Belt-and-suspenders: step 2a already swept this, but a retry may
+        // have landed (or its issue turned terminal) between the sweep and
+        // now. Either way, the issue isn't dispatchable this tick — drop the
+        // row so it doesn't linger.
+        log.info(
+          { issueId: r.issue_id, attemptNumber: r.attempt_number },
+          'clearing due retry: issue no longer active',
+        );
+        await repo.clearRetry(r.issue_id);
+        continue;
+      }
       log.info({ issueId: r.issue_id, attemptNumber: r.attempt_number }, 'firing retry');
       await repo.clearRetry(r.issue_id);
       const handle = await this.dispatch(issue, r.attempt_number);

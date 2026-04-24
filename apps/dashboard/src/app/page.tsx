@@ -111,7 +111,7 @@ export default async function FleetPage() {
           <span className="text-ink-4">/</span>
           <FleetStateBadge allQuiet={allQuiet} runningCount={runningRows.length} />
         </div>
-        <h1 className="font-display text-[34px] leading-[1.08] text-ink-0 tracking-[-0.01em] font-medium italic">
+        <h1 className="font-display text-[34px] leading-[1.08] text-ink-0 tracking-[-0.01em] font-medium">
           Dashboard
         </h1>
         <div className="mt-5 grid grid-cols-2 sm:grid-cols-5 gap-x-10 gap-y-4 max-w-3xl">

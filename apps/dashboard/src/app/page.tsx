@@ -2,6 +2,8 @@ import Link from 'next/link';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
 import type { Tables, WorkflowFrontMatter } from '@symphony/shared';
 import { trackerProjectUrl } from '@symphony/shared/schema';
+import { KpiBlock } from './KpiBlock';
+import { LiveRuntime } from './LiveRuntime';
 import { RealtimeRefresh } from './RealtimeRefresh';
 
 export const dynamic = 'force-dynamic';
@@ -13,8 +15,6 @@ type RetryWithIssue = Tables<'retry_queue'> & {
 };
 type AgentEventRow = Tables<'agent_events'>;
 type LatestEventRow = Tables<'agent_events_latest'>;
-
-const HEARTBEAT_STALE_MS = 15_000;
 
 export default async function FleetPage() {
   const supabase = createSupabaseServerClient();
@@ -82,9 +82,6 @@ export default async function FleetPage() {
   const allQuiet = runningRows.length === 0 && retryRows.length === 0;
 
   const heartbeat = heartbeatRes.data ?? null;
-  const runtimeMs = heartbeat ? Date.now() - new Date(heartbeat.started_at).getTime() : null;
-  const stalenessMs = heartbeat ? Date.now() - new Date(heartbeat.last_beat_at).getTime() : null;
-  const workerAlive = stalenessMs !== null && stalenessMs <= HEARTBEAT_STALE_MS;
 
   const frontMatter = extractFrontMatter(workflowRes.data?.parsed);
   const maxConcurrent = frontMatter?.agent?.max_concurrent_agents ?? null;
@@ -135,11 +132,9 @@ export default async function FleetPage() {
             valueClass={failedRows.length > 0 ? 'text-danger' : undefined}
           />
           <KpiBlock label="issues" value={trackedIssues.toLocaleString()} />
-          <KpiBlock
-            label="runtime"
-            value={runtimeMs !== null ? formatDuration(runtimeMs) : '—'}
-            live={workerAlive}
-            valueClass={runtimeMs !== null && !workerAlive ? 'text-danger' : undefined}
+          <LiveRuntime
+            startedAt={heartbeat?.started_at ?? null}
+            lastBeatAt={heartbeat?.last_beat_at ?? null}
           />
         </div>
         {liveTokens > 0 && (
@@ -400,32 +395,6 @@ function FleetStateBadge({ allQuiet, runningCount }: { allQuiet: boolean; runnin
   );
 }
 
-function KpiBlock({
-  label,
-  value,
-  live,
-  valueClass,
-}: {
-  label: string;
-  value: string;
-  live?: boolean;
-  valueClass?: string;
-}) {
-  return (
-    <div>
-      <div className="smallcaps text-[10px] text-ink-3 flex items-center gap-1.5">
-        {label}
-        {live && <span className="h-1 w-1 rounded-full bg-success dot-live" aria-hidden />}
-      </div>
-      <div
-        className={`font-display text-[32px] tabular leading-none mt-1 tracking-tight ${valueClass ?? 'text-ink-0'}`}
-      >
-        {value}
-      </div>
-    </div>
-  );
-}
-
 /* ---------- helpers ---------- */
 
 function relativeTime(iso: string | null): string {
@@ -437,23 +406,6 @@ function relativeTime(iso: string | null): string {
   if (abs < 3_600_000) return `${Math.round(abs / 60_000)}m ${sign}`;
   if (abs < 86_400_000) return `${Math.round(abs / 3_600_000)}h ${sign}`;
   return `${Math.round(abs / 86_400_000)}d ${sign}`;
-}
-
-function formatDuration(ms: number): string {
-  if (!Number.isFinite(ms) || ms < 0) return '—';
-  const s = Math.floor(ms / 1000);
-  const days = Math.floor(s / 86_400);
-  const hours = Math.floor((s % 86_400) / 3600);
-  const mins = Math.floor((s % 3600) / 60);
-  const secs = s % 60;
-  if (days > 0) return `${days}d ${pad2(hours)}h`;
-  if (hours > 0) return `${hours}h ${pad2(mins)}m`;
-  if (mins > 0) return `${mins}m ${pad2(secs)}s`;
-  return `${secs}s`;
-}
-
-function pad2(n: number): string {
-  return n.toString().padStart(2, '0');
 }
 
 function formatLatestEvent(ev: AgentEventRow | undefined): string {

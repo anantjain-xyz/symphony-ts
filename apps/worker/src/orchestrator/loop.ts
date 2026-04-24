@@ -127,17 +127,22 @@ export class OrchestratorLoop {
     // 2a. Sweep stale retry_queue rows: any queued retry whose issue is no
     //     longer active (most commonly because it moved to a terminal state
     //     like Done/Canceled) is dead work — the tracker is the source of
-    //     truth for what runs next. Skip the sweep entirely when fetchActive
-    //     returned nothing: that's almost certainly a transient tracker blip,
-    //     and wiping the whole queue because of it would lose real backoff
-    //     schedules.
+    //     truth for what runs next. Two gotchas to defend against before we
+    //     delete scheduled backoff state:
+    //       - `fetchActive()` uses `first: 100` under the hood, so a busy
+    //         workspace with >100 active issues has a silently truncated
+    //         snapshot — absent-from-activeIds does NOT prove terminal.
+    //       - A transient tracker blip returning `[]` would make every
+    //         queued retry look stale.
+    //     Fast-path the empty-snapshot case (skip entirely) and otherwise
+    //     confirm each candidate with a direct `fetchById` before clearing.
     if (active.length > 0) {
       const retryIds = await repo.allRetryIssueIds();
       for (const issueId of retryIds) {
-        if (!activeIds.has(issueId)) {
-          log.info({ issueId }, 'clearing retry: issue no longer active');
-          await repo.clearRetry(issueId);
-        }
+        if (activeIds.has(issueId)) continue;
+        if (!(await this.confirmNotActive(issueId))) continue;
+        log.info({ issueId }, 'clearing retry: issue confirmed no longer active');
+        await repo.clearRetry(issueId);
       }
     }
 
@@ -187,21 +192,47 @@ export class OrchestratorLoop {
       if (this.active.has(r.issue_id)) continue;
       const issue = active.find((i) => i.id === r.issue_id);
       if (!issue) {
-        // Belt-and-suspenders: step 2a already swept this, but a retry may
-        // have landed (or its issue turned terminal) between the sweep and
-        // now. Either way, the issue isn't dispatchable this tick — drop the
-        // row so it doesn't linger.
-        log.info(
-          { issueId: r.issue_id, attemptNumber: r.attempt_number },
-          'clearing due retry: issue no longer active',
-        );
-        await repo.clearRetry(r.issue_id);
+        // Absent from the active snapshot could mean (a) genuinely terminal,
+        // (b) truncated out of the paginated `fetchActive()` result, or
+        // (c) hidden by a transient tracker blip. Confirm terminal-ness via
+        // a direct `fetchById` before clearing — same guard as step 2a.
+        if (await this.confirmNotActive(r.issue_id)) {
+          log.info(
+            { issueId: r.issue_id, attemptNumber: r.attempt_number },
+            'clearing due retry: issue confirmed no longer active',
+          );
+          await repo.clearRetry(r.issue_id);
+        }
         continue;
       }
       log.info({ issueId: r.issue_id, attemptNumber: r.attempt_number }, 'firing retry');
       await repo.clearRetry(r.issue_id);
       const handle = await this.dispatch(issue, r.attempt_number);
       if (handle) this.registerActive(handle);
+    }
+  }
+
+  /**
+   * Confirm — via a direct `fetchById` — that an issue is genuinely no longer
+   * active before we discard its scheduled retry. Guards two failure modes of
+   * trusting the `fetchActive()` snapshot alone: pagination truncation
+   * (`first: 100`) and transient tracker blips. Returns true only on positive
+   * confirmation (issue is gone, or its current state is outside the
+   * configured `active_states`). On fetch error, returns false so we defer
+   * cleanup rather than delete valid backoff state.
+   */
+  private async confirmNotActive(issueId: string): Promise<boolean> {
+    const { tracker, config, log } = this.deps;
+    try {
+      const current = await tracker.fetchById(issueId);
+      if (!current) return true;
+      return !config.activeStates().includes(current.state);
+    } catch (err) {
+      log.warn(
+        { issueId, err: err instanceof Error ? err.message : String(err) },
+        'retry cleanup: fetchById failed; deferring',
+      );
+      return false;
     }
   }
 

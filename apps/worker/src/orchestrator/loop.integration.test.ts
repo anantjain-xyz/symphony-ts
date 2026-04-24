@@ -309,6 +309,51 @@ d('OrchestratorLoop integration', () => {
     await rm(wsRoot, { recursive: true, force: true });
   });
 
+  it('sweep preserves retry when fetchById confirms issue is still active (partial snapshot)', async () => {
+    // Regression for PR review: fetchActive() is paginated (first: 100) and
+    // can be silently truncated in busy workspaces. Missing-from-activeIds
+    // is not proof of terminal-ness, so the sweep must confirm via fetchById
+    // before clearing. Here fetchActive reports only ISSUE_2 but fetchById
+    // reveals ISSUE_1 is still active — its retry row must survive.
+    await repo.upsertIssues([ISSUE_1, ISSUE_2]);
+    await repo.scheduleRetry({
+      issueId: ISSUE_1.id,
+      attemptNumber: 2,
+      dueAt: new Date(Date.now() + 60_000),
+      errorClass: 'turn_failed',
+      errorMessage: 'prior attempt failed',
+    });
+
+    const tracker: TrackerClient = {
+      preflight: async () => {},
+      fetchActive: async () => [ISSUE_2], // truncated: ISSUE_1 not in this page
+      fetchById: async (id) => {
+        if (id === ISSUE_1.id) return ISSUE_1; // but fetchById confirms active
+        if (id === ISSUE_2.id) return ISSUE_2;
+        return null;
+      },
+      fetchTerminal: async () => [],
+    };
+
+    const codexCmd = `STUB_SCENARIO=happy node ${STUB}`;
+    const config = resolveConfig(makeWorkflow(wsRoot, 'happy', codexCmd));
+    const loop = new OrchestratorLoop({
+      tracker,
+      repo,
+      workspaces: new WorkspaceManager(wsRoot),
+      config,
+      log: pino({ level: 'silent' }),
+    });
+    await loop.tick();
+    const active = (loop as unknown as { active: Map<string, { done: Promise<void> }> }).active;
+    await Promise.all([...active.values()].map((h) => h.done));
+
+    const { data: q } = await db.from('retry_queue').select('*').eq('issue_id', ISSUE_1.id);
+    expect(q!.length).toBe(1);
+
+    await rm(wsRoot, { recursive: true, force: true });
+  });
+
   it('sweep is skipped when fetchActive() returns empty (safety guard)', async () => {
     // If the tracker momentarily returns no issues (API blip, partial
     // failure), the sweep must not wipe the queue — real backoff schedules

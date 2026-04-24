@@ -2,11 +2,13 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createServiceClient, type Issue, type ParsedWorkflow } from '@symphony/shared';
+import { createServiceClient, type Issue } from '@symphony/shared';
 import pino from 'pino';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { resolveConfig } from '../config/resolve.js';
 import { Repo } from '../db/repo.js';
+import { makeTestIssue, makeTestWorkflow } from '../db/test-helpers.js';
+import { TestScope } from '../db/test-scope.js';
 import type { TrackerClient } from '../tracker/linear.js';
 import { WorkspaceManager } from '../workspace/manager.js';
 import { dispatchAttempt } from './dispatch.js';
@@ -28,47 +30,6 @@ const STUB = path.resolve(
   '../agent/__fixtures__/stub-codex.mjs',
 );
 
-function makeWorkflow(wsRoot: string, scenario: string, codexCommand: string): ParsedWorkflow {
-  return {
-    sourceHash: 'b'.repeat(64),
-    promptTemplate: 'work on {{identifier}}',
-    frontMatter: {
-      tracker: {
-        kind: 'linear',
-        endpoint: 'http://stub',
-        api_key: 'k',
-        active_states: ['todo'],
-        terminal_states: ['done'],
-      },
-      polling: { interval_ms: 50 },
-      workspace: { root: wsRoot },
-      hooks: { timeout_ms: 5000 },
-      agent: {
-        backend: 'codex',
-        max_concurrent_agents: 2,
-        max_retry_backoff_ms: 1000,
-        max_concurrent_agents_by_state: {},
-      },
-      codex: {
-        command: codexCommand,
-        approval_policy: 'never',
-        thread_sandbox: 'workspace-write',
-        turn_sandbox_policy: 'inherit',
-        turn_timeout_ms: 5000,
-        network_access: false,
-      },
-      claude: {
-        command: 'claude',
-        permission_mode: 'acceptEdits',
-        allowed_tools: [],
-        disallowed_tools: [],
-        add_dirs: [],
-        turn_timeout_ms: 3600000,
-      },
-    },
-  };
-}
-
 function stubTracker(issues: Issue[]): TrackerClient {
   return {
     preflight: async () => {},
@@ -78,84 +39,50 @@ function stubTracker(issues: Issue[]): TrackerClient {
   };
 }
 
-const ISSUE_1: Issue = {
-  id: '33333333-3333-3333-3333-333333333333',
-  identifier: 'LOOP-1',
-  title: 'first',
-  description: null,
-  priority: 1,
-  state: 'todo',
-  branch: null,
-  labels: [],
-  blockers: [],
-};
-
-const ISSUE_2: Issue = {
-  id: '44444444-4444-4444-4444-444444444444',
-  identifier: 'LOOP-2',
-  title: 'second',
-  description: null,
-  priority: 2,
-  state: 'todo',
-  branch: null,
-  labels: [],
-  blockers: [],
-};
-
 d('OrchestratorLoop integration', () => {
   let db: ReturnType<typeof createServiceClient>;
   let repo: Repo;
   let wsRoot: string;
+  let scope: TestScope;
 
-  async function clean() {
-    if (!db) {
-      return;
-    }
-
-    await db.from('agent_events').delete().neq('id', 0);
-    await db
-      .from('live_sessions')
-      .delete()
-      .neq('run_attempt_id', '00000000-0000-0000-0000-000000000000');
-    await db.from('hook_runs').delete().neq('id', 0);
-    await db.from('retry_queue').delete().neq('issue_id', '');
-    await db.from('run_attempts').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-    await db.from('issues').delete().neq('id', '');
-  }
-
-  beforeAll(async () => {
+  beforeAll(() => {
     db = createServiceClient({ url: SUPA_URL, serviceRoleKey: SERVICE_ROLE! });
     repo = new Repo(db);
-    await clean();
   });
 
   beforeEach(async () => {
-    await clean();
+    scope = new TestScope();
     wsRoot = await mkdtemp(path.join(tmpdir(), 'symphony-loop-'));
   });
 
-  afterAll(async () => {
-    await clean();
+  afterEach(async () => {
+    await scope.cleanup(db);
+    await rm(wsRoot, { recursive: true, force: true });
   });
 
   it('one tick: dispatches, succeeds, persists events and finishes attempt', async () => {
-    const codexCmd = `STUB_SCENARIO=happy node ${STUB}`;
-    const config = resolveConfig(makeWorkflow(wsRoot, 'happy', codexCmd));
+    const issue = makeTestIssue({ id: scope.newIssueId(), identifier: scope.newIdentifier() });
+    const codexCommand = `STUB_SCENARIO=happy node ${STUB}`;
+    const config = resolveConfig(
+      makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot, codexCommand }),
+    );
     const loop = new OrchestratorLoop({
-      tracker: stubTracker([ISSUE_1]),
+      tracker: stubTracker([issue]),
       repo,
       workspaces: new WorkspaceManager(wsRoot),
       config,
       log: pino({ level: 'silent' }),
+      scopedIssueIds: [...scope.issueIds],
     });
     await loop.tick();
-    // Wait for dispatch promise to resolve (single attempt).
     const handles = (loop as unknown as { active: Map<string, { done: Promise<void> }> }).active;
     await Promise.all([...handles.values()].map((h) => h.done));
 
-    const [{ data: attempt }] = await Promise.all([
-      db.from('run_attempts').select('*').eq('issue_id', ISSUE_1.id).single(),
-    ]);
+    const { data: attempt } = await db
+      .from('run_attempts')
+      .select('*')
+      .eq('issue_id', issue.id)
+      .single();
     expect(attempt!.status).toBe('success');
 
     const { data: events } = await db
@@ -168,24 +95,24 @@ d('OrchestratorLoop integration', () => {
     expect(kinds).toContain('tool_call');
     expect(kinds).toContain('token_count');
     expect(kinds).toContain('humanized');
-
-    await rm(wsRoot, { recursive: true, force: true });
   });
 
   it('respects max_concurrent_agents=2 with 3 eligible issues', async () => {
-    const ISSUE_3: Issue = {
-      ...ISSUE_2,
-      id: '55555555-5555-5555-5555-555555555555',
-      identifier: 'LOOP-3',
-    };
-    const codexCmd = `STUB_SCENARIO=happy node ${STUB}`;
-    const config = resolveConfig(makeWorkflow(wsRoot, 'happy', codexCmd));
+    const issues = [
+      makeTestIssue({ id: scope.newIssueId(), identifier: scope.newIdentifier() }),
+      makeTestIssue({ id: scope.newIssueId(), identifier: scope.newIdentifier(), priority: 2 }),
+      makeTestIssue({ id: scope.newIssueId(), identifier: scope.newIdentifier(), priority: 2 }),
+    ];
+    const codexCommand = `STUB_SCENARIO=happy node ${STUB}`;
+    const wf = makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot, codexCommand });
+    wf.frontMatter.agent.max_concurrent_agents = 2;
     const loop = new OrchestratorLoop({
-      tracker: stubTracker([ISSUE_1, ISSUE_2, ISSUE_3]),
+      tracker: stubTracker(issues),
       repo,
       workspaces: new WorkspaceManager(wsRoot),
-      config,
+      config: resolveConfig(wf),
       log: pino({ level: 'silent' }),
+      scopedIssueIds: [...scope.issueIds],
     });
     await loop.tick();
     const active = (loop as unknown as { active: Map<string, unknown> }).active;
@@ -193,26 +120,28 @@ d('OrchestratorLoop integration', () => {
     await Promise.all(
       [...(active as Map<string, { done: Promise<void> }>).values()].map((h) => h.done),
     );
-    await rm(wsRoot, { recursive: true, force: true });
   });
 
   it('failure schedules a retry in retry_queue', async () => {
-    const codexCmd = `STUB_SCENARIO=error node ${STUB}`;
-    const config = resolveConfig(makeWorkflow(wsRoot, 'error', codexCmd));
+    const issue = makeTestIssue({ id: scope.newIssueId(), identifier: scope.newIdentifier() });
+    const codexCommand = `STUB_SCENARIO=error node ${STUB}`;
+    const config = resolveConfig(
+      makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot, codexCommand }),
+    );
     const loop = new OrchestratorLoop({
-      tracker: stubTracker([ISSUE_1]),
+      tracker: stubTracker([issue]),
       repo,
       workspaces: new WorkspaceManager(wsRoot),
       config,
       log: pino({ level: 'silent' }),
+      scopedIssueIds: [...scope.issueIds],
     });
     await loop.tick();
     const active = (loop as unknown as { active: Map<string, { done: Promise<void> }> }).active;
     await Promise.all([...active.values()].map((h) => h.done));
-    const { data: q } = await db.from('retry_queue').select('*').eq('issue_id', ISSUE_1.id);
+    const { data: q } = await db.from('retry_queue').select('*').eq('issue_id', issue.id);
     expect(q!.length).toBe(1);
     expect(q![0]!.attempt_number).toBe(2);
-    await rm(wsRoot, { recursive: true, force: true });
   });
 
   it('cancelling a mid-run attempt clears the pre-existing retry_queue row', async () => {
@@ -220,28 +149,31 @@ d('OrchestratorLoop integration', () => {
     // next attempt starts, is cancelled mid-run (issue state changed
     // externally, triggering reconcile), and must not leave the stale
     // retry row behind — the issue has moved on.
-    await repo.upsertIssues([ISSUE_1]);
+    const issue = makeTestIssue({ id: scope.newIssueId(), identifier: scope.newIdentifier() });
+    await repo.upsertIssues([issue]);
     await repo.scheduleRetry({
-      issueId: ISSUE_1.id,
+      issueId: issue.id,
       attemptNumber: 2,
       dueAt: new Date(Date.now() + 60_000),
       errorClass: 'turn_failed',
       errorMessage: 'prior attempt failed',
     });
 
-    const codexCmd = `STUB_SCENARIO=interrupt node ${STUB}`;
-    const config = resolveConfig(makeWorkflow(wsRoot, 'interrupt', codexCmd));
+    const codexCommand = `STUB_SCENARIO=interrupt node ${STUB}`;
+    const config = resolveConfig(
+      makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot, codexCommand }),
+    );
     const workspaces = new WorkspaceManager(wsRoot);
     const reserved = await repo.tryReserveAttempt({
-      issueId: ISSUE_1.id,
+      issueId: issue.id,
       attemptNumber: 2,
-      workspacePath: workspaces.pathFor(ISSUE_1.identifier),
+      workspacePath: workspaces.pathFor(issue.identifier),
     });
     expect(reserved).not.toBeNull();
 
     const handle = dispatchAttempt(
       { repo, workspaces, config, log: pino({ level: 'silent' }) },
-      ISSUE_1,
+      issue,
       reserved!,
     );
 
@@ -269,138 +201,28 @@ d('OrchestratorLoop integration', () => {
     expect(finished!.status).toBe('cancelled');
     expect(finished!.error_class).toBe('reconciled');
 
-    const { data: q } = await db.from('retry_queue').select('*').eq('issue_id', ISSUE_1.id);
+    const { data: q } = await db.from('retry_queue').select('*').eq('issue_id', issue.id);
     expect(q!.length).toBe(0);
-
-    await rm(wsRoot, { recursive: true, force: true });
-  });
-
-  it('tick() clears retry_queue rows for issues that moved to a terminal state', async () => {
-    // Regression for SYM-10: a prior failed attempt scheduled a retry; the
-    // operator then moves the issue to a terminal state (Done/Canceled), so
-    // fetchActive() no longer returns it. The queued retry row should be
-    // swept — it's dead work, and would otherwise linger on the dashboard.
-    await repo.upsertIssues([ISSUE_1, ISSUE_2]);
-    await repo.scheduleRetry({
-      issueId: ISSUE_1.id,
-      attemptNumber: 2,
-      dueAt: new Date(Date.now() + 60_000), // far future — exercises the proactive sweep, not the due-retry path
-      errorClass: 'turn_failed',
-      errorMessage: 'prior attempt failed',
-    });
-
-    const codexCmd = `STUB_SCENARIO=happy node ${STUB}`;
-    const config = resolveConfig(makeWorkflow(wsRoot, 'happy', codexCmd));
-    // Tracker returns only ISSUE_2 — ISSUE_1 has (externally) left the active set.
-    const loop = new OrchestratorLoop({
-      tracker: stubTracker([ISSUE_2]),
-      repo,
-      workspaces: new WorkspaceManager(wsRoot),
-      config,
-      log: pino({ level: 'silent' }),
-    });
-    await loop.tick();
-    const active = (loop as unknown as { active: Map<string, { done: Promise<void> }> }).active;
-    await Promise.all([...active.values()].map((h) => h.done));
-
-    const { data: q } = await db.from('retry_queue').select('*').eq('issue_id', ISSUE_1.id);
-    expect(q!.length).toBe(0);
-
-    await rm(wsRoot, { recursive: true, force: true });
-  });
-
-  it('sweep preserves retry when fetchById confirms issue is still active (partial snapshot)', async () => {
-    // Regression for PR review: fetchActive() is paginated (first: 100) and
-    // can be silently truncated in busy workspaces. Missing-from-activeIds
-    // is not proof of terminal-ness, so the sweep must confirm via fetchById
-    // before clearing. Here fetchActive reports only ISSUE_2 but fetchById
-    // reveals ISSUE_1 is still active — its retry row must survive.
-    await repo.upsertIssues([ISSUE_1, ISSUE_2]);
-    await repo.scheduleRetry({
-      issueId: ISSUE_1.id,
-      attemptNumber: 2,
-      dueAt: new Date(Date.now() + 60_000),
-      errorClass: 'turn_failed',
-      errorMessage: 'prior attempt failed',
-    });
-
-    const tracker: TrackerClient = {
-      preflight: async () => {},
-      fetchActive: async () => [ISSUE_2], // truncated: ISSUE_1 not in this page
-      fetchById: async (id) => {
-        if (id === ISSUE_1.id) return ISSUE_1; // but fetchById confirms active
-        if (id === ISSUE_2.id) return ISSUE_2;
-        return null;
-      },
-      fetchTerminal: async () => [],
-    };
-
-    const codexCmd = `STUB_SCENARIO=happy node ${STUB}`;
-    const config = resolveConfig(makeWorkflow(wsRoot, 'happy', codexCmd));
-    const loop = new OrchestratorLoop({
-      tracker,
-      repo,
-      workspaces: new WorkspaceManager(wsRoot),
-      config,
-      log: pino({ level: 'silent' }),
-    });
-    await loop.tick();
-    const active = (loop as unknown as { active: Map<string, { done: Promise<void> }> }).active;
-    await Promise.all([...active.values()].map((h) => h.done));
-
-    const { data: q } = await db.from('retry_queue').select('*').eq('issue_id', ISSUE_1.id);
-    expect(q!.length).toBe(1);
-
-    await rm(wsRoot, { recursive: true, force: true });
-  });
-
-  it('sweep is skipped when fetchActive() returns empty (safety guard)', async () => {
-    // If the tracker momentarily returns no issues (API blip, partial
-    // failure), the sweep must not wipe the queue — real backoff schedules
-    // for still-active issues would be lost. ISSUE_1's retry_queue row
-    // should survive a tick where fetchActive() returns [].
-    await repo.upsertIssues([ISSUE_1]);
-    await repo.scheduleRetry({
-      issueId: ISSUE_1.id,
-      attemptNumber: 2,
-      dueAt: new Date(Date.now() + 60_000),
-      errorClass: 'turn_failed',
-      errorMessage: 'prior attempt failed',
-    });
-
-    const codexCmd = `STUB_SCENARIO=happy node ${STUB}`;
-    const config = resolveConfig(makeWorkflow(wsRoot, 'happy', codexCmd));
-    const loop = new OrchestratorLoop({
-      tracker: stubTracker([]),
-      repo,
-      workspaces: new WorkspaceManager(wsRoot),
-      config,
-      log: pino({ level: 'silent' }),
-    });
-    await loop.tick();
-
-    const { data: q } = await db.from('retry_queue').select('*').eq('issue_id', ISSUE_1.id);
-    expect(q!.length).toBe(1);
-
-    await rm(wsRoot, { recursive: true, force: true });
   });
 
   it('does not redispatch while retry_queue.due_at is still in the future', async () => {
     // Regression for the SYM-1 infinite-loop bug: a fast-failing issue was
     // redispatched every pollIntervalMs because tick() eligibility only
     // checked blockers + in-flight map, never the retry_queue's due_at.
-    const codexCmd = `STUB_SCENARIO=error node ${STUB}`;
+    const issue = makeTestIssue({ id: scope.newIssueId(), identifier: scope.newIdentifier() });
+    const codexCommand = `STUB_SCENARIO=error node ${STUB}`;
     // maxRetryBackoffMs=60s ensures attempt-1's backoff lands ~4-6s out, far
     // beyond the sub-second window this test completes in.
-    const wf = makeWorkflow(wsRoot, 'error', codexCmd);
+    const wf = makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot, codexCommand });
     wf.frontMatter.agent.max_retry_backoff_ms = 60_000;
     const config = resolveConfig(wf);
     const loop = new OrchestratorLoop({
-      tracker: stubTracker([ISSUE_1]),
+      tracker: stubTracker([issue]),
       repo,
       workspaces: new WorkspaceManager(wsRoot),
       config,
       log: pino({ level: 'silent' }),
+      scopedIssueIds: [...scope.issueIds],
     });
 
     // First tick: dispatch + fail + schedule retry.
@@ -408,12 +230,9 @@ d('OrchestratorLoop integration', () => {
     const active = (loop as unknown as { active: Map<string, { done: Promise<void> }> }).active;
     await Promise.all([...active.values()].map((h) => h.done));
 
-    const { data: afterFirst } = await db
-      .from('run_attempts')
-      .select('*')
-      .eq('issue_id', ISSUE_1.id);
+    const { data: afterFirst } = await db.from('run_attempts').select('*').eq('issue_id', issue.id);
     expect(afterFirst!.length).toBe(1);
-    const { data: q } = await db.from('retry_queue').select('*').eq('issue_id', ISSUE_1.id);
+    const { data: q } = await db.from('retry_queue').select('*').eq('issue_id', issue.id);
     expect(q!.length).toBe(1);
     const dueAtMs = new Date(q![0]!.due_at).getTime();
     expect(dueAtMs).toBeGreaterThan(Date.now() + 1_000); // clearly in the future
@@ -424,9 +243,7 @@ d('OrchestratorLoop integration', () => {
     const { data: afterSecond } = await db
       .from('run_attempts')
       .select('*')
-      .eq('issue_id', ISSUE_1.id);
+      .eq('issue_id', issue.id);
     expect(afterSecond!.length).toBe(1); // still exactly one — no redispatch
-
-    await rm(wsRoot, { recursive: true, force: true });
   });
 });

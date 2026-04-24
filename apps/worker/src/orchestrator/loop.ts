@@ -13,6 +13,13 @@ export interface LoopDeps {
   workspaces: WorkspaceManager;
   config: ResolvedConfig;
   log: Logger;
+  /**
+   * Integration-test only. When set, `retry_queue` reads in `tick()` are
+   * restricted to these issue ids — so tests running against a shared Supabase
+   * cannot sweep the live worker's backoff state when the stub tracker's
+   * `fetchById` returns `null` for unknown ids.
+   */
+  scopedIssueIds?: string[];
 }
 
 /**
@@ -137,7 +144,9 @@ export class OrchestratorLoop {
     //     Fast-path the empty-snapshot case (skip entirely) and otherwise
     //     confirm each candidate with a direct `fetchById` before clearing.
     if (active.length > 0) {
-      const retryIds = await repo.allRetryIssueIds();
+      const retryIds = await repo.allRetryIssueIds(
+        this.deps.scopedIssueIds ? { issueIds: this.deps.scopedIssueIds } : undefined,
+      );
       for (const issueId of retryIds) {
         if (activeIds.has(issueId)) continue;
         if (!(await this.confirmNotActive(issueId))) continue;
@@ -187,7 +196,9 @@ export class OrchestratorLoop {
     }
 
     // 7. Run any due retries that aren't already in flight.
-    const due = await repo.dueRetries();
+    const due = await repo.dueRetries(
+      this.deps.scopedIssueIds ? { issueIds: this.deps.scopedIssueIds } : undefined,
+    );
     for (const r of due) {
       if (this.active.has(r.issue_id)) continue;
       const issue = active.find((i) => i.id === r.issue_id);

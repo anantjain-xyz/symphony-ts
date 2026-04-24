@@ -72,6 +72,7 @@ d('OrchestratorLoop integration', () => {
       workspaces: new WorkspaceManager(wsRoot),
       config,
       log: pino({ level: 'silent' }),
+      scopedIssueIds: [...scope.issueIds],
     });
     await loop.tick();
     const handles = (loop as unknown as { active: Map<string, { done: Promise<void> }> }).active;
@@ -111,6 +112,7 @@ d('OrchestratorLoop integration', () => {
       workspaces: new WorkspaceManager(wsRoot),
       config: resolveConfig(wf),
       log: pino({ level: 'silent' }),
+      scopedIssueIds: [...scope.issueIds],
     });
     await loop.tick();
     const active = (loop as unknown as { active: Map<string, unknown> }).active;
@@ -132,6 +134,7 @@ d('OrchestratorLoop integration', () => {
       workspaces: new WorkspaceManager(wsRoot),
       config,
       log: pino({ level: 'silent' }),
+      scopedIssueIds: [...scope.issueIds],
     });
     await loop.tick();
     const active = (loop as unknown as { active: Map<string, { done: Promise<void> }> }).active;
@@ -219,6 +222,7 @@ d('OrchestratorLoop integration', () => {
       workspaces: new WorkspaceManager(wsRoot),
       config,
       log: pino({ level: 'silent' }),
+      scopedIssueIds: [...scope.issueIds],
     });
 
     // First tick: dispatch + fail + schedule retry.

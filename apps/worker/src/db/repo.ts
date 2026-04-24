@@ -304,11 +304,10 @@ export class Repo {
     if (error) throw error;
   }
 
-  async dueRetries(): Promise<RetryQueueRow[]> {
-    const { data, error } = await this.db
-      .from('retry_queue')
-      .select('*')
-      .lte('due_at', new Date().toISOString());
+  async dueRetries(opts?: { issueIds?: string[] }): Promise<RetryQueueRow[]> {
+    let q = this.db.from('retry_queue').select('*').lte('due_at', new Date().toISOString());
+    if (opts?.issueIds) q = q.in('issue_id', opts.issueIds);
+    const { data, error } = await q;
     if (error) throw error;
     return data ?? [];
   }
@@ -329,8 +328,10 @@ export class Repo {
   }
 
   /** Issue ids of every row in `retry_queue`, regardless of `due_at`. */
-  async allRetryIssueIds(): Promise<string[]> {
-    const { data, error } = await this.db.from('retry_queue').select('issue_id');
+  async allRetryIssueIds(opts?: { issueIds?: string[] }): Promise<string[]> {
+    let q = this.db.from('retry_queue').select('issue_id');
+    if (opts?.issueIds) q = q.in('issue_id', opts.issueIds);
+    const { data, error } = await q;
     if (error) throw error;
     return (data ?? []).map((r) => r.issue_id);
   }

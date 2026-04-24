@@ -314,6 +314,13 @@ export class Repo {
     return new Set((data ?? []).map((r) => r.issue_id));
   }
 
+  /** Issue ids of every row in `retry_queue`, regardless of `due_at`. */
+  async allRetryIssueIds(): Promise<string[]> {
+    const { data, error } = await this.db.from('retry_queue').select('issue_id');
+    if (error) throw error;
+    return (data ?? []).map((r) => r.issue_id);
+  }
+
   async clearRetry(issueId: string): Promise<void> {
     const { error } = await this.db.from('retry_queue').delete().eq('issue_id', issueId);
     if (error) throw error;

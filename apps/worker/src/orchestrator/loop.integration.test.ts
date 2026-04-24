@@ -275,6 +275,116 @@ d('OrchestratorLoop integration', () => {
     await rm(wsRoot, { recursive: true, force: true });
   });
 
+  it('tick() clears retry_queue rows for issues that moved to a terminal state', async () => {
+    // Regression for SYM-10: a prior failed attempt scheduled a retry; the
+    // operator then moves the issue to a terminal state (Done/Canceled), so
+    // fetchActive() no longer returns it. The queued retry row should be
+    // swept — it's dead work, and would otherwise linger on the dashboard.
+    await repo.upsertIssues([ISSUE_1, ISSUE_2]);
+    await repo.scheduleRetry({
+      issueId: ISSUE_1.id,
+      attemptNumber: 2,
+      dueAt: new Date(Date.now() + 60_000), // far future — exercises the proactive sweep, not the due-retry path
+      errorClass: 'turn_failed',
+      errorMessage: 'prior attempt failed',
+    });
+
+    const codexCmd = `STUB_SCENARIO=happy node ${STUB}`;
+    const config = resolveConfig(makeWorkflow(wsRoot, 'happy', codexCmd));
+    // Tracker returns only ISSUE_2 — ISSUE_1 has (externally) left the active set.
+    const loop = new OrchestratorLoop({
+      tracker: stubTracker([ISSUE_2]),
+      repo,
+      workspaces: new WorkspaceManager(wsRoot),
+      config,
+      log: pino({ level: 'silent' }),
+    });
+    await loop.tick();
+    const active = (loop as unknown as { active: Map<string, { done: Promise<void> }> }).active;
+    await Promise.all([...active.values()].map((h) => h.done));
+
+    const { data: q } = await db.from('retry_queue').select('*').eq('issue_id', ISSUE_1.id);
+    expect(q!.length).toBe(0);
+
+    await rm(wsRoot, { recursive: true, force: true });
+  });
+
+  it('sweep preserves retry when fetchById confirms issue is still active (partial snapshot)', async () => {
+    // Regression for PR review: fetchActive() is paginated (first: 100) and
+    // can be silently truncated in busy workspaces. Missing-from-activeIds
+    // is not proof of terminal-ness, so the sweep must confirm via fetchById
+    // before clearing. Here fetchActive reports only ISSUE_2 but fetchById
+    // reveals ISSUE_1 is still active — its retry row must survive.
+    await repo.upsertIssues([ISSUE_1, ISSUE_2]);
+    await repo.scheduleRetry({
+      issueId: ISSUE_1.id,
+      attemptNumber: 2,
+      dueAt: new Date(Date.now() + 60_000),
+      errorClass: 'turn_failed',
+      errorMessage: 'prior attempt failed',
+    });
+
+    const tracker: TrackerClient = {
+      preflight: async () => {},
+      fetchActive: async () => [ISSUE_2], // truncated: ISSUE_1 not in this page
+      fetchById: async (id) => {
+        if (id === ISSUE_1.id) return ISSUE_1; // but fetchById confirms active
+        if (id === ISSUE_2.id) return ISSUE_2;
+        return null;
+      },
+      fetchTerminal: async () => [],
+    };
+
+    const codexCmd = `STUB_SCENARIO=happy node ${STUB}`;
+    const config = resolveConfig(makeWorkflow(wsRoot, 'happy', codexCmd));
+    const loop = new OrchestratorLoop({
+      tracker,
+      repo,
+      workspaces: new WorkspaceManager(wsRoot),
+      config,
+      log: pino({ level: 'silent' }),
+    });
+    await loop.tick();
+    const active = (loop as unknown as { active: Map<string, { done: Promise<void> }> }).active;
+    await Promise.all([...active.values()].map((h) => h.done));
+
+    const { data: q } = await db.from('retry_queue').select('*').eq('issue_id', ISSUE_1.id);
+    expect(q!.length).toBe(1);
+
+    await rm(wsRoot, { recursive: true, force: true });
+  });
+
+  it('sweep is skipped when fetchActive() returns empty (safety guard)', async () => {
+    // If the tracker momentarily returns no issues (API blip, partial
+    // failure), the sweep must not wipe the queue — real backoff schedules
+    // for still-active issues would be lost. ISSUE_1's retry_queue row
+    // should survive a tick where fetchActive() returns [].
+    await repo.upsertIssues([ISSUE_1]);
+    await repo.scheduleRetry({
+      issueId: ISSUE_1.id,
+      attemptNumber: 2,
+      dueAt: new Date(Date.now() + 60_000),
+      errorClass: 'turn_failed',
+      errorMessage: 'prior attempt failed',
+    });
+
+    const codexCmd = `STUB_SCENARIO=happy node ${STUB}`;
+    const config = resolveConfig(makeWorkflow(wsRoot, 'happy', codexCmd));
+    const loop = new OrchestratorLoop({
+      tracker: stubTracker([]),
+      repo,
+      workspaces: new WorkspaceManager(wsRoot),
+      config,
+      log: pino({ level: 'silent' }),
+    });
+    await loop.tick();
+
+    const { data: q } = await db.from('retry_queue').select('*').eq('issue_id', ISSUE_1.id);
+    expect(q!.length).toBe(1);
+
+    await rm(wsRoot, { recursive: true, force: true });
+  });
+
   it('does not redispatch while retry_queue.due_at is still in the future', async () => {
     // Regression for the SYM-1 infinite-loop bug: a fast-failing issue was
     // redispatched every pollIntervalMs because tick() eligibility only

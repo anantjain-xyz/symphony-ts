@@ -13,7 +13,7 @@
  * attempt, so we exit when the child exits.
  *
  * Claude-specific config is read from env vars the worker sets when spawning:
- *   SYMPHONY_CLAUDE_PERMISSION_MODE   default | acceptEdits | bypassPermissions | plan
+ *   SYMPHONY_CLAUDE_PERMISSION_MODE   default | acceptEdits | auto | bypassPermissions | dontAsk | plan
  *   SYMPHONY_CLAUDE_ALLOWED_TOOLS     comma-joined list (omit for default allow)
  *   SYMPHONY_CLAUDE_DISALLOWED_TOOLS  comma-joined list
  *   SYMPHONY_CLAUDE_ADD_DIRS          `:` separated extra --add-dir scopes

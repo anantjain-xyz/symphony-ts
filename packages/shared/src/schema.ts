@@ -103,7 +103,14 @@ export const CodexConfig = z
   });
 export type CodexConfig = z.infer<typeof CodexConfig>;
 
-export const ClaudePermissionMode = z.enum(['default', 'acceptEdits', 'bypassPermissions', 'plan']);
+export const ClaudePermissionMode = z.enum([
+  'default',
+  'acceptEdits',
+  'auto',
+  'bypassPermissions',
+  'dontAsk',
+  'plan',
+]);
 export type ClaudePermissionMode = z.infer<typeof ClaudePermissionMode>;
 
 export const ClaudeConfig = z

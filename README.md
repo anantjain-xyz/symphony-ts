@@ -2,7 +2,7 @@
 
 TypeScript port of [Symphony](https://github.com/openai/symphony), backed by Supabase for persistence and realtime.
 
-A long-running daemon that polls Linear for active issues, provisions isolated workspaces per issue, and runs Codex coding-agent sessions against them with retries, concurrency caps, and live operator observability.
+A long-running daemon that polls Linear for active issues, provisions isolated workspaces per issue, and runs Claude Code (or Codex) coding-agent sessions against them with retries, concurrency caps, and live operator observability.
 
 ## The big picture
 
@@ -22,7 +22,7 @@ A long-running daemon that polls Linear for active issues, provisions isolated w
         │ spawn
         ▼
  ┌──────────────┐    NDJSON     ┌──────────────┐
- │ codex-adapter│ ◀───JSON-RPC─▶│ codex exec   │   ← the actual LLM agent
+ │ agent adapter│ ◀───JSON-RPC─▶│claude / codex│   ← the actual LLM agent
  │    (.mjs)    │               │  (subproc)   │
  └──────────────┘               └──────────────┘
         │
@@ -52,7 +52,7 @@ symphony-ts/
     └── dashboard/         Next.js 15 operator console
 ```
 
-- `apps/worker/` — Node daemon (poll loop, orchestrator, workspace manager, Codex runner)
+- `apps/worker/` — Node daemon (poll loop, orchestrator, workspace manager, agent runner)
 - `apps/dashboard/` — Next.js operator console (live session view)
 - `packages/shared/` — zod schemas, generated DB types, Supabase client factory
 - `supabase/` — local Supabase config + SQL migrations
@@ -168,9 +168,9 @@ apps/worker/src/
 │   └── backoff.ts        exponential + jitter
 │
 ├── agent/                ⭐ the data plane
-│   ├── codex.ts          CodexRunner: spawn adapter, stream events
+│   ├── runner.ts         AgentRunner: spawn adapter (codex | claude), stream events
 │   ├── protocol.ts       NDJSON JSON-RPC wire types
-│   └── events.ts         map Codex events → DB rows
+│   └── events.ts         map agent events → DB rows
 │
 ├── db/
 │   ├── repo.ts           typed CRUD, AlreadyRunningError for races
@@ -187,7 +187,7 @@ apps/worker/src/
     └── render.ts         Mustache render + retry-context appending
 ```
 
-Plus `agents/codex-adapter.mjs` — a standalone Node script that bridges Symphony's NDJSON protocol to `codex exec --json`. And `scripts/seed.ts` for seeding test data.
+Plus `agents/codex-adapter.mjs` and `agents/claude-adapter.mjs` — standalone Node scripts that bridge Symphony's NDJSON protocol to `codex exec --json` or `claude` respectively. `WORKFLOW.md`'s `agent.backend` (`codex` | `claude`; schema default `codex`, shipped `WORKFLOW.md` sets `claude`) picks which one. And `scripts/seed.ts` for seeding test data.
 
 #### The hot path (`orchestrator/`)
 
@@ -212,7 +212,7 @@ Plus `agents/codex-adapter.mjs` — a standalone Node script that bridges Sympho
   ├─ repo.markRunning()                ← race-detected via partial unique index
   │     └─ before_run hook (non-fatal)
   ├─ prompt.render() + retry context
-  ├─ CodexRunner.run()
+  ├─ AgentRunner.run()
   │     └─ for each turn event:
   │         ├─ agent_events INSERT     ← append-only firehose
   │         └─ live_sessions UPSERT    ← token counts, status
@@ -231,7 +231,7 @@ Plus `agents/codex-adapter.mjs` — a standalone Node script that bridges Sympho
 | File | Purpose |
 |---|---|
 | `protocol.ts` | Wire types: `initialize`, `thread/start`, `turn/start`, `turn/event`, `turn/complete`. Pure types, no logic. |
-| `codex.ts` | `CodexRunner` class: spawns adapter via execa, pipes NDJSON, emits events, handles interrupt/kill/timeout. |
+| `runner.ts` | `AgentRunner` class: spawns the selected adapter via execa, pipes NDJSON, emits events, handles interrupt/kill/timeout. |
 | `events.ts` | `mapTurnEvent()` → `{ kind, payload }` that matches the `AgentEventKind` zod schema. |
 
 #### Everything else
@@ -256,11 +256,15 @@ apps/dashboard/src/
 ├── app/
 │   ├── layout.tsx                shell + header
 │   ├── globals.css               Tailwind + dark theme
-│   ├── page.tsx                  ⭐ fleet view: running / retries / failures
+│   ├── page.tsx                  ⭐ fleet view: KPIs + active / retries / failures / past
+│   ├── KpiBlock.tsx              KPI metric card
+│   ├── LiveRuntime.tsx           worker heartbeat / uptime KPI
+│   ├── RealtimeRefresh.tsx       Supabase subscription → router.refresh
 │   ├── issues/[id]/page.tsx      one issue, all its attempts
 │   └── sessions/[id]/
 │       ├── page.tsx              attempt metadata (SSR)
-│       └── LiveStream.tsx        ⭐ client component, Supabase Realtime
+│       ├── LiveStream.tsx        ⭐ client component, Supabase Realtime
+│       └── EventBlock.tsx        agent-event renderer
 │
 └── lib/
     ├── env.ts                    env validation
@@ -270,7 +274,7 @@ apps/dashboard/src/
 
 | Route | File | What you see |
 |---|---|---|
-| `/` | `app/page.tsx` | Three tables: Running, Pending Retries, Recent Failures |
+| `/` | `app/page.tsx` | KPI header + four sections: Active runs, Retry queue, Recent failures, Past runs |
 | `/issues/[id]` | `app/issues/[id]/page.tsx` | Issue header + attempts list w/ status colors |
 | `/sessions/[id]` | `app/sessions/[id]/page.tsx` + `LiveStream.tsx` | Live event firehose — subscribes to `agent_events` (INSERT) and `live_sessions` (*) for this attempt |
 
@@ -282,20 +286,27 @@ Worker uses service-role (bypasses RLS). Dashboard uses the anon key and reads t
 supabase/
 ├── config.toml                   local dev ports 54421-54427
 └── migrations/
-    ├── 20260415005242_init.sql                         ⭐ 7 tables, 3 enums, RLS, Realtime
-    └── 20260420220000_run_attempts_running_invariant.sql   partial unique index
+    ├── 20260415005242_init.sql                            ⭐ 7 tables, 3 enums, RLS, Realtime
+    ├── 20260420220000_run_attempts_running_invariant.sql  partial unique index
+    ├── 20260423000000_fix_realtime_publication.sql        target supabase_realtime publication
+    ├── 20260423120000_dashboard_terminal_status.sql       rate_limit_state, worker_heartbeat, agent_events_latest view
+    ├── 20260423120001_agent_event_kind_rate_limit.sql     adds 'rate_limit' enum value
+    └── 20260423230000_disable_auth_rls.sql                RLS off (local-only stack)
 ```
 
-The seven tables:
+The nine tables (+ one view):
 
 ```
- workflows       ← WORKFLOW.md snapshots (content-addressed)
- issues          ← normalized from Linear; upserted each tick
- run_attempts    ← one row per dispatch; status: pending/running/succeeded/failed/cancelled
- agent_events    ← append-only event firehose (the LLM's activity)
- live_sessions   ← ephemeral in-flight state; deleted on completion
- retry_queue     ← scheduled retries with due_at
- hook_runs       ← every before_/after_ hook invocation
+ workflows             ← WORKFLOW.md snapshots (content-addressed)
+ issues                ← normalized from Linear; upserted each tick
+ run_attempts          ← one row per dispatch; status: pending/running/succeeded/failed/cancelled
+ agent_events          ← append-only event firehose (the LLM's activity)
+ live_sessions         ← ephemeral in-flight state; deleted on completion
+ retry_queue           ← scheduled retries with due_at
+ hook_runs             ← every before_/after_ hook invocation
+ rate_limit_state      ← per-source rate-limit buckets
+ worker_heartbeat      ← single-row liveness ping
+ agent_events_latest   ← (view) latest event per run_attempt
 ```
 
 The second migration adds a **partial unique index** on `run_attempts` where `status='running'` per `issue_id` — this is what makes `AlreadyRunningError` possible and prevents duplicate dispatch.
@@ -313,17 +324,17 @@ The second migration adds a **partial unique index** on `run_attempts` where `st
        workspace exists? → reuse, else create + git clone (after_create)
        markRunning (wins race)
        before_run hook
-       CodexRunner spawns codex-adapter.mjs
+       AgentRunner spawns the configured adapter (codex or claude)
            │
            ▼
- ④ Codex streams turn/event → events.ts → agent_events INSERT
-                              live_sessions UPSERT (tokens, status)
+ ④ adapter streams turn/event → events.ts → agent_events INSERT
+                                live_sessions UPSERT (tokens, status)
            │
            ▼
  ⑤ Dashboard LiveStream.tsx sees Realtime INSERTs → UI updates live
            │
            ▼
- ⑥ Codex returns turn/complete:
+ ⑥ adapter returns turn/complete:
        success → clearRetry, finalize run_attempt='succeeded'
        failure → scheduleRetry(backoffMs), run_attempt='failed'
            │
@@ -352,7 +363,7 @@ To understand the system, read in this order:
 2. `packages/shared/src/schema.ts` — the types
 3. `apps/worker/src/orchestrator/loop.ts` — the tick
 4. `apps/worker/src/orchestrator/dispatch.ts` — one attempt
-5. `apps/worker/src/agent/codex.ts` — the subprocess bridge
+5. `apps/worker/src/agent/runner.ts` — the subprocess bridge
 6. `supabase/migrations/20260415005242_init.sql` — the data model
 7. `apps/dashboard/src/app/sessions/[id]/LiveStream.tsx` — how the UI stays live
 

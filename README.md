@@ -187,7 +187,7 @@ apps/worker/src/
     └── render.ts         Mustache render + retry-context appending
 ```
 
-Plus `agents/codex-adapter.mjs` and `agents/claude-adapter.mjs` — standalone Node scripts that bridge Symphony's NDJSON protocol to `codex exec --json` or `claude` respectively. `WORKFLOW.md`'s `agent.backend` (`codex` | `claude`, default `claude`) picks which one. And `scripts/seed.ts` for seeding test data.
+Plus `agents/codex-adapter.mjs` and `agents/claude-adapter.mjs` — standalone Node scripts that bridge Symphony's NDJSON protocol to `codex exec --json` or `claude` respectively. `WORKFLOW.md`'s `agent.backend` (`codex` | `claude`; schema default `codex`, shipped `WORKFLOW.md` sets `claude`) picks which one. And `scripts/seed.ts` for seeding test data.
 
 #### The hot path (`orchestrator/`)
 

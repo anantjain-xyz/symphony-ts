@@ -245,6 +245,10 @@ export function dispatchAttempt(
           errorClass: 'reconciled',
           errorMessage: cancelReason ?? 'cancelled',
         });
+        // A prior attempt may have scheduled a retry that cancellation just
+        // superseded — the issue has moved on (state change), so its next
+        // action comes from the tracker, not the retry queue.
+        await repo.clearRetry(issue.id);
       } else if (result.outcome === 'success') {
         await repo.finishAttempt({ attemptId: attempt.id, status: 'success' });
         await repo.clearRetry(issue.id);

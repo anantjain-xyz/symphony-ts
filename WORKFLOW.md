@@ -22,7 +22,8 @@ workspace:
 hooks:
   after_create: |
     git clone "$REPO_URL" .
-    git checkout -B "symphony/${ISSUE_IDENTIFIER}"
+    git checkout -B "${ISSUE_BRANCH:-symphony/${ISSUE_IDENTIFIER}}"
+    pnpm install --frozen-lockfile
   before_run: |
     echo "starting attempt for ${ISSUE_IDENTIFIER}"
   after_run: |

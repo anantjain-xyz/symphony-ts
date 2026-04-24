@@ -21,6 +21,7 @@
 
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { join } from 'node:path';
 import readline from 'node:readline';
 import { createClaudeStream } from './claude-stream.mjs';
 
@@ -169,6 +170,11 @@ function buildClaudeArgs() {
 
   const disallowed = process.env.SYMPHONY_CLAUDE_DISALLOWED_TOOLS;
   if (disallowed && disallowed.length > 0) args.push('--disallowedTools', disallowed);
+
+  // The default sandbox denies writes under CWD's .git/ even when git bash
+  // commands are allow-listed, which breaks fetch/commit/push/switch. Explicitly
+  // re-add it so normal local git flows work in the workspace.
+  args.push('--add-dir', join(thread.cwd, '.git'));
 
   const addDirs = process.env.SYMPHONY_CLAUDE_ADD_DIRS;
   if (addDirs && addDirs.length > 0) {

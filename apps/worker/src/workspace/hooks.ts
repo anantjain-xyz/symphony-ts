@@ -47,6 +47,7 @@ export async function runHook(
   childEnv.ISSUE_IDENTIFIER = env.issue.identifier;
   childEnv.ISSUE_TITLE = env.issue.title;
   childEnv.ISSUE_STATE = env.issue.state;
+  childEnv.ISSUE_BRANCH = env.issue.branch ?? '';
   childEnv.ATTEMPT_NUMBER = String(env.attemptNumber);
   childEnv.WORKSPACE_PATH = env.workspacePath;
 

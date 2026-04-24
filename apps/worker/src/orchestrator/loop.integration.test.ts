@@ -9,6 +9,7 @@ import { resolveConfig } from '../config/resolve.js';
 import { Repo } from '../db/repo.js';
 import type { TrackerClient } from '../tracker/linear.js';
 import { WorkspaceManager } from '../workspace/manager.js';
+import { dispatchAttempt } from './dispatch.js';
 import { OrchestratorLoop } from './loop.js';
 
 const SUPA_URL = process.env.TEST_SUPABASE_URL ?? 'http://127.0.0.1:54421';
@@ -211,6 +212,66 @@ d('OrchestratorLoop integration', () => {
     const { data: q } = await db.from('retry_queue').select('*').eq('issue_id', ISSUE_1.id);
     expect(q!.length).toBe(1);
     expect(q![0]!.attempt_number).toBe(2);
+    await rm(wsRoot, { recursive: true, force: true });
+  });
+
+  it('cancelling a mid-run attempt clears the pre-existing retry_queue row', async () => {
+    // Regression for SYM-7: a prior failed attempt scheduled a retry; the
+    // next attempt starts, is cancelled mid-run (issue state changed
+    // externally, triggering reconcile), and must not leave the stale
+    // retry row behind — the issue has moved on.
+    await repo.upsertIssues([ISSUE_1]);
+    await repo.scheduleRetry({
+      issueId: ISSUE_1.id,
+      attemptNumber: 2,
+      dueAt: new Date(Date.now() + 60_000),
+      errorClass: 'turn_failed',
+      errorMessage: 'prior attempt failed',
+    });
+
+    const codexCmd = `STUB_SCENARIO=interrupt node ${STUB}`;
+    const config = resolveConfig(makeWorkflow(wsRoot, 'interrupt', codexCmd));
+    const workspaces = new WorkspaceManager(wsRoot);
+    const reserved = await repo.tryReserveAttempt({
+      issueId: ISSUE_1.id,
+      attemptNumber: 2,
+      workspacePath: workspaces.pathFor(ISSUE_1.identifier),
+    });
+    expect(reserved).not.toBeNull();
+
+    const handle = dispatchAttempt(
+      { repo, workspaces, config, log: pino({ level: 'silent' }) },
+      ISSUE_1,
+      reserved!,
+    );
+
+    // Wait for markRunning to land before cancelling so we exercise the
+    // mid-run cancel branch rather than the AlreadyRunningError path.
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      const { data } = await db
+        .from('run_attempts')
+        .select('status')
+        .eq('id', reserved!.id)
+        .single();
+      if (data?.status === 'running') break;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+
+    await handle.cancel('issue state changed');
+    await handle.done;
+
+    const { data: finished } = await db
+      .from('run_attempts')
+      .select('*')
+      .eq('id', reserved!.id)
+      .single();
+    expect(finished!.status).toBe('cancelled');
+    expect(finished!.error_class).toBe('reconciled');
+
+    const { data: q } = await db.from('retry_queue').select('*').eq('issue_id', ISSUE_1.id);
+    expect(q!.length).toBe(0);
+
     await rm(wsRoot, { recursive: true, force: true });
   });
 

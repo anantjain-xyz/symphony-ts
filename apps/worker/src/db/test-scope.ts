@@ -35,7 +35,10 @@ export class TestScope {
 
   async cleanup(db: SymphonyClient): Promise<void> {
     if (this._issueIds.size > 0) {
-      const { error } = await db.from('issues').delete().in('id', [...this._issueIds]);
+      const { error } = await db
+        .from('issues')
+        .delete()
+        .in('id', [...this._issueIds]);
       if (error) throw error;
     }
     if (this._workflowHashes.size > 0) {

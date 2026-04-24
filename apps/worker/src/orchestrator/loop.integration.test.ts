@@ -226,10 +226,7 @@ d('OrchestratorLoop integration', () => {
     const active = (loop as unknown as { active: Map<string, { done: Promise<void> }> }).active;
     await Promise.all([...active.values()].map((h) => h.done));
 
-    const { data: afterFirst } = await db
-      .from('run_attempts')
-      .select('*')
-      .eq('issue_id', issue.id);
+    const { data: afterFirst } = await db.from('run_attempts').select('*').eq('issue_id', issue.id);
     expect(afterFirst!.length).toBe(1);
     const { data: q } = await db.from('retry_queue').select('*').eq('issue_id', issue.id);
     expect(q!.length).toBe(1);

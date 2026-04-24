@@ -55,6 +55,16 @@ export class Repo {
     return data;
   }
 
+  async getWorkflowBySourceHash(sourceHash: string): Promise<WorkflowRow | null> {
+    const { data, error } = await this.db
+      .from('workflows')
+      .select('*')
+      .eq('source_hash', sourceHash)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+
   // ---- issues ----
   async upsertIssues(issues: Issue[]): Promise<void> {
     if (issues.length === 0) return;
@@ -138,17 +148,21 @@ export class Repo {
     if (error) throw error;
   }
 
-  async listRunning(): Promise<RunAttemptRow[]> {
-    const { data, error } = await this.db.from('run_attempts').select('*').eq('status', 'running');
+  async listRunning(opts?: { issueIds?: string[] }): Promise<RunAttemptRow[]> {
+    let q = this.db.from('run_attempts').select('*').eq('status', 'running');
+    if (opts?.issueIds) q = q.in('issue_id', opts.issueIds);
+    const { data, error } = await q;
     if (error) throw error;
     return data ?? [];
   }
 
-  async countRunning(): Promise<number> {
-    const { count, error } = await this.db
+  async countRunning(opts?: { issueIds?: string[] }): Promise<number> {
+    let q = this.db
       .from('run_attempts')
       .select('id', { count: 'exact', head: true })
       .eq('status', 'running');
+    if (opts?.issueIds) q = q.in('issue_id', opts.issueIds);
+    const { count, error } = await q;
     if (error) throw error;
     return count ?? 0;
   }

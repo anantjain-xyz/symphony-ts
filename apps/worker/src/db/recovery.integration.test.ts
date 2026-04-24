@@ -1,14 +1,16 @@
 import { mkdir, mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { createServiceClient, type Issue, type ParsedWorkflow } from '@symphony/shared';
+import { createServiceClient, type Issue } from '@symphony/shared';
 import pino from 'pino';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { resolveConfig } from '../config/resolve.js';
 import type { TrackerClient } from '../tracker/linear.js';
 import { sanitizeKey, WorkspaceManager } from '../workspace/manager.js';
 import { recover } from './recovery.js';
 import { Repo } from './repo.js';
+import { makeTestIssue, makeTestWorkflow } from './test-helpers.js';
+import { TestScope } from './test-scope.js';
 
 const SUPA_URL = process.env.TEST_SUPABASE_URL ?? 'http://127.0.0.1:54421';
 const SERVICE_ROLE = process.env.TEST_SUPABASE_SERVICE_ROLE_KEY;
@@ -19,72 +21,7 @@ if (skip) {
   console.warn('recovery integration tests skipped (set TEST_SUPABASE_SERVICE_ROLE_KEY to enable)');
 }
 
-const ACTIVE: Issue = {
-  id: '66666666-6666-6666-6666-666666666666',
-  identifier: 'REC-1',
-  title: 'active issue',
-  description: null,
-  priority: 1,
-  state: 'todo',
-  branch: null,
-  labels: [],
-  blockers: [],
-};
-
-const TERMINAL: Issue = {
-  id: '77777777-7777-7777-7777-777777777777',
-  identifier: 'REC-2',
-  title: 'terminal issue',
-  description: null,
-  priority: 2,
-  state: 'done',
-  branch: null,
-  labels: [],
-  blockers: [],
-};
-
-function workflow(wsRoot: string): ParsedWorkflow {
-  return {
-    sourceHash: 'c'.repeat(64),
-    promptTemplate: 'p',
-    frontMatter: {
-      tracker: {
-        kind: 'linear',
-        endpoint: 'http://stub',
-        api_key: 'k',
-        active_states: ['todo'],
-        terminal_states: ['done'],
-      },
-      polling: { interval_ms: 30000 },
-      workspace: { root: wsRoot },
-      hooks: { timeout_ms: 60000 },
-      agent: {
-        backend: 'codex',
-        max_concurrent_agents: 4,
-        max_retry_backoff_ms: 1000,
-        max_concurrent_agents_by_state: {},
-      },
-      codex: {
-        command: 'codex',
-        approval_policy: 'never',
-        thread_sandbox: 'workspace-write',
-        turn_sandbox_policy: 'inherit',
-        turn_timeout_ms: 3600000,
-        network_access: false,
-      },
-      claude: {
-        command: 'claude',
-        permission_mode: 'acceptEdits',
-        allowed_tools: [],
-        disallowed_tools: [],
-        add_dirs: [],
-        turn_timeout_ms: 3600000,
-      },
-    },
-  };
-}
-
-function tracker(active: Issue[], terminal: Issue[]): TrackerClient {
+function stubTracker(active: Issue[], terminal: Issue[]): TrackerClient {
   return {
     preflight: async () => {},
     fetchActive: async () => active,
@@ -98,92 +35,100 @@ d('recover', () => {
   let db: ReturnType<typeof createServiceClient>;
   let repo: Repo;
   let wsRoot: string;
+  let scope: TestScope;
 
-  async function clean() {
-    if (!db) {
-      return;
-    }
-
-    await db.from('agent_events').delete().neq('id', 0);
-    await db
-      .from('live_sessions')
-      .delete()
-      .neq('run_attempt_id', '00000000-0000-0000-0000-000000000000');
-    await db.from('hook_runs').delete().neq('id', 0);
-    await db.from('retry_queue').delete().neq('issue_id', '');
-    await db.from('run_attempts').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-    await db.from('issues').delete().neq('id', '');
-    await db.from('workflows').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-  }
-
-  beforeAll(async () => {
+  beforeAll(() => {
     db = createServiceClient({ url: SUPA_URL, serviceRoleKey: SERVICE_ROLE! });
     repo = new Repo(db);
-    await clean();
   });
-  afterAll(clean);
+
   beforeEach(async () => {
-    await clean();
+    scope = new TestScope();
     wsRoot = await mkdtemp(path.join(tmpdir(), 'symphony-rec-'));
-    await repo.upsertIssues([ACTIVE, TERMINAL]);
+  });
+
+  afterEach(async () => {
+    await scope.cleanup(db);
+    await rm(wsRoot, { recursive: true, force: true });
   });
 
   it('marks orphan running attempts as failure and schedules retry', async () => {
+    const active = makeTestIssue({
+      id: scope.newIssueId(),
+      identifier: scope.newIdentifier(),
+      state: 'todo',
+    });
+    await repo.upsertIssues([active]);
+
     const reserved = await repo.tryReserveAttempt({
-      issueId: ACTIVE.id,
+      issueId: active.id,
       attemptNumber: 1,
       workspacePath: '/tmp/orphan',
     });
     await repo.markRunning(reserved!.id);
 
-    const config = resolveConfig(workflow(wsRoot));
+    const config = resolveConfig(makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot }));
     const out = await recover({
       repo,
-      tracker: tracker([ACTIVE], []),
+      tracker: stubTracker([active], []),
       workspaces: new WorkspaceManager(wsRoot),
       config,
       log: pino({ level: 'silent' }),
+      scopedIssueIds: [...scope.issueIds],
     });
 
     expect(out.orphansAdopted).toBe(1);
     const { data: row } = await db.from('run_attempts').select('*').eq('id', reserved!.id).single();
     expect(row!.status).toBe('failure');
     expect(row!.error_class).toBe('process_crashed');
-    const { data: q } = await db.from('retry_queue').select('*').eq('issue_id', ACTIVE.id);
+    const { data: q } = await db.from('retry_queue').select('*').eq('issue_id', active.id);
     expect(q!.length).toBe(1);
     expect(q![0]!.attempt_number).toBe(2);
   });
 
   it('removes workspaces of terminal-state issues with no active attempts', async () => {
-    const wsForTerminal = path.join(wsRoot, sanitizeKey(TERMINAL.identifier));
+    const active = makeTestIssue({
+      id: scope.newIssueId(),
+      identifier: scope.newIdentifier(),
+      state: 'todo',
+    });
+    const terminal = makeTestIssue({
+      id: scope.newIssueId(),
+      identifier: scope.newIdentifier(),
+      state: 'done',
+    });
+    await repo.upsertIssues([active, terminal]);
+
+    const wsForTerminal = path.join(wsRoot, sanitizeKey(terminal.identifier));
     await mkdir(wsForTerminal, { recursive: true });
-    const wsForActive = path.join(wsRoot, sanitizeKey(ACTIVE.identifier));
+    const wsForActive = path.join(wsRoot, sanitizeKey(active.identifier));
     await mkdir(wsForActive, { recursive: true });
 
     const out = await recover({
       repo,
-      tracker: tracker([ACTIVE], [TERMINAL]),
+      tracker: stubTracker([active], [terminal]),
       workspaces: new WorkspaceManager(wsRoot),
-      config: resolveConfig(workflow(wsRoot)),
+      config: resolveConfig(makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot })),
       log: pino({ level: 'silent' }),
+      scopedIssueIds: [...scope.issueIds],
     });
 
     expect(out.workspacesRemoved).toBe(1);
     await expect(stat(wsForTerminal)).rejects.toThrow();
     await expect(stat(wsForActive)).resolves.toBeDefined();
-    await rm(wsRoot, { recursive: true, force: true });
   });
 
   it('persists workflow snapshot during recover', async () => {
-    const wf = workflow(wsRoot);
+    const wf = makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot });
     await recover({
       repo,
-      tracker: tracker([], []),
+      tracker: stubTracker([], []),
       workspaces: new WorkspaceManager(wsRoot),
       config: resolveConfig(wf),
       log: pino({ level: 'silent' }),
+      scopedIssueIds: [...scope.issueIds],
     });
-    const latest = await repo.latestWorkflow();
-    expect(latest?.source_hash).toBe(wf.sourceHash);
+    const row = await repo.getWorkflowBySourceHash(wf.sourceHash);
+    expect(row?.source_hash).toBe(wf.sourceHash);
   });
 });

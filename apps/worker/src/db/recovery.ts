@@ -11,6 +11,13 @@ export interface RecoveryDeps {
   workspaces: WorkspaceManager;
   config: ResolvedConfig;
   log: Logger;
+  /**
+   * Integration-test only. When set, orphan adoption is restricted to
+   * `run_attempts` whose `issue_id` is in this list — so tests running against
+   * a shared Supabase don't mark the live worker's in-flight attempts as
+   * crashed.
+   */
+  scopedIssueIds?: string[];
 }
 
 export interface RecoveryOutcome {
@@ -40,7 +47,9 @@ export async function recover(deps: RecoveryDeps): Promise<RecoveryOutcome> {
 
   await repo.upsertWorkflow(config.workflow());
 
-  const orphans = await repo.listRunning();
+  const orphans = await repo.listRunning(
+    deps.scopedIssueIds ? { issueIds: deps.scopedIssueIds } : undefined,
+  );
   for (const o of orphans) {
     log.warn(
       { attemptId: o.id, issueId: o.issue_id },

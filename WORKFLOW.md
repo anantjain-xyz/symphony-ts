@@ -33,7 +33,7 @@ agent:
   # Which backend to drive. `codex` spawns `codex-adapter.mjs`; `claude` spawns
   # `claude-adapter.mjs` and supports `pnpm --filter @symphony/worker attach
   # <issue>` to resume the same session from your own terminal.
-  backend: codex
+  backend: claude
   max_concurrent_agents: 4
   max_retry_backoff_ms: 300000
   max_concurrent_agents_by_state:
@@ -48,9 +48,41 @@ codex:
 
 claude:
   command: node ${SYMPHONY_CLAUDE_ADAPTER}
-  # default | acceptEdits | bypassPermissions | plan
-  permission_mode: acceptEdits
-  allowed_tools: []
+  # default | acceptEdits | auto | bypassPermissions | dontAsk | plan
+  permission_mode: auto
+  # Workflow-essential tools the agent needs in every target repo. The target
+  # repo's .claude/settings.json can layer in repo-specific extras on top.
+  allowed_tools:
+    # GitHub CLI (PR create/view/comment/merge, gh api, gh auth status, gh run)
+    - Bash(gh *)
+    # Git read + the mutating ops the workflow needs (commit/push/branch/etc).
+    # Destructive forms (reset --hard, push --force*, clean -f*) intentionally omitted.
+    - Bash(git status*)
+    - Bash(git log*)
+    - Bash(git diff*)
+    - Bash(git show*)
+    - Bash(git branch*)
+    - Bash(git checkout*)
+    - Bash(git switch*)
+    - Bash(git add*)
+    - Bash(git commit*)
+    - Bash(git push)
+    - Bash(git push origin*)
+    - Bash(git pull*)
+    - Bash(git fetch*)
+    - Bash(git merge*)
+    - Bash(git rebase*)
+    - Bash(git remote*)
+    - Bash(git stash*)
+    - Bash(git rev-parse*)
+    - Bash(git ls-files*)
+    - Bash(git config --get*)
+    # Read-only diagnostics the agent commonly probes for.
+    - Bash(which *)
+    - Bash(node --version)
+    - Bash(pnpm --version)
+    - Bash(npm --version)
+    - Bash(python3 --version)
   disallowed_tools: []
   add_dirs: []
   turn_timeout_ms: 3600000

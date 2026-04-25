@@ -1,6 +1,11 @@
 import type { Issue } from '@symphony/shared';
-import { describe, expect, it } from 'vitest';
-import { appendRetryContext, renderPrompt } from './render.js';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  appendRetryContext,
+  buildRetryContext,
+  renderPrompt,
+  type RetryContextRepo,
+} from './render.js';
 
 const ISSUE: Issue = {
   id: 'uuid',
@@ -80,5 +85,77 @@ describe('appendRetryContext', () => {
       recentEvents: [],
     });
     expect(out).not.toContain('Last attempt failed');
+  });
+});
+
+describe('buildRetryContext', () => {
+  it('returns null on the first attempt (no trailer to append)', async () => {
+    const repo: RetryContextRepo = {
+      priorAttempt: vi.fn(),
+      recentEventsForIssue: vi.fn(),
+    };
+    const ctx = await buildRetryContext(repo, 'issue-1', { id: 'a1', attempt_number: 1 });
+    expect(ctx).toBeNull();
+    expect(repo.priorAttempt).not.toHaveBeenCalled();
+    expect(repo.recentEventsForIssue).not.toHaveBeenCalled();
+  });
+
+  it('pulls events from prior attempts and renders them in the trailer', async () => {
+    const events = [
+      {
+        kind: 'status',
+        payload: { message: 'Reading repo.ts' },
+        created_at: '2026-01-01T00:00:01Z',
+      },
+      { kind: 'tool_call', payload: { tool: 'bash' }, created_at: '2026-01-01T00:00:02Z' },
+      { kind: 'status', payload: { message: 'Running tests' }, created_at: '2026-01-01T00:00:03Z' },
+    ];
+    const repo: RetryContextRepo = {
+      priorAttempt: vi.fn().mockResolvedValue({
+        error_class: 'tool_failure',
+        error_message: 'tests failed',
+      }),
+      recentEventsForIssue: vi.fn().mockResolvedValue(events),
+    };
+
+    const ctx = await buildRetryContext(repo, 'issue-1', { id: 'a2', attempt_number: 2 });
+    expect(ctx).not.toBeNull();
+    expect(repo.recentEventsForIssue).toHaveBeenCalledWith('issue-1', 'a2', 10);
+    expect(repo.priorAttempt).toHaveBeenCalledWith('issue-1', 'a2');
+
+    const out = appendRetryContext('original prompt', ctx!);
+    expect(out).toContain('Prior attempt context (this is attempt 2)');
+    expect(out).toContain('[status] Reading repo.ts');
+    expect(out).toContain('[tool_call] tool=bash');
+    expect(out).toContain('[status] Running tests');
+  });
+
+  it('uses the prior attempt row for priorErrorClass/priorErrorMessage, not the current attempt', async () => {
+    const repo: RetryContextRepo = {
+      priorAttempt: vi.fn().mockResolvedValue({
+        error_class: 'turn_timeout',
+        error_message: 'agent took too long',
+      }),
+      recentEventsForIssue: vi.fn().mockResolvedValue([]),
+    };
+
+    const ctx = await buildRetryContext(repo, 'issue-1', { id: 'a3', attempt_number: 3 });
+    expect(ctx?.priorErrorClass).toBe('turn_timeout');
+    expect(ctx?.priorErrorMessage).toBe('agent took too long');
+
+    const out = appendRetryContext('p', ctx!);
+    expect(out).toContain('Last attempt failed');
+    expect(out).toContain('turn_timeout');
+    expect(out).toContain('agent took too long');
+  });
+
+  it('falls back to null error fields when no prior attempt is found', async () => {
+    const repo: RetryContextRepo = {
+      priorAttempt: vi.fn().mockResolvedValue(null),
+      recentEventsForIssue: vi.fn().mockResolvedValue([]),
+    };
+    const ctx = await buildRetryContext(repo, 'issue-1', { id: 'a2', attempt_number: 2 });
+    expect(ctx?.priorErrorClass).toBeNull();
+    expect(ctx?.priorErrorMessage).toBeNull();
   });
 });

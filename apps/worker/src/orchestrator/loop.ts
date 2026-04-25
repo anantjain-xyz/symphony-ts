@@ -299,7 +299,9 @@ export class OrchestratorLoop {
       log.debug({ issueId: issue.id, attemptNumber }, 'reservation lost (race); skipping');
       return null;
     }
-    return dispatchAttempt({ repo, workspaces, config, log }, issue, reserved);
+    // Snapshot at dispatch time so an in-flight attempt finishes under the
+    // config it started with, even if SIGHUP swaps the live ref mid-flight.
+    return dispatchAttempt({ repo, workspaces, config: config.snapshot(), log }, issue, reserved);
   }
 }
 

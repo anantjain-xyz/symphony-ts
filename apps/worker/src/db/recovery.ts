@@ -23,6 +23,8 @@ export interface RecoveryDeps {
 export interface RecoveryOutcome {
   orphansAdopted: number; // run_attempts that were 'running' at startup
   workspacesRemoved: number; // terminal-state issue workspaces cleaned
+  partialWorkspacesCleaned: number; // orphan workspaces wiped because after_create never finished
+  placeholderSessionsCleaned: number; // pending-* live_sessions for terminal attempts
 }
 
 /**
@@ -34,8 +36,12 @@ export interface RecoveryOutcome {
  *
  * 1. Tracker preflight (auth + connectivity).
  * 2. Persist current workflow snapshot.
- * 3. Mark `running` attempts as failure(process_crashed) and schedule retries.
- * 4. Sweep workspaces for terminal-state issues.
+ * 3. Mark `running` attempts as failure(process_crashed), schedule retries,
+ *    and proactively wipe their workspaces if they're missing the ready
+ *    sentinel (so the retry doesn't inherit a half-finished after_create).
+ * 4. Sweep stale `pending-<attempt-id>` live_sessions whose attempt is now
+ *    in a terminal state (Codex placeholder rows that outlived their run).
+ * 5. Sweep workspaces for terminal-state issues.
  *
  * Returns metrics for logging.
  */
@@ -50,6 +56,7 @@ export async function recover(deps: RecoveryDeps): Promise<RecoveryOutcome> {
   const orphans = await repo.listRunning(
     deps.scopedIssueIds ? { issueIds: deps.scopedIssueIds } : undefined,
   );
+  let partialWorkspacesCleaned = 0;
   for (const o of orphans) {
     log.warn(
       { attemptId: o.id, issueId: o.issue_id },
@@ -62,6 +69,25 @@ export async function recover(deps: RecoveryDeps): Promise<RecoveryOutcome> {
       errorClass: 'process_crashed',
       errorMessage: 'worker restarted while attempt was in-flight',
     });
+    try {
+      const removed = await workspaces.removeIfStale(o.workspace_path);
+      if (removed) {
+        partialWorkspacesCleaned += 1;
+        log.warn(
+          { attemptId: o.id, issueId: o.issue_id, workspacePath: o.workspace_path },
+          'partial workspace (no ready sentinel) wiped; retry will re-run after_create',
+        );
+      }
+    } catch (err) {
+      log.warn(
+        {
+          attemptId: o.id,
+          workspacePath: o.workspace_path,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'partial workspace cleanup failed',
+      );
+    }
     const ms = backoffMs(o.attempt_number, config.maxRetryBackoffMs());
     await repo.scheduleRetry({
       issueId: o.issue_id,
@@ -70,6 +96,24 @@ export async function recover(deps: RecoveryDeps): Promise<RecoveryOutcome> {
       errorClass: 'process_crashed',
       errorMessage: 'worker restart',
     });
+  }
+
+  let placeholderSessionsCleaned = 0;
+  try {
+    placeholderSessionsCleaned = await repo.deleteOrphanedPendingSessions(
+      deps.scopedIssueIds ? { issueIds: deps.scopedIssueIds } : undefined,
+    );
+    if (placeholderSessionsCleaned > 0) {
+      log.warn(
+        { count: placeholderSessionsCleaned },
+        'cleaned placeholder live_sessions for terminal attempts',
+      );
+    }
+  } catch (err) {
+    log.warn(
+      { err: err instanceof Error ? err.message : String(err) },
+      'placeholder live_sessions sweep failed',
+    );
   }
 
   let workspacesRemoved = 0;
@@ -91,5 +135,10 @@ export async function recover(deps: RecoveryDeps): Promise<RecoveryOutcome> {
     log.warn({ err: err instanceof Error ? err.message : String(err) }, 'terminal sweep failed');
   }
 
-  return { orphansAdopted: orphans.length, workspacesRemoved };
+  return {
+    orphansAdopted: orphans.length,
+    workspacesRemoved,
+    partialWorkspacesCleaned,
+    placeholderSessionsCleaned,
+  };
 }

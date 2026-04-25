@@ -280,6 +280,38 @@ export class Repo {
     if (error) throw error;
   }
 
+  /**
+   * Sweep `live_sessions` rows whose `session_id` still has the placeholder
+   * shape (`pending-<attempt-id>`) and whose `run_attempt` has reached a
+   * terminal state. Codex inserts these placeholder rows on its first token
+   * event before the real `<thread_id>-<turn_id>` is known; if the dispatch
+   * crashes between that insert and the cleanup at the end of the run,
+   * the row outlives its attempt. Used by boot-time recovery.
+   *
+   * `issueIds` scopes the sweep so integration tests against a shared
+   * Supabase don't touch live worker data. Returns the number of rows deleted.
+   */
+  async deleteOrphanedPendingSessions(opts?: { issueIds?: string[] }): Promise<number> {
+    let attemptQ = this.db
+      .from('run_attempts')
+      .select('id')
+      .in('status', ['success', 'failure', 'timeout', 'cancelled']);
+    if (opts?.issueIds) attemptQ = attemptQ.in('issue_id', opts.issueIds);
+    const { data: terminalAttempts, error: e1 } = await attemptQ;
+    if (e1) throw e1;
+    if (!terminalAttempts || terminalAttempts.length === 0) return 0;
+
+    const ids = terminalAttempts.map((r) => r.id);
+    const { data: deleted, error: e2 } = await this.db
+      .from('live_sessions')
+      .delete()
+      .in('run_attempt_id', ids)
+      .like('session_id', 'pending-%')
+      .select('run_attempt_id');
+    if (e2) throw e2;
+    return deleted?.length ?? 0;
+  }
+
   // ---- agent_events ----
   async appendEvent(runAttemptId: string, kind: AgentEventKind, payload: unknown): Promise<void> {
     const { error } = await this.db.from('agent_events').insert({

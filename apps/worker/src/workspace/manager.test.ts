@@ -72,6 +72,47 @@ describe('WorkspaceManager', () => {
     await expect(readFile(path.join(ws.path, 'anything'))).rejects.toThrow();
   });
 
+  describe('removeIfStale', () => {
+    it('removes a directory that is missing the ready sentinel', async () => {
+      const ws = await mgr.createOrReuse('ENG-42');
+      await writeFile(path.join(ws.path, 'half-clone'), 'partial');
+      const removed = await mgr.removeIfStale(ws.path);
+      expect(removed).toBe(true);
+      await expect(readFile(path.join(ws.path, 'half-clone'))).rejects.toThrow();
+    });
+
+    it('preserves a directory that has the ready sentinel', async () => {
+      const ws = await mgr.createOrReuse('ENG-42');
+      await mgr.markReady('ENG-42');
+      await writeFile(path.join(ws.path, 'state.txt'), 'preserved');
+      const removed = await mgr.removeIfStale(ws.path);
+      expect(removed).toBe(false);
+      expect(await readFile(path.join(ws.path, 'state.txt'), 'utf8')).toBe('preserved');
+    });
+
+    it('is a no-op when the path does not exist', async () => {
+      const removed = await mgr.removeIfStale(path.join(root, 'never-created'));
+      expect(removed).toBe(false);
+    });
+
+    it('refuses to remove paths outside the workspace root', async () => {
+      const outside = await mkdtemp(path.join(tmpdir(), 'symphony-outside-'));
+      try {
+        const removed = await mgr.removeIfStale(outside);
+        expect(removed).toBe(false);
+        // Outside path must still exist.
+        await expect(readFile(path.join(outside, 'anything'))).rejects.toThrow(/ENOENT/);
+      } finally {
+        await rm(outside, { recursive: true, force: true });
+      }
+    });
+
+    it('refuses to remove the workspace root itself', async () => {
+      const removed = await mgr.removeIfStale(root);
+      expect(removed).toBe(false);
+    });
+  });
+
   it('pathFor never returns a path outside the root (even via crafted keys)', () => {
     expect(mgr.pathFor('ENG-1').startsWith(root)).toBe(true);
     expect(mgr.pathFor('../escape').startsWith(root)).toBe(true);

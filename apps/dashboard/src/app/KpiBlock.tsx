@@ -16,7 +16,7 @@ export function KpiBlock({
         {live && <span className="h-1 w-1 rounded-full bg-success dot-live" aria-hidden />}
       </div>
       <div
-        className={`font-display text-[32px] tabular leading-none mt-1 tracking-tight ${valueClass ?? 'text-ink-0'}`}
+        className={`font-display text-[32px] tabular leading-none mt-1 tracking-tight whitespace-nowrap ${valueClass ?? 'text-ink-0'}`}
       >
         {value}
       </div>

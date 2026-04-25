@@ -52,6 +52,7 @@ export default async function FleetPage() {
       .select('*, issues(identifier, title, state)')
       .in('status', ['success', 'cancelled'])
       .order('ended_at', { ascending: false })
+      .order('id', { ascending: false })
       .limit(100),
     supabase.from('live_sessions').select('*'),
     supabase.from('issues').select('id', { count: 'exact', head: true }),

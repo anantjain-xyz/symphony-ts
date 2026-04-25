@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { getSupabaseBrowserClient } from '@/lib/supabase-browser';
 import type { Tables } from '@symphony/shared';
 import { RunRow, relativeTime } from './RunRow';
@@ -16,19 +16,41 @@ export function PastRunsSection({ initialRows }: { initialRows: RunAttemptWithIs
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // RealtimeRefresh re-runs the RSC and produces a fresh initialRows snapshot
+  // when run_attempts changes. Merge it over our local state so newly ended
+  // runs appear at the top while preserving any pages the user has loaded
+  // beyond the initial window.
+  useEffect(() => {
+    setRows((prev) => {
+      if (prev.length <= initialRows.length) return initialRows;
+      const headIds = new Set(initialRows.map((r) => r.id));
+      const tail = prev.filter((r) => !headIds.has(r.id));
+      return [...initialRows, ...tail];
+    });
+  }, [initialRows]);
+
   const loadMore = async () => {
     if (loading || !hasMore) return;
+    const cursor = rows[rows.length - 1];
+    if (!cursor?.ended_at) {
+      setHasMore(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
       const supabase = getSupabaseBrowserClient();
-      const offset = rows.length;
+      // Keyset pagination on (ended_at desc, id desc): the same total order
+      // the server uses for the initial fetch, so we never duplicate or skip
+      // rows when ties or new inserts shift offset-based windows.
       const { data, error: queryError } = await supabase
         .from('run_attempts')
         .select('*, issues(identifier, title, state)')
         .in('status', ['success', 'cancelled'])
+        .or(`ended_at.lt.${cursor.ended_at},and(ended_at.eq.${cursor.ended_at},id.lt.${cursor.id})`)
         .order('ended_at', { ascending: false })
-        .range(offset, offset + PAGE_SIZE - 1);
+        .order('id', { ascending: false })
+        .limit(PAGE_SIZE);
       if (queryError) throw queryError;
       const next = (data ?? []) as unknown as RunAttemptWithIssue[];
       setRows((prev) => [...prev, ...next]);

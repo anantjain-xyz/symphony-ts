@@ -1,22 +1,16 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { isOperator } from '@/lib/auth';
+import { safeNextPath } from '@/lib/redirect';
 import { createMagicToken } from '@/lib/session';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-function safeNext(input: string | null): string {
-  if (!input) return '/';
-  if (!input.startsWith('/') || input.startsWith('//')) return '/';
-  return input;
-}
-
 export async function POST(req: NextRequest) {
   const form = await req.formData();
   const emailRaw = form.get('email');
-  const nextPath = safeNext(
-    typeof form.get('next') === 'string' ? (form.get('next') as string) : null,
-  );
+  const nextRaw = form.get('next');
+  const nextPath = safeNextPath(typeof nextRaw === 'string' ? nextRaw : null, req.url);
   const email = typeof emailRaw === 'string' ? emailRaw.trim().toLowerCase() : '';
 
   const sentUrl = new URL('/login', req.url);

@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { isOperator } from '@/lib/auth';
+import { safeNextPath } from '@/lib/redirect';
 import {
   SESSION_COOKIE_NAME,
   SESSION_TTL_MS,
@@ -10,15 +11,9 @@ import {
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-function safeNext(input: string | null): string {
-  if (!input) return '/';
-  if (!input.startsWith('/') || input.startsWith('//')) return '/';
-  return input;
-}
-
 export async function GET(req: NextRequest) {
   const token = req.nextUrl.searchParams.get('token') ?? '';
-  const nextPath = safeNext(req.nextUrl.searchParams.get('next'));
+  const nextPath = safeNextPath(req.nextUrl.searchParams.get('next'), req.url);
 
   const denied = new URL('/login', req.url);
   denied.searchParams.set('error', '1');

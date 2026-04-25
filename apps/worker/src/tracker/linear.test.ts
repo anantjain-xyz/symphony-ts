@@ -235,6 +235,31 @@ describe('createLinearClient – resilience', () => {
     expect(slept).toBeLessThan(7000 + 250);
   });
 
+  it('429 honours HTTP-date Retry-After values', async () => {
+    const now = Date.parse('Wed, 21 Oct 2015 07:27:48 GMT');
+    const dateNow = vi.spyOn(Date, 'now').mockReturnValue(now);
+    const calls = vi.fn(() => {
+      throw rateLimitError('Wed, 21 Oct 2015 07:28:00 GMT');
+    });
+    const client = createLinearClient({
+      endpoint: 'http://stub',
+      apiKey: 'k',
+      activeStates: ['todo'],
+      terminalStates: ['done'],
+      client: stubClient(calls),
+      sleep: async (_ms: number) => {},
+      maxAttempts: 1,
+    });
+    try {
+      await expect(client.fetchActive()).rejects.toMatchObject({
+        name: 'LinearRateLimitError',
+        retryAfterMs: 12000,
+      });
+    } finally {
+      dateNow.mockRestore();
+    }
+  });
+
   it('429 falls back to default Retry-After when header missing/invalid', async () => {
     const calls = vi.fn(() => {
       throw rateLimitError(null);
@@ -311,6 +336,32 @@ describe('createLinearClient – resilience', () => {
     const s2 = sleep.mock.calls[1]?.[0] as number;
     expect(s2).toBeGreaterThanOrEqual(1000);
     expect(s2).toBeLessThan(1500);
+  });
+
+  it('caps transient backoff after jitter', async () => {
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0.999999);
+    const calls = vi.fn(() => {
+      throw serverError(503);
+    });
+    const sleep = vi.fn(async (_ms: number) => {});
+    const client = createLinearClient({
+      endpoint: 'http://stub',
+      apiKey: 'k',
+      activeStates: ['todo'],
+      terminalStates: ['done'],
+      client: stubClient(calls),
+      sleep,
+      maxAttempts: 6,
+    });
+    try {
+      await expect(client.fetchActive()).rejects.toThrow(/server 503/);
+      expect(sleep).toHaveBeenCalledTimes(5);
+      for (const [ms] of sleep.mock.calls) {
+        expect(ms).toBeLessThanOrEqual(5000);
+      }
+    } finally {
+      random.mockRestore();
+    }
   });
 
   it('5xx exhausted re-throws the underlying error', async () => {

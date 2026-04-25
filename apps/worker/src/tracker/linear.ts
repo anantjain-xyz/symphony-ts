@@ -209,9 +209,9 @@ function retryDelay(decision: RetryDecision, attempt: number): number {
     // herd of workers don't all wake at the same instant.
     return decision.retryAfterMs + Math.random() * 250;
   }
-  // Exponential backoff: base * 2^(attempt-1), capped, with ±50% multiplicative jitter.
+  // Exponential backoff: base * 2^(attempt-1), capped, with up to +50% multiplicative jitter.
   const exp = Math.min(BACKOFF_BASE_MS * 2 ** (attempt - 1), BACKOFF_CAP_MS);
-  return exp + Math.random() * exp * 0.5;
+  return Math.min(exp + Math.random() * exp * 0.5, BACKOFF_CAP_MS);
 }
 
 function isAbortError(err: unknown): boolean {
@@ -235,9 +235,15 @@ function readRetryAfterMs(err: unknown): number {
   if (hdrs && typeof (hdrs as { get?: unknown }).get === 'function') {
     raw = (hdrs as { get: (k: string) => string | null }).get('retry-after') ?? null;
   }
-  const n = Number(raw ?? '5');
-  if (!Number.isFinite(n) || n < 0) return 5_000;
-  return n * 1000;
+  if (raw === null) return 5_000;
+
+  const n = Number(raw);
+  if (Number.isFinite(n) && n >= 0) return n * 1000;
+
+  const dateMs = Date.parse(raw);
+  if (Number.isFinite(dateMs)) return Math.max(0, dateMs - Date.now());
+
+  return 5_000;
 }
 
 function defaultSleep(ms: number): Promise<void> {

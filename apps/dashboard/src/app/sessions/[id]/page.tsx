@@ -78,6 +78,13 @@ function Header({
           {issue?.identifier ?? attempt.issue_id}
         </Link>
         <span className="text-ink-4">/</span>
+        <span className="smallcaps text-[10px] text-ink-3">
+          attempt{' '}
+          <span className="font-mono normal-case tracking-normal text-ink-1">
+            #{attempt.attempt_number}
+          </span>
+        </span>
+        <span className="text-ink-4">/</span>
         <StatusBadge status={status} />
         {attempt.error_class && (
           <span
@@ -92,7 +99,6 @@ function Header({
         {issue?.title ?? '—'}
       </h1>
       <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 smallcaps text-[10px] text-ink-3">
-        <Stat label="attempt" value={`${attempt.attempt_number}`} />
         <Stat label="started" value={formatRelative(attempt.started_at)} />
         {attempt.ended_at && <Stat label="ended" value={formatRelative(attempt.ended_at)} />}
         <Stat label="duration" value={formatDuration(attempt.started_at, attempt.ended_at)} />

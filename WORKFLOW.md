@@ -84,7 +84,7 @@ claude:
     - Bash(pnpm --version)
     - Bash(npm --version)
     - Bash(python3 --version)
-    # Linear HTTP API (no MCP in the workspace; see Environment section in the prompt).
+    # Fetching canonical boilerplate docs (LICENSE, CODE_OF_CONDUCT, ...) — see Guardrails.
     - Bash(curl *)
   disallowed_tools: []
   add_dirs: []

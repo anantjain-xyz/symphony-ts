@@ -32,6 +32,26 @@ export interface ResolvedConfig {
   promptTemplate(): string;
   sourceHash(): string;
   workflow(): ParsedWorkflow;
+  /**
+   * Frozen view of the current config — captured at call time. Static configs
+   * return themselves; live configs (see `liveConfig`) return their inner
+   * `ResolvedConfig` so future swaps don't affect the captured snapshot.
+   */
+  snapshot(): ResolvedConfig;
+}
+
+/**
+ * Atomic, swappable wrapper around a `ResolvedConfig`. The orchestrator loop
+ * reads it on each tick (so SIGHUP reloads take effect on the next dispatch),
+ * while in-flight attempts hold a `snapshot()` so they keep their original
+ * config across a swap.
+ */
+export interface LiveResolvedConfig extends ResolvedConfig {
+  /**
+   * Replace the inner `ResolvedConfig`. Subsequent reads through this wrapper
+   * see the new values; previously-captured `snapshot()` results do not.
+   */
+  swap(next: ResolvedConfig): void;
 }
 
 export interface ConfigOverrides {
@@ -44,7 +64,7 @@ export function resolveConfig(
   workflow: ParsedWorkflow,
   overrides: ConfigOverrides = {},
 ): ResolvedConfig {
-  return {
+  const rc: ResolvedConfig = {
     pollIntervalMs: () => overrides.pollIntervalMs ?? workflow.frontMatter.polling.interval_ms,
     maxConcurrentAgents: () =>
       overrides.maxConcurrentAgents ?? workflow.frontMatter.agent.max_concurrent_agents,
@@ -71,5 +91,43 @@ export function resolveConfig(
     promptTemplate: () => workflow.promptTemplate,
     sourceHash: () => workflow.sourceHash,
     workflow: () => workflow,
+    snapshot: () => rc,
+  };
+  return rc;
+}
+
+/**
+ * Wrap a `ResolvedConfig` so it can be hot-swapped (e.g. on SIGHUP). All
+ * delegating reads see the current inner config; `snapshot()` returns the
+ * inner ResolvedConfig at call time, which is itself static and survives
+ * future swaps unchanged. This is the contract dispatch relies on so an
+ * in-flight attempt finishes under the config it started with.
+ */
+export function liveConfig(initial: ResolvedConfig): LiveResolvedConfig {
+  let current = initial;
+  return {
+    pollIntervalMs: () => current.pollIntervalMs(),
+    maxConcurrentAgents: () => current.maxConcurrentAgents(),
+    maxConcurrentByState: () => current.maxConcurrentByState(),
+    maxRetryBackoffMs: () => current.maxRetryBackoffMs(),
+    hookTimeoutMs: () => current.hookTimeoutMs(),
+    workspaceRoot: () => current.workspaceRoot(),
+    trackerEndpoint: () => current.trackerEndpoint(),
+    trackerApiKey: () => current.trackerApiKey(),
+    activeStates: () => current.activeStates(),
+    terminalStates: () => current.terminalStates(),
+    agentBackend: () => current.agentBackend(),
+    agentCommand: () => current.agentCommand(),
+    codexCommand: () => current.codexCommand(),
+    claudeCommand: () => current.claudeCommand(),
+    turnTimeoutMs: () => current.turnTimeoutMs(),
+    claude: () => current.claude(),
+    promptTemplate: () => current.promptTemplate(),
+    sourceHash: () => current.sourceHash(),
+    workflow: () => current.workflow(),
+    snapshot: () => current,
+    swap: (next) => {
+      current = next;
+    },
   };
 }

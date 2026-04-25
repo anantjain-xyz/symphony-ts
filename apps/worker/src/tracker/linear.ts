@@ -1,5 +1,6 @@
 import { Issue } from '@symphony/shared';
 import { GraphQLClient, gql } from 'graphql-request';
+import type { ResolvedConfig } from '../config/resolve.js';
 
 // =========================================================================
 // Public interface
@@ -13,11 +14,16 @@ export interface TrackerClient {
 }
 
 export interface LinearClientOptions {
-  endpoint: string;
-  apiKey: string;
-  activeStates: string[]; // lowercased
-  terminalStates: string[]; // lowercased
-  /** Inject a custom client for tests. */
+  /**
+   * Live config view. `endpoint`, `apiKey`, `activeStates`, and `terminalStates`
+   * are read on every request so that SIGHUP-driven config swaps take effect
+   * without rebuilding the client (see `apps/worker/src/config/reload.ts`).
+   */
+  config: ResolvedConfig;
+  /**
+   * Inject a custom client for tests. When provided, `config.trackerEndpoint()`
+   * / `config.trackerApiKey()` are not used to build a real GraphQL client.
+   */
   client?: GraphQLClient;
   /** Per-request abort timeout in ms. Default 15_000. */
   requestTimeoutMs?: number;
@@ -53,20 +59,33 @@ const BACKOFF_BASE_MS = 500;
 const BACKOFF_CAP_MS = 5_000;
 
 interface ResilienceCtx {
-  client: GraphQLClient;
+  getClient: () => GraphQLClient;
   timeoutMs: number;
   maxAttempts: number;
   sleep: (ms: number) => Promise<void>;
 }
 
 export function createLinearClient(opts: LinearClientOptions): TrackerClient {
-  const client =
-    opts.client ??
-    new GraphQLClient(opts.endpoint, {
-      headers: { authorization: opts.apiKey },
-    });
+  // Memoize the underlying GraphQL client by (endpoint, apiKey) so a SIGHUP
+  // reload that changes either field rebuilds the transport on the next
+  // request, while unchanged config stays on the same instance.
+  let cached: { key: string; client: GraphQLClient } | undefined;
+  const getClient = (): GraphQLClient => {
+    if (opts.client) return opts.client;
+    const endpoint = opts.config.trackerEndpoint();
+    const apiKey = opts.config.trackerApiKey();
+    const key = `${endpoint}\n${apiKey}`;
+    if (!cached || cached.key !== key) {
+      cached = {
+        key,
+        client: new GraphQLClient(endpoint, { headers: { authorization: apiKey } }),
+      };
+    }
+    return cached.client;
+  };
+
   const ctx: ResilienceCtx = {
-    client,
+    getClient,
     timeoutMs: opts.requestTimeoutMs ?? DEFAULT_TIMEOUT_MS,
     maxAttempts: Math.max(1, opts.maxAttempts ?? DEFAULT_MAX_ATTEMPTS),
     sleep: opts.sleep ?? defaultSleep,
@@ -78,12 +97,12 @@ export function createLinearClient(opts: LinearClientOptions): TrackerClient {
     },
 
     async fetchActive() {
-      const issues = await fetchByStateNames(ctx, opts.activeStates);
+      const issues = await fetchByStateNames(ctx, opts.config.activeStates());
       return issues.sort(byPriorityThenIdentifier);
     },
 
     async fetchTerminal() {
-      return fetchByStateNames(ctx, opts.terminalStates);
+      return fetchByStateNames(ctx, opts.config.terminalStates());
     },
 
     async fetchById(id: string) {
@@ -170,7 +189,7 @@ async function tryOnce<T>(
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), ctx.timeoutMs);
   try {
-    const value = await ctx.client.request<T>({
+    const value = await ctx.getClient().request<T>({
       document,
       variables: variables as Record<string, unknown>,
       signal: ac.signal,

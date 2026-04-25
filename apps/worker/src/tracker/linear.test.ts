@@ -1,5 +1,7 @@
 import { GraphQLClient } from 'graphql-request';
 import { describe, expect, it, vi } from 'vitest';
+import { liveConfig, resolveConfig } from '../config/resolve.js';
+import { makeTestWorkflow } from '../db/test-helpers.js';
 import {
   createLinearClient,
   LinearAuthError,
@@ -7,6 +9,17 @@ import {
   LinearTimeoutError,
   normalize,
 } from './linear.js';
+
+function mkConfig(
+  overrides: {
+    activeStates?: string[];
+    terminalStates?: string[];
+    endpoint?: string;
+    apiKey?: string;
+  } = {},
+) {
+  return resolveConfig(makeTestWorkflow({ sourceHash: 'linear-test', ...overrides }));
+}
 
 interface RequestArg {
   document: { definitions?: Array<{ name?: { value?: string } }> } | string;
@@ -151,10 +164,7 @@ describe('createLinearClient', () => {
   it('fetchActive sorts urgent before normal, treats priority 0 as lowest', async () => {
     const noPriority = { ...ENG42, id: 'np', identifier: 'X-99', priority: 0 };
     const client = createLinearClient({
-      endpoint: 'http://stub',
-      apiKey: 'k',
-      activeStates: ['todo', 'in progress'],
-      terminalStates: ['done'],
+      config: mkConfig({ activeStates: ['todo', 'in progress'] }),
       client: stubClient(() => ({ issues: { nodes: [ENG42, ENG41_URGENT, noPriority] } })),
       sleep: async (_ms: number) => {},
     });
@@ -164,10 +174,7 @@ describe('createLinearClient', () => {
 
   it('fetchActive returns [] when no states configured', async () => {
     const client = createLinearClient({
-      endpoint: 'http://stub',
-      apiKey: 'k',
-      activeStates: [],
-      terminalStates: ['done'],
+      config: mkConfig({ activeStates: [] }),
       client: stubClient(() => {
         throw new Error('should not be called');
       }),
@@ -178,10 +185,7 @@ describe('createLinearClient', () => {
 
   it('fetchById returns null when issue missing', async () => {
     const client = createLinearClient({
-      endpoint: 'http://stub',
-      apiKey: 'k',
-      activeStates: ['todo'],
-      terminalStates: ['done'],
+      config: mkConfig(),
       client: stubClient(() => ({ issue: null })),
       sleep: async (_ms: number) => {},
     });
@@ -213,16 +217,55 @@ describe('createLinearClient', () => {
       throw err;
     });
     const client = createLinearClient({
-      endpoint: 'http://stub',
-      apiKey: 'k',
-      activeStates: ['todo'],
-      terminalStates: ['done'],
+      config: mkConfig({ endpoint: 'http://stub', apiKey: 'k' }),
       client: stubClient(calls),
       sleep: async (_ms: number) => {},
     });
     expect(await client.fetchById('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb')).toBeNull();
     // Single call: don't burn retries on a hard "not found".
     expect(calls).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads activeStates / terminalStates from live config on every call', async () => {
+    // Hot-reload regression guard. Before SYM-17 the tracker captured the
+    // states at construction time, so a SIGHUP-driven swap was silently
+    // ignored — fetchActive kept polling the old state set.
+    const live = liveConfig(
+      resolveConfig(
+        makeTestWorkflow({
+          sourceHash: 'before',
+          activeStates: ['todo'],
+          terminalStates: ['done'],
+        }),
+      ),
+    );
+    const seenVars: Array<Record<string, unknown>> = [];
+    const client = createLinearClient({
+      config: live,
+      client: stubClient((_op, vars) => {
+        seenVars.push(vars as Record<string, unknown>);
+        return { issues: { nodes: [] } };
+      }),
+      sleep: async (_ms: number) => {},
+    });
+    await client.fetchActive();
+    expect(seenVars[0]).toEqual({ s0: 'todo' });
+
+    live.swap(
+      resolveConfig(
+        makeTestWorkflow({
+          sourceHash: 'after',
+          activeStates: ['todo', 'in progress'],
+          terminalStates: ['done', 'canceled'],
+        }),
+      ),
+    );
+
+    await client.fetchActive();
+    expect(seenVars[1]).toEqual({ s0: 'todo', s1: 'in progress' });
+
+    await client.fetchTerminal();
+    expect(seenVars[2]).toEqual({ s0: 'done', s1: 'canceled' });
   });
 });
 
@@ -235,10 +278,7 @@ describe('createLinearClient – resilience', () => {
     });
     const sleep = vi.fn(async (_ms: number) => {});
     const client = createLinearClient({
-      endpoint: 'http://stub',
-      apiKey: 'k',
-      activeStates: ['todo'],
-      terminalStates: ['done'],
+      config: mkConfig(),
       client: stubClient(calls),
       sleep,
       maxAttempts: 3,
@@ -256,10 +296,7 @@ describe('createLinearClient – resilience', () => {
     });
     const sleep = vi.fn(async (_ms: number) => {});
     const client = createLinearClient({
-      endpoint: 'http://stub',
-      apiKey: 'k',
-      activeStates: ['todo'],
-      terminalStates: ['done'],
+      config: mkConfig(),
       client: stubClient(calls),
       sleep,
     });
@@ -277,10 +314,7 @@ describe('createLinearClient – resilience', () => {
     });
     const sleep = vi.fn(async (_ms: number) => {});
     const client = createLinearClient({
-      endpoint: 'http://stub',
-      apiKey: 'k',
-      activeStates: ['todo'],
-      terminalStates: ['done'],
+      config: mkConfig(),
       client: stubClient(calls),
       sleep,
       maxAttempts: 3,
@@ -302,10 +336,7 @@ describe('createLinearClient – resilience', () => {
       throw rateLimitError('Wed, 21 Oct 2015 07:28:00 GMT');
     });
     const client = createLinearClient({
-      endpoint: 'http://stub',
-      apiKey: 'k',
-      activeStates: ['todo'],
-      terminalStates: ['done'],
+      config: mkConfig(),
       client: stubClient(calls),
       sleep: async (_ms: number) => {},
       maxAttempts: 1,
@@ -326,10 +357,7 @@ describe('createLinearClient – resilience', () => {
     });
     const sleep = vi.fn(async (_ms: number) => {});
     const client = createLinearClient({
-      endpoint: 'http://stub',
-      apiKey: 'k',
-      activeStates: ['todo'],
-      terminalStates: ['done'],
+      config: mkConfig(),
       client: stubClient(calls),
       sleep,
       maxAttempts: 2,
@@ -351,10 +379,7 @@ describe('createLinearClient – resilience', () => {
     });
     const sleep = vi.fn(async (_ms: number) => {});
     const client = createLinearClient({
-      endpoint: 'http://stub',
-      apiKey: 'k',
-      activeStates: ['todo'],
-      terminalStates: ['done'],
+      config: mkConfig(),
       client: stubClient(calls),
       sleep,
       maxAttempts: 3,
@@ -376,10 +401,7 @@ describe('createLinearClient – resilience', () => {
     });
     const sleep = vi.fn(async (_ms: number) => {});
     const client = createLinearClient({
-      endpoint: 'http://stub',
-      apiKey: 'k',
-      activeStates: ['todo'],
-      terminalStates: ['done'],
+      config: mkConfig(),
       client: stubClient(calls),
       sleep,
       maxAttempts: 3,
@@ -405,10 +427,7 @@ describe('createLinearClient – resilience', () => {
     });
     const sleep = vi.fn(async (_ms: number) => {});
     const client = createLinearClient({
-      endpoint: 'http://stub',
-      apiKey: 'k',
-      activeStates: ['todo'],
-      terminalStates: ['done'],
+      config: mkConfig(),
       client: stubClient(calls),
       sleep,
       maxAttempts: 6,
@@ -430,10 +449,7 @@ describe('createLinearClient – resilience', () => {
     });
     const sleep = vi.fn(async (_ms: number) => {});
     const client = createLinearClient({
-      endpoint: 'http://stub',
-      apiKey: 'k',
-      activeStates: ['todo'],
-      terminalStates: ['done'],
+      config: mkConfig(),
       client: stubClient(calls),
       sleep,
       maxAttempts: 3,
@@ -452,10 +468,7 @@ describe('createLinearClient – resilience', () => {
     });
     const sleep = vi.fn(async (_ms: number) => {});
     const client = createLinearClient({
-      endpoint: 'http://stub',
-      apiKey: 'k',
-      activeStates: ['todo'],
-      terminalStates: ['done'],
+      config: mkConfig(),
       client: stubClient(calls),
       sleep,
       maxAttempts: 3,
@@ -472,10 +485,7 @@ describe('createLinearClient – resilience', () => {
     });
     const sleep = vi.fn(async (_ms: number) => {});
     const client = createLinearClient({
-      endpoint: 'http://stub',
-      apiKey: 'k',
-      activeStates: ['todo'],
-      terminalStates: ['done'],
+      config: mkConfig(),
       client: stubClient(calls),
       sleep,
       maxAttempts: 3,
@@ -499,10 +509,7 @@ describe('createLinearClient – resilience', () => {
     );
     const sleep = vi.fn(async (_ms: number) => {});
     const client = createLinearClient({
-      endpoint: 'http://stub',
-      apiKey: 'k',
-      activeStates: ['todo'],
-      terminalStates: ['done'],
+      config: mkConfig(),
       client: stubClient(calls),
       sleep,
       requestTimeoutMs: 5,
@@ -526,10 +533,7 @@ describe('createLinearClient – resilience', () => {
     );
     const sleep = vi.fn(async (_ms: number) => {});
     const client = createLinearClient({
-      endpoint: 'http://stub',
-      apiKey: 'k',
-      activeStates: ['todo'],
-      terminalStates: ['done'],
+      config: mkConfig(),
       client: stubClient(calls),
       sleep,
       requestTimeoutMs: 5,
@@ -543,10 +547,7 @@ describe('createLinearClient – resilience', () => {
   it('passes the AbortController signal through to the underlying client', async () => {
     let captured: AbortSignal | undefined;
     const client = createLinearClient({
-      endpoint: 'http://stub',
-      apiKey: 'k',
-      activeStates: ['todo'],
-      terminalStates: ['done'],
+      config: mkConfig(),
       client: stubClient((_op, _vars, signal) => {
         captured = signal;
         return { issues: { nodes: [] } };

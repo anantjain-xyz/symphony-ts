@@ -19,7 +19,8 @@ process.env.SYMPHONY_CLAUDE_ADAPTER ??= resolve(
 );
 
 import { createServiceClient } from '@symphony/shared';
-import { resolveConfig } from './config/resolve.js';
+import { reloadWorkflowConfig } from './config/reload.js';
+import { liveConfig, resolveConfig } from './config/resolve.js';
 import { loadWorkflowFile } from './config/workflow.js';
 import { recover } from './db/recovery.js';
 import { Repo } from './db/repo.js';
@@ -38,7 +39,7 @@ async function main(): Promise<void> {
 
   const workflow = await loadWorkflowFile(workflowPath);
   log.info({ workflowPath, sourceHash: workflow.sourceHash.slice(0, 12) }, 'workflow loaded');
-  const config = resolveConfig(workflow);
+  const config = liveConfig(resolveConfig(workflow));
 
   const afterCreate = workflow.frontMatter.hooks.after_create ?? '';
   if (afterCreate.includes('$REPO_URL') && !process.env.REPO_URL) {
@@ -53,12 +54,7 @@ async function main(): Promise<void> {
   });
   const repo = new Repo(db);
 
-  const tracker = createLinearClient({
-    endpoint: config.trackerEndpoint(),
-    apiKey: config.trackerApiKey(),
-    activeStates: config.activeStates(),
-    terminalStates: config.terminalStates(),
-  });
+  const tracker = createLinearClient({ config });
 
   const workspaces = new WorkspaceManager(config.workspaceRoot());
 
@@ -87,23 +83,7 @@ async function main(): Promise<void> {
   process.on('SIGINT', () => void shutdown('SIGINT'));
 
   process.on('SIGHUP', () => {
-    void (async () => {
-      try {
-        const next = await loadWorkflowFile(workflowPath);
-        if (next.sourceHash === workflow.sourceHash) {
-          log.info('SIGHUP: WORKFLOW.md unchanged');
-          return;
-        }
-        // Hot reload not yet hooked into resolveConfig swap; v1 logs and asks
-        // operator to restart. Recorded as a TODO in the plan.
-        log.warn(
-          { newHash: next.sourceHash.slice(0, 12) },
-          'SIGHUP: WORKFLOW.md changed; restart worker to apply',
-        );
-      } catch (err) {
-        log.error({ err: errToString(err) }, 'SIGHUP: failed to reload workflow');
-      }
-    })();
+    void reloadWorkflowConfig({ workflowPath, live: config, log });
   });
 
   process.on('uncaughtException', (err) => {

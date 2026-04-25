@@ -297,8 +297,10 @@ const descriptionMarkdown: Components = {
   ul: ({ children }) => (
     <ul className="my-3 ml-5 list-disc space-y-1 marker:text-ink-3">{children}</ul>
   ),
-  ol: ({ children }) => (
-    <ol className="my-3 ml-5 list-decimal space-y-1 marker:text-ink-3">{children}</ol>
+  ol: ({ children, start }) => (
+    <ol start={start} className="my-3 ml-5 list-decimal space-y-1 marker:text-ink-3">
+      {children}
+    </ol>
   ),
   li: ({ children }) => <li className="pl-1">{children}</li>,
   h1: ({ children }) => (
@@ -331,13 +333,18 @@ const descriptionMarkdown: Components = {
     </div>
   ),
   thead: ({ children }) => <thead className="bg-surface-2">{children}</thead>,
-  th: ({ children }) => (
-    <th className="border-b border-hairline px-3 py-1.5 text-left text-ink-1 font-semibold">
+  th: ({ children, style }) => (
+    <th
+      style={style}
+      className="border-b border-hairline px-3 py-1.5 text-left text-ink-1 font-semibold"
+    >
       {children}
     </th>
   ),
-  td: ({ children }) => (
-    <td className="border-b border-hairline px-3 py-1.5 text-ink-0 last:border-b-0">{children}</td>
+  td: ({ children, style }) => (
+    <td style={style} className="border-b border-hairline px-3 py-1.5 text-ink-0 last:border-b-0">
+      {children}
+    </td>
   ),
   input: ({ type, checked, disabled }) =>
     type === 'checkbox' ? (

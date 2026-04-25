@@ -1,11 +1,12 @@
-import Link from 'next/link';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
 import type { Tables, WorkflowFrontMatter } from '@symphony/shared';
 import { trackerProjectUrl } from '@symphony/shared/schema';
 import { KpiBlock } from './KpiBlock';
 import { LiveRuntime } from './LiveRuntime';
+import { PastRunsSection } from './PastRunsSection';
 import { RateLimitPauseKpi } from './RateLimitPauseKpi';
 import { RealtimeRefresh } from './RealtimeRefresh';
+import { RunRow, relativeTime } from './RunRow';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,10 +49,11 @@ export default async function FleetPage() {
       .limit(10),
     supabase
       .from('run_attempts')
-      .select('*, issues(identifier, title)')
+      .select('*, issues(identifier, title, state)')
       .in('status', ['success', 'cancelled'])
       .order('ended_at', { ascending: false })
-      .limit(20),
+      .order('id', { ascending: false })
+      .limit(100),
     supabase.from('live_sessions').select('*'),
     supabase.from('issues').select('id', { count: 'exact', head: true }),
     supabase.from('worker_heartbeat').select('*').eq('id', 'worker').maybeSingle(),
@@ -241,20 +243,7 @@ export default async function FleetPage() {
           ))}
         </Section>
 
-        <Section title="Past runs" count={pastRows.length} tone="idle" empty="No past runs yet.">
-          {pastRows.map((r) => (
-            <RunRow
-              key={r.id}
-              href={`/sessions/${r.id}`}
-              identifier={r.issues?.identifier ?? r.issue_id}
-              title={r.issues?.title ?? '—'}
-              attemptNumber={r.attempt_number}
-              status={r.status}
-              when={relativeTime(r.ended_at)}
-              whenLabel="ended"
-            />
-          ))}
-        </Section>
+        <PastRunsSection initialRows={pastRows} />
       </div>
     </>
   );
@@ -300,100 +289,6 @@ function Section({
   );
 }
 
-function RunRow({
-  href,
-  identifier,
-  title,
-  attemptNumber,
-  status,
-  pid,
-  latestEvent,
-  errorClass,
-  when,
-  whenLabel,
-}: {
-  href: string;
-  identifier: string;
-  title: string;
-  attemptNumber: number;
-  status: string;
-  pid?: number | null;
-  latestEvent?: string;
-  errorClass?: string | null;
-  when: string;
-  whenLabel: string;
-}) {
-  return (
-    <Link
-      href={href}
-      className="grid grid-cols-[140px_minmax(0,1fr)_120px_130px_180px_130px] gap-4 items-center px-1 py-3 border-b border-hairline group hover:bg-surface-1 transition-colors"
-    >
-      <span className="font-mono text-[12px] text-ink-1 group-hover:text-ink-0 truncate">
-        {identifier}
-      </span>
-      <span className="min-w-0">
-        <span className="block text-[13px] text-ink-0 truncate">{title}</span>
-        {latestEvent ? (
-          <span className="block font-mono text-[10.5px] text-ink-3 tabular truncate">
-            {latestEvent}
-          </span>
-        ) : null}
-      </span>
-      <AttemptCounter n={attemptNumber} />
-      <StatusBadge status={status} />
-      <div className="font-mono text-[11px] text-ink-3 tabular truncate">
-        {errorClass ? (
-          <ErrorClassBadge value={errorClass} />
-        ) : pid != null ? (
-          <>
-            <span className="text-ink-4">pid</span> {pid}
-          </>
-        ) : (
-          '—'
-        )}
-      </div>
-      <div className="font-mono text-[11px] text-ink-3 tabular text-right">
-        <span className="text-ink-4">{whenLabel}</span> {when}
-        <span className="ml-2 text-ink-4 group-hover:text-signal">→</span>
-      </div>
-    </Link>
-  );
-}
-
-function AttemptCounter({ n }: { n: number }) {
-  return (
-    <span className="inline-flex items-baseline gap-1.5">
-      <span className="font-display text-[18px] tabular text-ink-0 leading-none">#{n}</span>
-      <span className="smallcaps text-[9px] text-ink-3">attempt</span>
-    </span>
-  );
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const conf: Record<string, { color: string; dot: string; label?: string }> = {
-    running: { color: 'text-success', dot: 'bg-success dot-live' },
-    queued: { color: 'text-signal', dot: 'bg-signal' },
-    pending: { color: 'text-signal', dot: 'bg-signal' },
-    success: { color: 'text-success', dot: 'bg-success' },
-    failure: { color: 'text-danger', dot: 'bg-danger' },
-    timeout: { color: 'text-danger', dot: 'bg-danger' },
-    cancelled: { color: 'text-ink-2', dot: 'bg-ink-3' },
-  };
-  const c = conf[status] ?? { color: 'text-ink-2', dot: 'bg-ink-3' };
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <span className={`h-1.5 w-1.5 rounded-full ${c.dot}`} aria-hidden />
-      <span className={`smallcaps text-[10px] ${c.color}`}>{c.label ?? status}</span>
-    </span>
-  );
-}
-
-function ErrorClassBadge({ value }: { value: string }) {
-  return (
-    <span className="smallcaps text-[10px] text-danger truncate">{value.replace(/_/g, ' ')}</span>
-  );
-}
-
 function FleetStateBadge({ allQuiet, runningCount }: { allQuiet: boolean; runningCount: number }) {
   if (allQuiet) {
     return (
@@ -412,17 +307,6 @@ function FleetStateBadge({ allQuiet, runningCount }: { allQuiet: boolean; runnin
 }
 
 /* ---------- helpers ---------- */
-
-function relativeTime(iso: string | null): string {
-  if (!iso) return '—';
-  const ms = Date.now() - new Date(iso).getTime();
-  const abs = Math.abs(ms);
-  const sign = ms >= 0 ? 'ago' : 'from now';
-  if (abs < 60_000) return `${Math.round(abs / 1000)}s ${sign}`;
-  if (abs < 3_600_000) return `${Math.round(abs / 60_000)}m ${sign}`;
-  if (abs < 86_400_000) return `${Math.round(abs / 3_600_000)}h ${sign}`;
-  return `${Math.round(abs / 86_400_000)}d ${sign}`;
-}
 
 function formatLatestEvent(ev: AgentEventRow | undefined): string {
   if (!ev) return '';

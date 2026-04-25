@@ -1,10 +1,10 @@
+import type { Tables, WorkflowFrontMatter } from '@symphony/shared';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { createSupabaseServerClient } from '@/lib/supabase-server';
 import { IssueLinks } from '@/components/IssueLinks';
-import type { Tables, WorkflowFrontMatter } from '@symphony/shared';
+import { createSupabaseServerClient } from '@/lib/supabase-server';
 
 export const dynamic = 'force-dynamic';
 
@@ -130,8 +130,10 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
           {issue.description && (
             <div>
               <div className="smallcaps text-[10px] text-ink-3 mb-2">description</div>
-              <div className="text-[14px] text-ink-0 leading-[1.65] prose-tight">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{issue.description}</ReactMarkdown>
+              <div className="text-[14px] text-ink-0 leading-[1.65]">
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={descriptionMarkdown}>
+                  {issue.description}
+                </ReactMarkdown>
               </div>
             </div>
           )}
@@ -260,6 +262,99 @@ function AttemptCard({ attempt, tokens }: { attempt: Attempt; tokens: number }) 
     </Link>
   );
 }
+
+/* ---------- markdown ---------- */
+
+const descriptionMarkdown: Components = {
+  p: ({ children }) => <p className="my-3 first:mt-0 last:mb-0">{children}</p>,
+  a: ({ children, href }) => (
+    <a
+      href={href}
+      className="text-info underline decoration-info/40 underline-offset-2 hover:decoration-info"
+      target="_blank"
+      rel="noreferrer"
+    >
+      {children}
+    </a>
+  ),
+  strong: ({ children }) => <strong className="font-semibold text-ink-0">{children}</strong>,
+  em: ({ children }) => <em className="italic">{children}</em>,
+  code: ({ className, children }) => {
+    if (className?.startsWith('language-')) {
+      return <code className="font-mono text-[12.5px] text-ink-1 whitespace-pre">{children}</code>;
+    }
+    return (
+      <code className="font-mono text-[0.86em] text-ink-0 bg-surface-2 rounded px-1 py-px">
+        {children}
+      </code>
+    );
+  },
+  pre: ({ children }) => (
+    <pre className="my-4 overflow-x-auto rounded border border-hairline bg-surface-1 p-3 leading-[1.55]">
+      {children}
+    </pre>
+  ),
+  ul: ({ children }) => (
+    <ul className="my-3 ml-5 list-disc space-y-1 marker:text-ink-3">{children}</ul>
+  ),
+  ol: ({ children }) => (
+    <ol className="my-3 ml-5 list-decimal space-y-1 marker:text-ink-3">{children}</ol>
+  ),
+  li: ({ children }) => <li className="pl-1">{children}</li>,
+  h1: ({ children }) => (
+    <h1 className="font-display text-[20px] leading-[1.25] text-ink-0 tracking-[-0.005em] mt-6 mb-3 first:mt-0">
+      {children}
+    </h1>
+  ),
+  h2: ({ children }) => (
+    <h2 className="font-display text-[17px] leading-[1.3] text-ink-0 tracking-[-0.005em] mt-6 mb-2 first:mt-0">
+      {children}
+    </h2>
+  ),
+  h3: ({ children }) => (
+    <h3 className="text-[14px] font-semibold uppercase tracking-[0.08em] text-ink-1 mt-5 mb-2 first:mt-0">
+      {children}
+    </h3>
+  ),
+  h4: ({ children }) => (
+    <h4 className="text-[13px] font-semibold text-ink-1 mt-4 mb-1.5 first:mt-0">{children}</h4>
+  ),
+  blockquote: ({ children }) => (
+    <blockquote className="my-3 border-l-2 border-hairline-strong pl-3 text-ink-2 italic">
+      {children}
+    </blockquote>
+  ),
+  hr: () => <hr className="my-5 border-hairline" />,
+  table: ({ children }) => (
+    <div className="my-3 overflow-x-auto rounded border border-hairline">
+      <table className="w-full text-[13px] border-collapse">{children}</table>
+    </div>
+  ),
+  thead: ({ children }) => <thead className="bg-surface-2">{children}</thead>,
+  th: ({ children }) => (
+    <th className="border-b border-hairline px-3 py-1.5 text-left text-ink-1 font-semibold">
+      {children}
+    </th>
+  ),
+  td: ({ children }) => (
+    <td className="border-b border-hairline px-3 py-1.5 text-ink-0 last:border-b-0">{children}</td>
+  ),
+  input: ({ type, checked, disabled }) =>
+    type === 'checkbox' ? (
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        readOnly
+        className="mr-2 align-middle accent-signal"
+      />
+    ) : null,
+  img: ({ src, alt }) =>
+    typeof src === 'string' ? (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={src} alt={alt ?? ''} className="my-3 max-w-full rounded border border-hairline" />
+    ) : null,
+};
 
 /* ---------- atoms ---------- */
 

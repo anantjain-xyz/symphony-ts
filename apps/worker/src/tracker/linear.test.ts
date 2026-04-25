@@ -1,23 +1,61 @@
 import { GraphQLClient } from 'graphql-request';
-import { describe, expect, it } from 'vitest';
-import { createLinearClient, LinearAuthError, LinearRateLimitError, normalize } from './linear.js';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  createLinearClient,
+  LinearAuthError,
+  LinearRateLimitError,
+  LinearTimeoutError,
+  normalize,
+} from './linear.js';
 
-function stubClient(impl: (op: string, vars: unknown) => unknown): GraphQLClient {
+interface RequestArg {
+  document: { definitions?: Array<{ name?: { value?: string } }> } | string;
+  variables?: unknown;
+  signal?: AbortSignal;
+}
+
+type Impl = (op: string, vars: unknown, signal: AbortSignal | undefined) => unknown;
+
+function stubClient(impl: Impl): GraphQLClient {
   return {
-    request: (
-      doc: { definitions?: Array<{ name?: { value?: string } }> } | string,
-      vars?: unknown,
-    ) => {
+    request: (arg: RequestArg) => {
+      const doc = arg.document;
       const opName =
         typeof doc === 'string'
           ? extractOpName(doc)
           : (doc.definitions?.[0]?.name?.value ?? 'unknown');
-      return Promise.resolve(impl(opName, vars));
+      try {
+        const result = impl(opName, arg.variables, arg.signal);
+        return Promise.resolve(result);
+      } catch (err) {
+        return Promise.reject(err);
+      }
     },
   } as unknown as GraphQLClient;
 }
 function extractOpName(s: string): string {
   return s.match(/(?:query|mutation)\s+(\w+)/)?.[1] ?? 'unknown';
+}
+
+function rateLimitError(retryAfter: string | null = '7'): Error {
+  const err = new Error('rate limited') as Error & { response: unknown };
+  err.response = {
+    status: 429,
+    headers: { get: (k: string) => (k.toLowerCase() === 'retry-after' ? retryAfter : null) },
+  };
+  return err;
+}
+
+function serverError(status = 500): Error {
+  const err = new Error(`server ${status}`) as Error & { response: { status: number } };
+  err.response = { status };
+  return err;
+}
+
+function networkError(): Error {
+  // graphql-request throws a plain Error wrapping the underlying fetch
+  // failure when the transport itself fails (no .response attached).
+  return new Error('fetch failed: ECONNRESET');
 }
 
 const ENG42 = {
@@ -95,6 +133,7 @@ describe('createLinearClient', () => {
       activeStates: ['todo', 'in progress'],
       terminalStates: ['done'],
       client: stubClient(() => ({ issues: { nodes: [ENG42, ENG41_URGENT, noPriority] } })),
+      sleep: async (_ms: number) => {},
     });
     const issues = await client.fetchActive();
     expect(issues.map((i) => i.identifier)).toEqual(['ENG-41', 'ENG-42', 'X-99']);
@@ -109,6 +148,7 @@ describe('createLinearClient', () => {
       client: stubClient(() => {
         throw new Error('should not be called');
       }),
+      sleep: async (_ms: number) => {},
     });
     expect(await client.fetchActive()).toEqual([]);
   });
@@ -120,43 +160,341 @@ describe('createLinearClient', () => {
       activeStates: ['todo'],
       terminalStates: ['done'],
       client: stubClient(() => ({ issue: null })),
+      sleep: async (_ms: number) => {},
     });
     expect(await client.fetchById('missing')).toBeNull();
   });
+});
 
-  it('classifies 401 as LinearAuthError', async () => {
+describe('createLinearClient – resilience', () => {
+  it('401 throws LinearAuthError immediately and does not retry', async () => {
+    const calls = vi.fn(() => {
+      const err = new Error('unauthorized') as Error & { response: { status: number } };
+      err.response = { status: 401 };
+      throw err;
+    });
+    const sleep = vi.fn(async (_ms: number) => {});
     const client = createLinearClient({
       endpoint: 'http://stub',
       apiKey: 'k',
       activeStates: ['todo'],
       terminalStates: ['done'],
-      client: stubClient(() => {
-        const err = new Error('unauthorized') as Error & { response: { status: number } };
-        err.response = { status: 401 };
-        throw err;
-      }),
+      client: stubClient(calls),
+      sleep,
+      maxAttempts: 3,
     });
     await expect(client.fetchActive()).rejects.toBeInstanceOf(LinearAuthError);
+    expect(calls).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
   });
 
-  it('classifies 429 as LinearRateLimitError with retry-after', async () => {
+  it('403 throws LinearAuthError immediately and does not retry', async () => {
+    const calls = vi.fn(() => {
+      const err = new Error('forbidden') as Error & { response: { status: number } };
+      err.response = { status: 403 };
+      throw err;
+    });
+    const sleep = vi.fn(async (_ms: number) => {});
     const client = createLinearClient({
       endpoint: 'http://stub',
       apiKey: 'k',
       activeStates: ['todo'],
       terminalStates: ['done'],
-      client: stubClient(() => {
-        const err = new Error('rate limited') as Error & { response: unknown };
-        err.response = {
-          status: 429,
-          headers: { get: (k: string) => (k === 'retry-after' ? '7' : null) },
-        };
-        throw err;
-      }),
+      client: stubClient(calls),
+      sleep,
+    });
+    await expect(client.fetchActive()).rejects.toBeInstanceOf(LinearAuthError);
+    expect(calls).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it('429 honours Retry-After, sleeps, retries, then succeeds', async () => {
+    let n = 0;
+    const calls = vi.fn(() => {
+      n += 1;
+      if (n === 1) throw rateLimitError('7');
+      return { issues: { nodes: [ENG42] } };
+    });
+    const sleep = vi.fn(async (_ms: number) => {});
+    const client = createLinearClient({
+      endpoint: 'http://stub',
+      apiKey: 'k',
+      activeStates: ['todo'],
+      terminalStates: ['done'],
+      client: stubClient(calls),
+      sleep,
+      maxAttempts: 3,
+    });
+    const issues = await client.fetchActive();
+    expect(issues.map((i) => i.identifier)).toEqual(['ENG-42']);
+    expect(calls).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledTimes(1);
+    // First sleep should be ~7000ms (Retry-After) plus small additive jitter (≤250ms).
+    const slept = sleep.mock.calls[0]?.[0] as number;
+    expect(slept).toBeGreaterThanOrEqual(7000);
+    expect(slept).toBeLessThan(7000 + 250);
+  });
+
+  it('429 honours HTTP-date Retry-After values', async () => {
+    const now = Date.parse('Wed, 21 Oct 2015 07:27:48 GMT');
+    const dateNow = vi.spyOn(Date, 'now').mockReturnValue(now);
+    const calls = vi.fn(() => {
+      throw rateLimitError('Wed, 21 Oct 2015 07:28:00 GMT');
+    });
+    const client = createLinearClient({
+      endpoint: 'http://stub',
+      apiKey: 'k',
+      activeStates: ['todo'],
+      terminalStates: ['done'],
+      client: stubClient(calls),
+      sleep: async (_ms: number) => {},
+      maxAttempts: 1,
+    });
+    try {
+      await expect(client.fetchActive()).rejects.toMatchObject({
+        name: 'LinearRateLimitError',
+        retryAfterMs: 12000,
+      });
+    } finally {
+      dateNow.mockRestore();
+    }
+  });
+
+  it('429 falls back to default Retry-After when header missing/invalid', async () => {
+    const calls = vi.fn(() => {
+      throw rateLimitError(null);
+    });
+    const sleep = vi.fn(async (_ms: number) => {});
+    const client = createLinearClient({
+      endpoint: 'http://stub',
+      apiKey: 'k',
+      activeStates: ['todo'],
+      terminalStates: ['done'],
+      client: stubClient(calls),
+      sleep,
+      maxAttempts: 2,
     });
     await expect(client.fetchActive()).rejects.toMatchObject({
       name: 'LinearRateLimitError',
-      retryAfterMs: 7000,
+      retryAfterMs: 5000,
     });
+    expect(calls).toHaveBeenCalledTimes(2);
+    // Sleep was issued for the first failure with the default 5s value.
+    const slept = sleep.mock.calls[0]?.[0] as number;
+    expect(slept).toBeGreaterThanOrEqual(5000);
+    expect(slept).toBeLessThan(5000 + 250);
+  });
+
+  it('429 exhausted across maxAttempts surfaces LinearRateLimitError', async () => {
+    const calls = vi.fn(() => {
+      throw rateLimitError('3');
+    });
+    const sleep = vi.fn(async (_ms: number) => {});
+    const client = createLinearClient({
+      endpoint: 'http://stub',
+      apiKey: 'k',
+      activeStates: ['todo'],
+      terminalStates: ['done'],
+      client: stubClient(calls),
+      sleep,
+      maxAttempts: 3,
+    });
+    await expect(client.fetchActive()).rejects.toMatchObject({
+      name: 'LinearRateLimitError',
+      retryAfterMs: 3000,
+    });
+    expect(calls).toHaveBeenCalledTimes(3);
+    expect(sleep).toHaveBeenCalledTimes(2);
+  });
+
+  it('5xx retries with exponential backoff and recovers', async () => {
+    let n = 0;
+    const calls = vi.fn(() => {
+      n += 1;
+      if (n < 3) throw serverError(503);
+      return { issues: { nodes: [ENG42] } };
+    });
+    const sleep = vi.fn(async (_ms: number) => {});
+    const client = createLinearClient({
+      endpoint: 'http://stub',
+      apiKey: 'k',
+      activeStates: ['todo'],
+      terminalStates: ['done'],
+      client: stubClient(calls),
+      sleep,
+      maxAttempts: 3,
+    });
+    const issues = await client.fetchActive();
+    expect(issues.map((i) => i.identifier)).toEqual(['ENG-42']);
+    expect(calls).toHaveBeenCalledTimes(3);
+    expect(sleep).toHaveBeenCalledTimes(2);
+    // First sleep: base=500ms with up to +50% jitter -> [500, 750).
+    const s1 = sleep.mock.calls[0]?.[0] as number;
+    expect(s1).toBeGreaterThanOrEqual(500);
+    expect(s1).toBeLessThan(750);
+    // Second sleep: 1000ms with up to +50% jitter -> [1000, 1500).
+    const s2 = sleep.mock.calls[1]?.[0] as number;
+    expect(s2).toBeGreaterThanOrEqual(1000);
+    expect(s2).toBeLessThan(1500);
+  });
+
+  it('caps transient backoff after jitter', async () => {
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0.999999);
+    const calls = vi.fn(() => {
+      throw serverError(503);
+    });
+    const sleep = vi.fn(async (_ms: number) => {});
+    const client = createLinearClient({
+      endpoint: 'http://stub',
+      apiKey: 'k',
+      activeStates: ['todo'],
+      terminalStates: ['done'],
+      client: stubClient(calls),
+      sleep,
+      maxAttempts: 6,
+    });
+    try {
+      await expect(client.fetchActive()).rejects.toThrow(/server 503/);
+      expect(sleep).toHaveBeenCalledTimes(5);
+      for (const [ms] of sleep.mock.calls) {
+        expect(ms).toBeLessThanOrEqual(5000);
+      }
+    } finally {
+      random.mockRestore();
+    }
+  });
+
+  it('5xx exhausted re-throws the underlying error', async () => {
+    const calls = vi.fn(() => {
+      throw serverError(500);
+    });
+    const sleep = vi.fn(async (_ms: number) => {});
+    const client = createLinearClient({
+      endpoint: 'http://stub',
+      apiKey: 'k',
+      activeStates: ['todo'],
+      terminalStates: ['done'],
+      client: stubClient(calls),
+      sleep,
+      maxAttempts: 3,
+    });
+    await expect(client.fetchActive()).rejects.toThrow(/server 500/);
+    expect(calls).toHaveBeenCalledTimes(3);
+    expect(sleep).toHaveBeenCalledTimes(2);
+  });
+
+  it('network error (no response) retries then succeeds', async () => {
+    let n = 0;
+    const calls = vi.fn(() => {
+      n += 1;
+      if (n === 1) throw networkError();
+      return { issues: { nodes: [ENG42] } };
+    });
+    const sleep = vi.fn(async (_ms: number) => {});
+    const client = createLinearClient({
+      endpoint: 'http://stub',
+      apiKey: 'k',
+      activeStates: ['todo'],
+      terminalStates: ['done'],
+      client: stubClient(calls),
+      sleep,
+      maxAttempts: 3,
+    });
+    const issues = await client.fetchActive();
+    expect(issues.map((i) => i.identifier)).toEqual(['ENG-42']);
+    expect(calls).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledTimes(1);
+  });
+
+  it('network error exhausted re-throws the underlying error', async () => {
+    const calls = vi.fn(() => {
+      throw networkError();
+    });
+    const sleep = vi.fn(async (_ms: number) => {});
+    const client = createLinearClient({
+      endpoint: 'http://stub',
+      apiKey: 'k',
+      activeStates: ['todo'],
+      terminalStates: ['done'],
+      client: stubClient(calls),
+      sleep,
+      maxAttempts: 3,
+    });
+    await expect(client.fetchActive()).rejects.toThrow(/fetch failed/);
+    expect(calls).toHaveBeenCalledTimes(3);
+  });
+
+  it('per-request timeout aborts the in-flight call and surfaces LinearTimeoutError', async () => {
+    // Stub that never resolves on its own, but rejects with AbortError when the
+    // abort signal fires – mirroring how fetch propagates AbortController.
+    const calls = vi.fn(
+      (_op: string, _vars: unknown, signal: AbortSignal | undefined) =>
+        new Promise((_res, rej) => {
+          signal?.addEventListener('abort', () => {
+            const err = new Error('aborted') as Error & { name: string };
+            err.name = 'AbortError';
+            rej(err);
+          });
+        }),
+    );
+    const sleep = vi.fn(async (_ms: number) => {});
+    const client = createLinearClient({
+      endpoint: 'http://stub',
+      apiKey: 'k',
+      activeStates: ['todo'],
+      terminalStates: ['done'],
+      client: stubClient(calls),
+      sleep,
+      requestTimeoutMs: 5,
+      maxAttempts: 1,
+    });
+    await expect(client.fetchActive()).rejects.toBeInstanceOf(LinearTimeoutError);
+    expect(calls).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it('timeout is treated as transient and retried up to maxAttempts', async () => {
+    const calls = vi.fn(
+      (_op: string, _vars: unknown, signal: AbortSignal | undefined) =>
+        new Promise((_res, rej) => {
+          signal?.addEventListener('abort', () => {
+            const err = new Error('aborted') as Error & { name: string };
+            err.name = 'AbortError';
+            rej(err);
+          });
+        }),
+    );
+    const sleep = vi.fn(async (_ms: number) => {});
+    const client = createLinearClient({
+      endpoint: 'http://stub',
+      apiKey: 'k',
+      activeStates: ['todo'],
+      terminalStates: ['done'],
+      client: stubClient(calls),
+      sleep,
+      requestTimeoutMs: 5,
+      maxAttempts: 3,
+    });
+    await expect(client.fetchActive()).rejects.toBeInstanceOf(LinearTimeoutError);
+    expect(calls).toHaveBeenCalledTimes(3);
+    expect(sleep).toHaveBeenCalledTimes(2);
+  });
+
+  it('passes the AbortController signal through to the underlying client', async () => {
+    let captured: AbortSignal | undefined;
+    const client = createLinearClient({
+      endpoint: 'http://stub',
+      apiKey: 'k',
+      activeStates: ['todo'],
+      terminalStates: ['done'],
+      client: stubClient((_op, _vars, signal) => {
+        captured = signal;
+        return { issues: { nodes: [] } };
+      }),
+      sleep: async (_ms: number) => {},
+    });
+    await client.fetchActive();
+    expect(captured).toBeInstanceOf(AbortSignal);
+    expect(captured?.aborted).toBe(false);
   });
 });

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createServiceClient, type Issue } from '@symphony/shared';
@@ -6,7 +6,7 @@ import pino from 'pino';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { resolveConfig } from '../config/resolve.js';
 import type { TrackerClient } from '../tracker/linear.js';
-import { sanitizeKey, WorkspaceManager } from '../workspace/manager.js';
+import { sanitizeKey, WORKSPACE_READY_SENTINEL, WorkspaceManager } from '../workspace/manager.js';
 import { recover } from './recovery.js';
 import { Repo } from './repo.js';
 import { makeTestIssue, makeTestWorkflow } from './test-helpers.js';
@@ -130,5 +130,164 @@ d('recover', () => {
     });
     const row = await repo.getWorkflowBySourceHash(wf.sourceHash);
     expect(row?.source_hash).toBe(wf.sourceHash);
+  });
+
+  it('wipes orphan workspaces missing the ready sentinel', async () => {
+    const issue = makeTestIssue({
+      id: scope.newIssueId(),
+      identifier: scope.newIdentifier(),
+      state: 'todo',
+    });
+    await repo.upsertIssues([issue]);
+
+    const wsPath = path.join(wsRoot, sanitizeKey(issue.identifier));
+    await mkdir(wsPath, { recursive: true });
+    await writeFile(path.join(wsPath, 'half-clone'), 'partial');
+
+    const reserved = await repo.tryReserveAttempt({
+      issueId: issue.id,
+      attemptNumber: 1,
+      workspacePath: wsPath,
+    });
+    await repo.markRunning(reserved!.id);
+
+    const out = await recover({
+      repo,
+      tracker: stubTracker([issue], []),
+      workspaces: new WorkspaceManager(wsRoot),
+      config: resolveConfig(makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot })),
+      log: pino({ level: 'silent' }),
+      scopedIssueIds: [...scope.issueIds],
+    });
+
+    expect(out.partialWorkspacesCleaned).toBe(1);
+    await expect(stat(wsPath)).rejects.toThrow();
+  });
+
+  it('preserves orphan workspaces that already have the ready sentinel', async () => {
+    const issue = makeTestIssue({
+      id: scope.newIssueId(),
+      identifier: scope.newIdentifier(),
+      state: 'todo',
+    });
+    await repo.upsertIssues([issue]);
+
+    const wsPath = path.join(wsRoot, sanitizeKey(issue.identifier));
+    await mkdir(wsPath, { recursive: true });
+    await writeFile(path.join(wsPath, 'state.txt'), 'preserved');
+    await writeFile(path.join(wsPath, WORKSPACE_READY_SENTINEL), '');
+
+    const reserved = await repo.tryReserveAttempt({
+      issueId: issue.id,
+      attemptNumber: 1,
+      workspacePath: wsPath,
+    });
+    await repo.markRunning(reserved!.id);
+
+    const out = await recover({
+      repo,
+      tracker: stubTracker([issue], []),
+      workspaces: new WorkspaceManager(wsRoot),
+      config: resolveConfig(makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot })),
+      log: pino({ level: 'silent' }),
+      scopedIssueIds: [...scope.issueIds],
+    });
+
+    expect(out.partialWorkspacesCleaned).toBe(0);
+    await expect(stat(wsPath)).resolves.toBeDefined();
+    await expect(stat(path.join(wsPath, 'state.txt'))).resolves.toBeDefined();
+  });
+
+  it('cleans placeholder live_sessions whose attempt is in a terminal state', async () => {
+    const issue = makeTestIssue({
+      id: scope.newIssueId(),
+      identifier: scope.newIdentifier(),
+      state: 'done',
+    });
+    await repo.upsertIssues([issue]);
+
+    const reserved = await repo.tryReserveAttempt({
+      issueId: issue.id,
+      attemptNumber: 1,
+      workspacePath: path.join(wsRoot, sanitizeKey(issue.identifier)),
+    });
+    await repo.markRunning(reserved!.id);
+    await repo.upsertLiveSession({
+      run_attempt_id: reserved!.id,
+      session_id: `pending-${reserved!.id}`,
+      thread_id: '',
+      turn_id: '',
+      input_tokens: 12,
+      output_tokens: 0,
+      total_tokens: 12,
+    });
+    // Move to terminal *without* deleting the live_session — simulates a
+    // dispatch that crashed between upsertLiveSession and the cleanup at the
+    // end of the run.
+    await repo.finishAttempt({
+      attemptId: reserved!.id,
+      status: 'failure',
+      errorClass: 'dispatch_error',
+      errorMessage: 'simulated crash',
+    });
+
+    const out = await recover({
+      repo,
+      tracker: stubTracker([], [issue]),
+      workspaces: new WorkspaceManager(wsRoot),
+      config: resolveConfig(makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot })),
+      log: pino({ level: 'silent' }),
+      scopedIssueIds: [...scope.issueIds],
+    });
+
+    expect(out.placeholderSessionsCleaned).toBe(1);
+    const { data: rows } = await db
+      .from('live_sessions')
+      .select('*')
+      .eq('run_attempt_id', reserved!.id);
+    expect(rows ?? []).toHaveLength(0);
+  });
+
+  it('does not touch placeholder live_sessions whose attempt is still running', async () => {
+    const issue = makeTestIssue({
+      id: scope.newIssueId(),
+      identifier: scope.newIdentifier(),
+      state: 'todo',
+    });
+    await repo.upsertIssues([issue]);
+
+    // The orphan-handling branch deletes its own live_session (regardless of
+    // session_id), so to isolate the placeholder sweep we keep this attempt in
+    // 'pending' — it isn't a recovery orphan, but it has the placeholder row.
+    const reserved = await repo.tryReserveAttempt({
+      issueId: issue.id,
+      attemptNumber: 1,
+      workspacePath: path.join(wsRoot, sanitizeKey(issue.identifier)),
+    });
+    await repo.upsertLiveSession({
+      run_attempt_id: reserved!.id,
+      session_id: `pending-${reserved!.id}`,
+      thread_id: '',
+      turn_id: '',
+      input_tokens: 0,
+      output_tokens: 0,
+      total_tokens: 0,
+    });
+
+    const out = await recover({
+      repo,
+      tracker: stubTracker([issue], []),
+      workspaces: new WorkspaceManager(wsRoot),
+      config: resolveConfig(makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot })),
+      log: pino({ level: 'silent' }),
+      scopedIssueIds: [...scope.issueIds],
+    });
+
+    expect(out.placeholderSessionsCleaned).toBe(0);
+    const { data: rows } = await db
+      .from('live_sessions')
+      .select('*')
+      .eq('run_attempt_id', reserved!.id);
+    expect(rows ?? []).toHaveLength(1);
   });
 });

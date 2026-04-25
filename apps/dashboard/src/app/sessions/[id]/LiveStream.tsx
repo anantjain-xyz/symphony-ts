@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { getSupabaseBrowserClient } from '@/lib/supabase-browser';
-import type { Tables } from '@symphony/shared';
+import { IssueLinks } from '@/components/IssueLinks';
+import type { Tables, TrackerConfig } from '@symphony/shared';
 import { EventBlock, ToolRunGroup, previewArgs, type EventRow } from './EventBlock';
 
 type Attempt = Tables<'run_attempts'>;
@@ -12,13 +13,24 @@ interface Props {
   attempt: Attempt;
   initialEvents: EventRow[];
   attemptIsTerminal: boolean;
+  issueIdentifier: string | null;
+  prUrls: string[];
+  tracker: TrackerConfig | null;
 }
 
 const RUN_GROUP_THRESHOLD = 3; // collapse N+ consecutive same-tool calls
 
 type Item = { kind: 'single'; ev: EventRow } | { kind: 'group'; events: EventRow[] };
 
-export function LiveStream({ attemptId, attempt, initialEvents, attemptIsTerminal }: Props) {
+export function LiveStream({
+  attemptId,
+  attempt,
+  initialEvents,
+  attemptIsTerminal,
+  issueIdentifier,
+  prUrls,
+  tracker,
+}: Props) {
   const [events, setEvents] = useState<EventRow[]>(initialEvents);
   const [connected, setConnected] = useState(false);
   const [now, setNow] = useState(Date.now());
@@ -132,6 +144,9 @@ export function LiveStream({ attemptId, attempt, initialEvents, attemptIsTermina
             {attemptId}
           </div>
         </button>
+        {issueIdentifier && (
+          <IssueLinks identifier={issueIdentifier} prUrls={prUrls} tracker={tracker} />
+        )}
       </aside>
 
       {/* Center: timeline */}

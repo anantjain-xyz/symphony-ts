@@ -22,7 +22,7 @@ export function IssueLinks({
     <div className={className}>
       <div className="smallcaps text-[10px] text-ink-3 mb-1">links</div>
       <div className="flex flex-wrap gap-1">
-        {linear && <LinkChip href={linear} label="linear" />}
+        {linear && <LinkChip href={linear} label="LINEAR" />}
         {prUrls.map((url) => (
           <LinkChip key={url} href={url} label={prLabel(url)} />
         ))}

@@ -1,8 +1,7 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
-import { IssueLinks } from '@/components/IssueLinks';
-import type { Tables, TrackerConfig, WorkflowFrontMatter } from '@symphony/shared';
+import type { Tables, WorkflowFrontMatter } from '@symphony/shared';
 import { LiveStream } from './LiveStream';
 
 export const dynamic = 'force-dynamic';
@@ -45,12 +44,15 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
 
   return (
     <>
-      <Header attempt={attempt} issue={issue} terminal={terminal} tracker={tracker} />
+      <Header attempt={attempt} issue={issue} terminal={terminal} />
       <LiveStream
         attemptId={id}
         attempt={attempt}
         initialEvents={initialEvents ?? []}
         attemptIsTerminal={terminal}
+        issueIdentifier={issue?.identifier ?? null}
+        prUrls={issue?.pr_urls ?? []}
+        tracker={tracker}
       />
     </>
   );
@@ -60,12 +62,10 @@ function Header({
   attempt,
   issue,
   terminal,
-  tracker,
 }: {
   attempt: AttemptWithIssue;
   issue: AttemptWithIssue['issues'];
   terminal: boolean;
-  tracker: TrackerConfig | null;
 }) {
   const status = attempt.status;
   return (
@@ -98,14 +98,6 @@ function Header({
         <Stat label="duration" value={formatDuration(attempt.started_at, attempt.ended_at)} />
         {terminal && <Stat label="state" value="terminal" valueClass="text-ink-2" />}
       </div>
-      {issue && (
-        <IssueLinks
-          identifier={issue.identifier}
-          prUrls={issue.pr_urls}
-          tracker={tracker}
-          className="mt-4"
-        />
-      )}
     </header>
   );
 }

@@ -1,0 +1,41 @@
+# Don't ship local-only state into any image build context.
+.git
+.github
+.gitignore
+.changeset
+.env
+.env.*
+!.env.example
+.symphony-workspace-ready
+
+# pnpm / node modules — installed fresh inside the image
+node_modules
+**/node_modules
+
+# Build outputs
+**/dist
+**/.next
+**/.turbo
+**/coverage
+**/*.tsbuildinfo
+
+# Test artifacts
+.playwright-mcp
+
+# OS / editor
+.DS_Store
+.vscode
+.idea
+
+# Supabase local state (not the migrations directory)
+supabase/.branches
+supabase/.temp
+supabase/seed.sql
+
+# Docker / runtime artifacts
+Dockerfile
+**/Dockerfile
+.dockerignore
+**/.dockerignore
+docker-compose.yml
+docker-compose.*.yml

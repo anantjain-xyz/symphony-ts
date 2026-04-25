@@ -46,13 +46,15 @@ symphony-ts/
 ├── pnpm-workspace.yaml    apps/* + packages/*
 ├── biome.json             lint/format (no console, no debugger)
 ├── .env.example           env template
+├── docker-compose.yml     ⭐ one-command quickstart (db + rest + realtime + worker + dashboard)
+├── docker/kong.yml        api gateway routing for the compose stack
 ├── .github/workflows/ci.yml    format · lint · typecheck · test
 │
 ├── supabase/              DB schema + local dev config
 ├── packages/shared/       zod schemas, DB types, client factory
 └── apps/
-    ├── worker/            Node.js orchestrator daemon
-    └── dashboard/         Next.js 15 operator console
+    ├── worker/            Node.js orchestrator daemon (+ Dockerfile)
+    └── dashboard/         Next.js 15 operator console (+ Dockerfile)
 ```
 
 - `apps/worker/` — Node daemon (poll loop, orchestrator, workspace manager, agent runner)
@@ -60,7 +62,34 @@ symphony-ts/
 - `packages/shared/` — zod schemas, generated DB types, Supabase client factory
 - `supabase/` — local Supabase config + SQL migrations
 
-## Local dev
+## Getting started
+
+The fastest path is the bundled docker stack — it boots Supabase, the worker,
+and the dashboard with one command. No host-side Supabase CLI required.
+
+```sh
+git clone https://github.com/anantjain-xyz/symphony-ts.git && cd symphony-ts
+docker compose up
+# wait ~30s for first build, then open http://localhost:3000
+```
+
+The dashboard arrives pre-seeded with two demo issues and a few attempts so
+you can click around immediately. To drive real Linear traffic, pass a
+tracker key:
+
+```sh
+LINEAR_API_KEY=lin_api_… docker compose up
+```
+
+The Supabase API is reachable at `http://localhost:54421` (REST under
+`/rest/v1`, Realtime under `/realtime/v1`). Override port collisions with
+`SUPABASE_PORT`, `POSTGRES_PORT`, `DASHBOARD_PORT`, and `PUBLIC_SUPABASE_URL`
+(see `.env.example`).
+
+The compose stack ships well-known dev JWTs (see `docker/kong.yml`). It is
+local-only — do not expose any of these ports to a public network.
+
+## Local dev (without Docker)
 
 ```sh
 pnpm install

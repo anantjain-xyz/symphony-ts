@@ -1,0 +1,93 @@
+# Kong declarative config — Supabase API gateway for the local docker stack.
+# Mirrors the routing layout that the supabase-js client expects when given a
+# single base URL: it appends /rest/v1/, /realtime/v1/, /auth/v1/ to it.
+#
+# Loaded via KONG_DECLARATIVE_CONFIG (DB-less mode).
+_format_version: "2.1"
+_transform: true
+
+consumers:
+  - username: anon
+    keyauth_credentials:
+      - key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlLWRlbW8iLCJpYXQiOjE2NDE3NjkyMDAsImV4cCI6MTc5OTUzNTYwMH0.F_rDxRTPE8OU83L_CNgEGXfmirMXmMMugT29Cvc8ygQ
+  - username: service_role
+    keyauth_credentials:
+      - key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaXNzIjoic3VwYWJhc2UtZGVtbyIsImlhdCI6MTY0MTc2OTIwMCwiZXhwIjoxNzk5NTM1NjAwfQ.5z-pJI1qwZg1LE5yavGLqum65WOnnaaI5eZ3V00pLww
+
+services:
+  ## Open: anyone can probe this without an apikey.
+  - name: open-health
+    url: http://rest:3000/
+    routes:
+      - name: open-health-route
+        paths:
+          - /rest/v1/health
+        strip_path: true
+        methods: [GET, OPTIONS]
+
+  ## PostgREST — apikey-gated.
+  - name: rest-v1
+    _comment: "PostgREST: REST endpoint for tables/views/RPC under /rest/v1/"
+    url: http://rest:3000/
+    routes:
+      - name: rest-v1-route
+        strip_path: true
+        paths:
+          - /rest/v1/
+    plugins:
+      - name: cors
+      - name: key-auth
+        config:
+          hide_credentials: false
+          key_names:
+            - apikey
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow:
+            - admin
+            - anon
+
+  ## Realtime — apikey-gated, websocket upgrade. Kong upgrades HTTP→WS
+  ## transparently, no ws/wss protocols needed on the route.
+  - name: realtime-v1-ws
+    _comment: "Realtime: socket upgrade lives under /realtime/v1/"
+    url: http://realtime:4000/socket
+    routes:
+      - name: realtime-v1-ws-route
+        strip_path: true
+        paths:
+          - /realtime/v1/
+        protocols:
+          - http
+          - https
+    plugins:
+      - name: cors
+      - name: key-auth
+        config:
+          hide_credentials: false
+          key_names:
+            - apikey
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow:
+            - admin
+            - anon
+
+  ## Auth: stub /auth/v1/health so supabase-js doesn't error on probes.
+  ## We don't run gotrue — the dashboard uses the anon key directly, no
+  ## sign-in flow.
+  - name: auth-v1-health
+    url: http://rest:3000/
+    routes:
+      - name: auth-v1-health-route
+        strip_path: true
+        paths:
+          - /auth/v1/health
+
+acls:
+  - consumer: anon
+    group: anon
+  - consumer: service_role
+    group: admin

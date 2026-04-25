@@ -13,6 +13,10 @@ const nextConfig = {
   // We import @symphony/shared from a sibling workspace package; transpile it
   // so Next handles the TS source directly.
   transpilePackages: ['@symphony/shared'],
+  // Self-contained server bundle for the docker image (server.js + minimal
+  // node_modules); next.js traces files from the monorepo root.
+  output: 'standalone',
+  outputFileTracingRoot: repoRoot,
 };
 
 export default nextConfig;

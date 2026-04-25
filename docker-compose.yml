@@ -1,0 +1,222 @@
+# One-command quickstart for symphony-ts.
+#
+#   docker compose up
+#
+# Boots a self-contained Supabase stack (postgres + postgrest + realtime + an
+# api gateway) plus the worker and the Next.js dashboard. The dashboard is at
+# http://localhost:3000; the Supabase API is at http://localhost:54421.
+#
+# Everything ships with well-known dev JWT secrets (see docker/kong.yml) — the
+# stack is local-only, do not expose it to a public network.
+#
+# To exercise the worker against your tracker, set LINEAR_API_KEY in a `.env`
+# file at the repo root (or export it before `docker compose up`).
+
+name: symphony
+
+x-common-env: &common-env
+  POSTGRES_PASSWORD: postgres
+  JWT_SECRET: super-secret-jwt-token-with-at-least-32-characters-long
+  ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlLWRlbW8iLCJpYXQiOjE2NDE3NjkyMDAsImV4cCI6MTc5OTUzNTYwMH0.F_rDxRTPE8OU83L_CNgEGXfmirMXmMMugT29Cvc8ygQ
+  SERVICE_ROLE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaXNzIjoic3VwYWJhc2UtZGVtbyIsImlhdCI6MTY0MTc2OTIwMCwiZXhwIjoxNzk5NTM1NjAwfQ.5z-pJI1qwZg1LE5yavGLqum65WOnnaaI5eZ3V00pLww
+
+services:
+  # ---- Supabase Postgres: ships with the auxiliary roles + extensions
+  # (pgcrypto, pgjwt, pg_graphql, etc.) the rest of the stack needs.
+  db:
+    image: supabase/postgres:15.6.1.146
+    container_name: symphony-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_HOST: /var/run/postgresql
+      JWT_SECRET: super-secret-jwt-token-with-at-least-32-characters-long
+      JWT_EXP: 3600
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres -h 127.0.0.1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    volumes:
+      - symphony-db-data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-54422}:5432"
+
+  # ---- One-shot: apply our SQL migrations against the booted db.
+  migrator:
+    image: postgres:15-alpine
+    container_name: symphony-migrator
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: postgres
+    volumes:
+      - ./supabase/migrations:/migrations:ro
+    entrypoint:
+      - sh
+      - -ec
+      - |
+        PSQL="psql -v ON_ERROR_STOP=1 -h db -d postgres"
+        # supabase/postgres protects 'authenticator' as a reserved role; only
+        # the supabase_admin superuser can set its password. Use that role for
+        # the bootstrap step, and the regular postgres role for migrations.
+        $${PSQL} -U supabase_admin -c "ALTER ROLE authenticator WITH LOGIN PASSWORD 'postgres'" >/dev/null
+        $${PSQL} -U postgres -c "CREATE TABLE IF NOT EXISTS public.schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())" >/dev/null
+        PSQL="$${PSQL} -U postgres"
+        for f in /migrations/*.sql; do
+          v=$$(basename "$${f}" .sql)
+          if $${PSQL} -tAc "SELECT 1 FROM public.schema_migrations WHERE version = '$${v}'" | grep -q 1; then
+            echo "[migrator] skip $${v} (already applied)"
+          else
+            echo "[migrator] apply $${v}"
+            $${PSQL} -f "$${f}"
+            $${PSQL} -c "INSERT INTO public.schema_migrations (version) VALUES ('$${v}')" >/dev/null
+          fi
+        done
+        echo "[migrator] done."
+    restart: "no"
+
+  # ---- PostgREST: REST API on /rest/v1/* (proxied by gateway).
+  rest:
+    image: postgrest/postgrest:v12.2.3
+    container_name: symphony-rest
+    restart: unless-stopped
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
+    environment:
+      PGRST_DB_URI: postgres://authenticator:postgres@db:5432/postgres
+      PGRST_DB_SCHEMAS: public,graphql_public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: super-secret-jwt-token-with-at-least-32-characters-long
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+      PGRST_APP_SETTINGS_JWT_EXP: "3600"
+
+  # ---- Supabase Realtime: WS on /realtime/v1/* (proxied by gateway).
+  realtime:
+    image: supabase/realtime:v2.34.40
+    container_name: symphony-realtime
+    restart: unless-stopped
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
+    environment:
+      PORT: "4000"
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: postgres
+      DB_USER: supabase_admin
+      DB_PASSWORD: postgres
+      DB_AFTER_CONNECT_QUERY: 'SET search_path TO realtime'
+      DB_ENC_KEY: supabaserealtime
+      API_JWT_SECRET: super-secret-jwt-token-with-at-least-32-characters-long
+      SECRET_KEY_BASE: UpNVNFUUfUKgz4zXJpwTKSHdJk3l9zQOFXmGW9oGJ4lSMBjCG6BQK1gJ5HQy1MDi
+      ERL_AFLAGS: -proto_dist inet_tcp
+      DNS_NODES: "''"
+      RLIMIT_NOFILE: "10000"
+      APP_NAME: realtime
+      SEED_SELF_HOST: "true"
+      RUN_JANITOR: "true"
+      REALTIME_IP_VERSION: IPV4
+    healthcheck:
+      test: ["CMD-SHELL", "printf 'GET /api/health HTTP/1.0\\r\\n\\r\\n' | timeout 2 sh -c 'cat > /dev/tcp/127.0.0.1/4000 && cat <&3' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ---- Kong: single API gateway exposing /rest/v1, /realtime/v1 on :54421.
+  kong:
+    image: kong:2.8.1
+    container_name: symphony-gateway
+    restart: unless-stopped
+    depends_on:
+      rest:
+        condition: service_started
+      realtime:
+        condition: service_started
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /var/lib/kong/kong.yml
+      KONG_DNS_ORDER: LAST,A,CNAME
+      KONG_PLUGINS: request-transformer,cors,key-auth,acl
+      KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
+      KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
+    volumes:
+      - ./docker/kong.yml:/var/lib/kong/kong.yml:ro
+    ports:
+      - "${SUPABASE_PORT:-54421}:8000"
+
+  # ---- One-shot: seed demo issues + attempts so the dashboard isn't empty.
+  seed:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    container_name: symphony-seed
+    depends_on:
+      kong:
+        condition: service_started
+      migrator:
+        condition: service_completed_successfully
+    environment:
+      <<: *common-env
+      SUPABASE_URL: http://kong:8000
+      SUPABASE_SERVICE_ROLE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaXNzIjoic3VwYWJhc2UtZGVtbyIsImlhdCI6MTY0MTc2OTIwMCwiZXhwIjoxNzk5NTM1NjAwfQ.5z-pJI1qwZg1LE5yavGLqum65WOnnaaI5eZ3V00pLww
+    working_dir: /repo/apps/worker
+    entrypoint: ["/sbin/tini", "--"]
+    command: ["pnpm", "exec", "tsx", "scripts/seed.ts"]
+    restart: "no"
+
+  # ---- The worker daemon. Polls Linear and dispatches agents. Without a
+  # LINEAR_API_KEY set in your `.env` the first poll will 401 and the
+  # container will exit; the dashboard still works (RealtimeRefresh sees the
+  # seed data via realtime).
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    container_name: symphony-worker
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    environment:
+      SUPABASE_URL: http://kong:8000
+      SUPABASE_SERVICE_ROLE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaXNzIjoic3VwYWJhc2UtZGVtbyIsImlhdCI6MTY0MTc2OTIwMCwiZXhwIjoxNzk5NTM1NjAwfQ.5z-pJI1qwZg1LE5yavGLqum65WOnnaaI5eZ3V00pLww
+      LINEAR_API_KEY: ${LINEAR_API_KEY:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      WORKFLOW_PATH: /repo/WORKFLOW.md
+      REPO_URL: ${REPO_URL:-}
+    restart: on-failure:0
+
+  # ---- Next.js dashboard. NEXT_PUBLIC_* values are baked into the client
+  # bundle at `next build`, so the browser hits localhost:54421; the SSR
+  # process inside the container hits kong:8000 via SUPABASE_INTERNAL_URL.
+  dashboard:
+    build:
+      context: .
+      dockerfile: apps/dashboard/Dockerfile
+      args:
+        # Public URL the *browser* hits (build-time, inlined into the client
+        # bundle by Next). Override to match your host port if you set
+        # SUPABASE_PORT.
+        NEXT_PUBLIC_SUPABASE_URL: ${PUBLIC_SUPABASE_URL:-http://localhost:54421}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlLWRlbW8iLCJpYXQiOjE2NDE3NjkyMDAsImV4cCI6MTc5OTUzNTYwMH0.F_rDxRTPE8OU83L_CNgEGXfmirMXmMMugT29Cvc8ygQ
+    container_name: symphony-dashboard
+    restart: unless-stopped
+    depends_on:
+      kong:
+        condition: service_started
+      migrator:
+        condition: service_completed_successfully
+    environment:
+      # SSR runs inside the docker network — target kong by service name.
+      SUPABASE_INTERNAL_URL: http://kong:8000
+      NEXT_PUBLIC_SUPABASE_URL: ${PUBLIC_SUPABASE_URL:-http://localhost:54421}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlLWRlbW8iLCJpYXQiOjE2NDE3NjkyMDAsImV4cCI6MTc5OTUzNTYwMH0.F_rDxRTPE8OU83L_CNgEGXfmirMXmMMugT29Cvc8ygQ
+    ports:
+      - "${DASHBOARD_PORT:-3000}:3000"
+
+volumes:
+  symphony-db-data:

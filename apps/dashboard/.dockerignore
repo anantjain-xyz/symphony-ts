@@ -1,0 +1,14 @@
+# Per-app .dockerignore: applied when this directory is the docker build
+# context. The compose stack uses the repo root as context (so the workspace
+# lockfile and sibling packages are available), in which case the root-level
+# /.dockerignore controls. Mirroring the rules here so direct
+# `docker build apps/dashboard` invocations work too.
+node_modules
+.next
+out
+coverage
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+.DS_Store

@@ -87,9 +87,12 @@ jobs:
     runs-on: ubuntu-latest
     env:
       # Build-time placeholders so Next.js page-data collection can resolve
-      # the Supabase client. Real values are injected at runtime in deploys.
-      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54421
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: build-placeholder-anon-key
+      # the server-only Supabase client and auth helpers. Real values are
+      # injected at runtime in deploys.
+      SUPABASE_URL: http://127.0.0.1:54421
+      SUPABASE_SERVICE_ROLE_KEY: build-placeholder-service-role-key
+      ALLOWED_OPERATOR_EMAILS: build@example.com
+      DASHBOARD_SESSION_SECRET: build-placeholder-session-secret
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup

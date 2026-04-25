@@ -14,15 +14,15 @@ A long-running daemon that polls Linear for active issues, provisions isolated w
         │                          ┌──────────────┐                     │
         │ GraphQL                  │  issues      │                     │ browser
         │                          │  run_attempts│                     │
-        ▼                          │  agent_events│◀──── Realtime ──────┤
- ┌──────────────┐   service key    │  live_sess.  │                     ▼
- │   WORKER     │ ───────────────▶ │  retry_queue │         ┌───────────────────┐
- │   (daemon)   │ ◀─────────────── │  hook_runs   │         │  DASHBOARD        │
- │              │                  │  workflows   │◀── RLS──│  (Next.js 15)     │
- │ poll → plan  │                  └──────────────┘   anon  │                   │
- │ → dispatch   │                                           │  fleet / sessions │
- └──────┬───────┘                                           └───────────────────┘
-        │ spawn
+        ▼                          │  agent_events│                     ▼
+ ┌──────────────┐   service key    │  live_sess.  │         ┌───────────────────┐
+ │   WORKER     │ ───────────────▶ │  retry_queue │ service │  DASHBOARD        │
+ │   (daemon)   │ ◀─────────────── │  hook_runs   │ ◀──key──│  (Next.js 15)     │
+ │              │                  │  workflows   │         │  server proxy +   │
+ │ poll → plan  │                  └──────────────┘         │  SSE realtime     │
+ │ → dispatch   │                                           │                   │
+ └──────┬───────┘                                           │  fleet / sessions │
+        │ spawn                                             └───────────────────┘
         ▼
  ┌──────────────┐    NDJSON     ┌──────────────┐
  │ agent adapter│ ◀───JSON-RPC─▶│claude / codex│   ← the actual LLM agent
@@ -77,13 +77,16 @@ Both apps read from a single `.env.local` at the repo root:
 
 ```sh
 cp .env.example .env.local
-# fill in SUPABASE_SERVICE_ROLE_KEY (from `supabase status` -> Secret)
-#         NEXT_PUBLIC_SUPABASE_ANON_KEY (from `supabase status` -> Publishable)
+# fill in SUPABASE_SERVICE_ROLE_KEY     (from `supabase status` -> Secret)
 #         LINEAR_API_KEY
+#         ALLOWED_OPERATOR_EMAILS       (who is allowed to sign into the dashboard)
+#         DASHBOARD_SESSION_SECRET      (HMAC secret for cookie signing; see .env.example)
 ```
 
 The worker loads it via `dotenv` in `apps/worker/src/index.ts`; the dashboard
-loads it via `loadEnvConfig` in `apps/dashboard/next.config.mjs`.
+loads it via `loadEnvConfig` in `apps/dashboard/next.config.mjs`. The dashboard
+no longer publishes any `NEXT_PUBLIC_SUPABASE_*` keys — all Supabase access is
+server-side.
 
 ### Worker
 
@@ -100,7 +103,13 @@ pnpm --filter @symphony/dashboard dev
 # open http://localhost:3000
 ```
 
-The dashboard is open to anyone who can reach the port — auth is disabled because this stack is intended to run on a local machine.
+All Supabase reads happen on the server with the service-role key; the browser
+never receives a database key. Access is gated by an operator allowlist
+(`ALLOWED_OPERATOR_EMAILS`). To sign in, enter your email on `/login` — the
+dashboard server prints a magic link to its stdout. Open that link to set a
+signed session cookie. The link is valid for 15 minutes; the resulting session
+lives 7 days. For a deployed instance, replace the stdout sink with email or
+chat delivery (the magic link emit point is the only thing to change).
 
 ### Smoke test the dashboard with seeded data
 
@@ -252,36 +261,49 @@ Test files (`*.test.ts`) live next to sources. Integration tests (`*.integration
 
 ### `apps/dashboard` — the operator console
 
-Next.js 15 + React 19 + Tailwind. No auth — the app is local-only.
+Next.js 15 + React 19 + Tailwind. Magic-link auth gates the whole UI; all
+Supabase access runs server-side with the service-role key.
 
 ```
 apps/dashboard/src/
+├── middleware.ts                 ⭐ auth gate — redirects to /login if no session
 ├── app/
-│   ├── layout.tsx                shell + header
+│   ├── layout.tsx                shell + header (operator email + log out)
 │   ├── globals.css               Tailwind + dark theme
+│   ├── login/page.tsx            magic-link request form
 │   ├── page.tsx                  ⭐ fleet view: KPIs + active / retries / failures / past
 │   ├── KpiBlock.tsx              KPI metric card
 │   ├── LiveRuntime.tsx           worker heartbeat / uptime KPI
-│   ├── RealtimeRefresh.tsx       Supabase subscription → router.refresh
+│   ├── RealtimeRefresh.tsx       EventSource → router.refresh
 │   ├── issues/[id]/page.tsx      one issue, all its attempts
-│   └── sessions/[id]/
-│       ├── page.tsx              attempt metadata (SSR)
-│       ├── LiveStream.tsx        ⭐ client component, Supabase Realtime
-│       └── EventBlock.tsx        agent-event renderer
+│   ├── sessions/[id]/
+│   │   ├── page.tsx              attempt metadata (SSR)
+│   │   ├── LiveStream.tsx        ⭐ client component, EventSource for live events
+│   │   └── EventBlock.tsx        agent-event renderer
+│   └── api/
+│       ├── auth/login,callback,logout/route.ts   magic-link issue/verify/clear
+│       └── realtime/
+│           ├── fleet/route.ts                    SSE: fleet refresh ticks
+│           └── sessions/[id]/route.ts            SSE: per-attempt agent_events
 │
 └── lib/
-    ├── env.ts                    env validation
-    ├── supabase-server.ts        server-side client (anon key)
-    └── supabase-browser.ts       browser singleton (anon key)
+    ├── env.ts                    env validation (server-only secrets)
+    ├── auth.ts                   operator allowlist + getCurrentSession()
+    ├── session.ts                HMAC sign/verify (cookie + magic-link tokens)
+    ├── sse.ts                    SSE ReadableStream helper
+    └── supabase-server.ts        service-role client (server-only)
 ```
 
 | Route | File | What you see |
 |---|---|---|
+| `/login` | `app/login/page.tsx` | Email form → magic link printed to dashboard server stdout |
 | `/` | `app/page.tsx` | KPI header + four sections: Active runs, Retry queue, Recent failures, Past runs |
 | `/issues/[id]` | `app/issues/[id]/page.tsx` | Issue header + attempts list w/ status colors |
-| `/sessions/[id]` | `app/sessions/[id]/page.tsx` + `LiveStream.tsx` | Live event firehose — subscribes to `agent_events` (INSERT) and `live_sessions` (*) for this attempt |
+| `/sessions/[id]` | `app/sessions/[id]/page.tsx` + `LiveStream.tsx` | Live event firehose — subscribes via `/api/realtime/sessions/[id]` SSE |
 
-Worker uses service-role (bypasses RLS). Dashboard uses the anon key and reads tables directly (RLS disabled).
+Worker and dashboard server both use the service-role key. The browser holds
+only an HMAC-signed session cookie; it has no Supabase credentials and
+subscribes to live updates exclusively through the auth-gated SSE proxy.
 
 ### `supabase/` — the schema
 
@@ -294,7 +316,8 @@ supabase/
     ├── 20260423000000_fix_realtime_publication.sql        target supabase_realtime publication
     ├── 20260423120000_dashboard_terminal_status.sql       rate_limit_state, worker_heartbeat, agent_events_latest view
     ├── 20260423120001_agent_event_kind_rate_limit.sql     adds 'rate_limit' enum value
-    └── 20260423230000_disable_auth_rls.sql                RLS off (local-only stack)
+    ├── 20260423230000_disable_auth_rls.sql                RLS off + anon SELECT grants (superseded)
+    └── 20260425000000_revoke_anon_dashboard_grants.sql    revoke anon grants, re-enable RLS
 ```
 
 The nine tables (+ one view):
@@ -354,7 +377,7 @@ The second migration adds a **partial unique index** on `run_attempts` where `st
 2. **Workspaces are per-issue, reusable across retries.** A `.ready` sentinel means `after_create` succeeded once; retries skip the expensive clone.
 3. **Races are caught by a DB invariant, not an in-memory lock.** The partial unique index is the only thing you trust.
 4. **Events are append-only; live_sessions is ephemeral.** History is immutable; "what's happening now" is a projection that dies on completion.
-5. **Local-only, no auth.** Worker uses the service-role key; dashboard uses the anon key and reads tables with RLS disabled. Don't expose the dashboard to an untrusted network.
+5. **Server-side proxy + magic-link auth for the dashboard.** Worker and dashboard server both use the service-role key; the browser holds only a signed session cookie. Operators sign in via a magic link printed to the dashboard server's stdout and gated by `ALLOWED_OPERATOR_EMAILS`. Live events reach the browser through auth-gated SSE endpoints — no Supabase credentials ever ship to the client.
 6. **Graceful shutdown drains in-flight.** SIGTERM waits 30s, then SIGKILL.
 7. **Boot recovery assumes crash-unsafe state.** Any row stuck `running` at startup is an orphan → fail + retry.
 

@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { getSupabaseBrowserClient } from '@/lib/supabase-browser';
 import type { Tables } from '@symphony/shared';
 import { EventBlock, ToolRunGroup, previewArgs, type EventRow } from './EventBlock';
 
@@ -39,30 +38,23 @@ export function LiveStream({ attemptId, attempt, initialEvents, attemptIsTermina
     return () => window.removeEventListener('hashchange', read);
   }, []);
 
-  /* Realtime subscription */
+  /* Realtime subscription via server-side SSE proxy */
   useEffect(() => {
     if (attemptIsTerminal) return;
-    const supabase = getSupabaseBrowserClient();
-    const channel = supabase
-      .channel(`session:${attemptId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'agent_events',
-          filter: `run_attempt_id=eq.${attemptId}`,
-        },
-        (payload) => {
-          setEvents((prev) => [...prev, payload.new as EventRow]);
-        },
-      )
-      .subscribe((status) => {
-        setConnected(status === 'SUBSCRIBED');
-      });
+    const source = new EventSource(`/api/realtime/sessions/${attemptId}`);
+    source.onopen = () => setConnected(true);
+    source.onerror = () => setConnected(false);
+    source.addEventListener('event', (msg) => {
+      try {
+        const row = JSON.parse((msg as MessageEvent).data) as EventRow;
+        setEvents((prev) => [...prev, row]);
+      } catch {
+        // ignore malformed payload
+      }
+    });
 
     return () => {
-      void supabase.removeChannel(channel);
+      source.close();
     };
   }, [attemptId, attemptIsTerminal]);
 

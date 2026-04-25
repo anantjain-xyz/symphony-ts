@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import { Fraunces, Inter_Tight, JetBrains_Mono } from 'next/font/google';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
+import { getCurrentSession } from '@/lib/auth';
 
 const sans = Inter_Tight({
   subsets: ['latin'],
@@ -31,7 +32,9 @@ export const metadata: Metadata = {
   description: 'Symphony orchestrator dashboard',
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  const session = await getCurrentSession();
+
   return (
     <html lang="en" className={`${sans.variable} ${display.variable} ${mono.variable}`}>
       <body className="min-h-screen font-sans">
@@ -46,6 +49,21 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               Symphony
             </span>
           </Link>
+          {session && (
+            <div className="ml-auto flex items-center gap-3">
+              <span className="font-mono text-[11px] text-ink-3 tabular truncate max-w-[260px]">
+                {session.email}
+              </span>
+              <form method="post" action="/api/auth/logout">
+                <button
+                  type="submit"
+                  className="smallcaps text-[10px] text-ink-3 hover:text-ink-0 link-hover"
+                >
+                  log out
+                </button>
+              </form>
+            </div>
+          )}
         </header>
         <main className="px-8 py-6">{children}</main>
       </body>

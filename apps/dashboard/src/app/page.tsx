@@ -20,7 +20,6 @@ type LatestEventRow = Tables<'agent_events_latest'>;
 export default async function FleetPage() {
   const supabase = createSupabaseServerClient();
 
-  const nowIso = new Date().toISOString();
   const [
     running,
     retries,
@@ -30,7 +29,6 @@ export default async function FleetPage() {
     issuesCount,
     heartbeatRes,
     workflowRes,
-    rateLimitRes,
   ] = await Promise.all([
     supabase
       .from('run_attempts')
@@ -63,13 +61,6 @@ export default async function FleetPage() {
       .order('loaded_at', { ascending: false })
       .limit(1)
       .maybeSingle(),
-    supabase
-      .from('rate_limit_state')
-      .select('*')
-      .gt('reset_at', nowIso)
-      .order('reset_at', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
   ]);
 
   const runningRows = (running.data ?? []) as unknown as RunAttemptWithIssue[];
@@ -91,12 +82,22 @@ export default async function FleetPage() {
   const trackedIssues = issuesCount.count ?? 0;
   const allQuiet = runningRows.length === 0 && retryRows.length === 0;
 
-  const heartbeat = heartbeatRes.data ?? null;
-  const ratePause = rateLimitRes.data ?? null;
-
   const frontMatter = extractFrontMatter(workflowRes.data?.parsed);
+  const configuredBackend = frontMatter?.agent?.backend ?? 'codex';
   const maxConcurrent = frontMatter?.agent?.max_concurrent_agents ?? null;
   const projectUrl = frontMatter?.tracker ? trackerProjectUrl(frontMatter.tracker) : null;
+  const rateLimitNowIso = new Date().toISOString();
+  const rateLimitRes = await supabase
+    .from('rate_limit_state')
+    .select('*')
+    .gt('reset_at', rateLimitNowIso)
+    .like('source', `${configuredBackend}_%`)
+    .order('reset_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const heartbeat = heartbeatRes.data ?? null;
+  const ratePause = rateLimitRes.data ?? null;
 
   const latestEventByAttempt = new Map<string, AgentEventRow>();
   for (const row of (latestEventsRes.data ?? []) as LatestEventRow[]) {

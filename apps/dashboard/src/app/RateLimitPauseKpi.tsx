@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 interface Props {
   source: string;
@@ -11,9 +12,11 @@ interface Props {
  * Renders the "paused — rate-limited" KPI block when the worker has detected
  * a future `reset_at` for a known backend source. Ticks once a second so the
  * countdown stays current without a server roundtrip; the row itself is
- * refreshed via `RealtimeRefresh` when `rate_limit_state` changes.
+ * refreshed via `RealtimeRefresh` when `rate_limit_state` changes, plus one
+ * scheduled refresh when the current pause expires.
  */
 export function RateLimitPauseKpi({ source, resetAt }: Props) {
+  const router = useRouter();
   const [now, setNow] = useState<number>(() => Date.now());
 
   useEffect(() => {
@@ -23,6 +26,22 @@ export function RateLimitPauseKpi({ source, resetAt }: Props) {
 
   const resetMs = resetAt ? new Date(resetAt).getTime() : null;
   const remainingMs = resetMs !== null ? resetMs - now : null;
+
+  useEffect(() => {
+    if (resetMs === null || Number.isNaN(resetMs)) return;
+
+    const msUntilRefresh = resetMs - Date.now();
+    if (msUntilRefresh <= 0) {
+      router.refresh();
+      return;
+    }
+
+    const id = setTimeout(() => {
+      setNow(Date.now());
+      router.refresh();
+    }, msUntilRefresh);
+    return () => clearTimeout(id);
+  }, [resetMs, router]);
 
   // Show source on hover via `title` so the narrow 5-col KPI strip can prefer
   // the operationally-critical "until HH:MM:SS" without source-name truncation

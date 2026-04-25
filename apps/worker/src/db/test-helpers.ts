@@ -9,6 +9,7 @@ export function makeTestIssue(overrides: Partial<Issue> & Pick<Issue, 'id' | 'id
     branch: null,
     labels: [],
     blockers: [],
+    pr_urls: [],
     ...overrides,
   };
 }

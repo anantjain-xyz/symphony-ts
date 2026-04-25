@@ -9,6 +9,9 @@ export const TrackerConfig = z
     kind: z.literal('linear'),
     endpoint: z.string().url().default('https://api.linear.app/graphql'),
     api_key: z.string().min(1),
+    // Linear workspace slug from the URL (e.g. "anthropic" in linear.app/anthropic/...).
+    // Required to render direct issue links in the dashboard; if unset, the link is hidden.
+    workspace: z.string().min(1).optional(),
     project_slug: z.string().optional(),
     // Optional explicit override for the dashboard's "Project:" link. When
     // unset, the dashboard falls back to a best-effort URL derived from
@@ -29,6 +32,11 @@ export function trackerProjectUrl(tracker: TrackerConfig): string | null {
   if (tracker.project_url) return tracker.project_url;
   if (tracker.project_slug) return `https://linear.app/project/${tracker.project_slug}`;
   return null;
+}
+
+export function linearIssueUrl(tracker: TrackerConfig, identifier: string): string | null {
+  if (!tracker.workspace) return null;
+  return `https://linear.app/${tracker.workspace}/issue/${identifier}`;
 }
 
 export const PollingConfig = z
@@ -177,6 +185,7 @@ export const Issue = z
     branch: z.string().nullable(),
     labels: z.array(z.string()),
     blockers: z.array(z.string()),
+    pr_urls: z.array(z.string().url()),
   })
   .strict();
 export type Issue = z.infer<typeof Issue>;

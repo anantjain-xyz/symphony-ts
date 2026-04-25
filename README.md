@@ -373,3 +373,11 @@ To understand the system, read in this order:
 That's the critical path. Everything else is support.
 
 See [SPEC.md](https://github.com/openai/symphony/blob/main/SPEC.md) for the source spec; `WORKFLOW.md` is the per-repo policy file.
+
+## License & publishing
+
+Licensed under [MIT](./LICENSE).
+
+All workspaces are `private: true`: this is an app, not a library, and we don't publish to npm. The name `symphony-ts` already exists on npm under a different maintainer, so if we ever flip publishing on we'll need to rename (e.g. `@anantjain/symphony` or scoped per workspace). Until then, the collision is harmless.
+
+Versioning is managed by [Changesets](https://github.com/changesets/changesets): run `pnpm changeset` to record a change, `pnpm version` to bump packages and update `CHANGELOG.md`, and `pnpm release` to tag the release commit on `main`.

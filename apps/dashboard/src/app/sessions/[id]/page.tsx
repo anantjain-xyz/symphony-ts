@@ -1,13 +1,13 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
-import type { Tables } from '@symphony/shared';
+import type { Tables, WorkflowFrontMatter } from '@symphony/shared';
 import { LiveStream } from './LiveStream';
 
 export const dynamic = 'force-dynamic';
 
 type AttemptWithIssue = Tables<'run_attempts'> & {
-  issues: Pick<Tables<'issues'>, 'identifier' | 'title' | 'state'> | null;
+  issues: Pick<Tables<'issues'>, 'identifier' | 'title' | 'state' | 'pr_urls'> | null;
 };
 
 const TERMINAL = new Set(['success', 'failure', 'timeout', 'cancelled']);
@@ -15,23 +15,32 @@ const TERMINAL = new Set(['success', 'failure', 'timeout', 'cancelled']);
 export default async function SessionPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = createSupabaseServerClient();
-  const { data: rawAttempt } = await supabase
-    .from('run_attempts')
-    .select('*, issues(identifier, title, state)')
-    .eq('id', id)
-    .maybeSingle();
+  const [{ data: rawAttempt }, { data: initialEvents }, workflowRes] = await Promise.all([
+    supabase
+      .from('run_attempts')
+      .select('*, issues(identifier, title, state, pr_urls)')
+      .eq('id', id)
+      .maybeSingle(),
+    supabase
+      .from('agent_events')
+      .select('*')
+      .eq('run_attempt_id', id)
+      .order('id', { ascending: true })
+      .limit(10000),
+    supabase
+      .from('workflows')
+      .select('parsed')
+      .order('loaded_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
   if (!rawAttempt) notFound();
   const attempt = rawAttempt as unknown as AttemptWithIssue;
 
-  const { data: initialEvents } = await supabase
-    .from('agent_events')
-    .select('*')
-    .eq('run_attempt_id', id)
-    .order('id', { ascending: true })
-    .limit(10000);
-
   const issue = attempt.issues;
   const terminal = TERMINAL.has(attempt.status);
+  const tracker =
+    (workflowRes.data?.parsed as Partial<WorkflowFrontMatter> | null)?.tracker ?? null;
 
   return (
     <>
@@ -41,6 +50,9 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
         attempt={attempt}
         initialEvents={initialEvents ?? []}
         attemptIsTerminal={terminal}
+        issueIdentifier={issue?.identifier ?? null}
+        prUrls={issue?.pr_urls ?? []}
+        tracker={tracker}
       />
     </>
   );

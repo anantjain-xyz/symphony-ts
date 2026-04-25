@@ -3,7 +3,8 @@ import { notFound } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
-import type { Tables } from '@symphony/shared';
+import { IssueLinks } from '@/components/IssueLinks';
+import type { Tables, WorkflowFrontMatter } from '@symphony/shared';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,7 +20,7 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
   if (!issueRaw) notFound();
   const issue = issueRaw as Issue;
 
-  const [{ data: attempts }, { data: sessions }] = await Promise.all([
+  const [{ data: attempts }, { data: sessions }, workflowRes] = await Promise.all([
     supabase
       .from('run_attempts')
       .select('*')
@@ -34,7 +35,16 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
           (r) => r.id,
         ),
       ),
+    supabase
+      .from('workflows')
+      .select('parsed')
+      .order('loaded_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
+
+  const tracker =
+    (workflowRes.data?.parsed as Partial<WorkflowFrontMatter> | null)?.tracker ?? null;
 
   const attemptRows = (attempts ?? []) as Attempt[];
   const tokensByAttempt = new Map<string, number>(
@@ -112,6 +122,7 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
               </div>
             </div>
           )}
+          <IssueLinks identifier={issue.identifier} prUrls={issue.pr_urls} tracker={tracker} />
         </aside>
 
         {/* Center — description + attempts */}

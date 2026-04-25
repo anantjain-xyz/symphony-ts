@@ -1,7 +1,28 @@
 {
   "name": "symphony-ts",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "TypeScript port of Symphony — a long-running daemon and dashboard that polls Linear, provisions per-issue workspaces, and runs Claude Code / Codex coding agents with retries and live observability, backed by Supabase.",
+  "keywords": [
+    "symphony",
+    "linear",
+    "supabase",
+    "claude-code",
+    "codex",
+    "coding-agent",
+    "monorepo",
+    "typescript"
+  ],
+  "homepage": "https://github.com/anantjain-xyz/symphony-ts#readme",
+  "bugs": {
+    "url": "https://github.com/anantjain-xyz/symphony-ts/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anantjain-xyz/symphony-ts.git"
+  },
+  "license": "MIT",
+  "author": "Anant Jain",
   "packageManager": "pnpm@10.15.0",
   "engines": {
     "node": ">=22"

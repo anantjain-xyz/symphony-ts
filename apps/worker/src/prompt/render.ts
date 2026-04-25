@@ -78,6 +78,49 @@ export interface RetryContext {
 }
 
 /**
+ * Repo surface buildRetryContext needs — narrower than the full Repo so the
+ * helper can be unit-tested with a fake. Both methods return prior-attempt
+ * data for the same issue, deliberately *excluding* `beforeAttemptId`.
+ */
+export interface RetryContextRepo {
+  priorAttempt(
+    issueId: string,
+    beforeAttemptId: string,
+  ): Promise<{ error_class: string | null; error_message: string | null } | null>;
+  recentEventsForIssue(
+    issueId: string,
+    beforeAttemptId: string,
+    limit: number,
+  ): Promise<Array<{ kind: string; payload: unknown; created_at: string }>>;
+}
+
+/**
+ * Assemble a {@link RetryContext} for the in-flight attempt. Returns `null`
+ * for first attempts (caller should skip {@link appendRetryContext}). Pulls
+ * `priorErrorClass`/`priorErrorMessage` from the *prior* attempt's row and
+ * `recentEvents` from prior attempts' `agent_events` — the new attempt's row
+ * has null errors and no events at prompt-render time.
+ */
+export async function buildRetryContext(
+  repo: RetryContextRepo,
+  issueId: string,
+  attempt: { id: string; attempt_number: number },
+  recentEventsLimit = 10,
+): Promise<RetryContext | null> {
+  if (attempt.attempt_number <= 1) return null;
+  const [prior, recent] = await Promise.all([
+    repo.priorAttempt(issueId, attempt.id),
+    repo.recentEventsForIssue(issueId, attempt.id, recentEventsLimit),
+  ]);
+  return {
+    attemptNumber: attempt.attempt_number,
+    priorErrorClass: prior?.error_class ?? null,
+    priorErrorMessage: prior?.error_message ?? null,
+    recentEvents: recent,
+  };
+}
+
+/**
  * Append a "Prior attempt context" trailer so the agent can avoid repeating
  * what already failed. Caller passes the rendered prompt + context for the
  * earlier attempt.

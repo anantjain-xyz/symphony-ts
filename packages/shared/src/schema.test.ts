@@ -61,6 +61,7 @@ describe('Issue', () => {
       branch: null,
       labels: ['backend'],
       blockers: [],
+      pr_urls: [],
     });
     expect(issue.identifier).toBe('ENG-42');
   });

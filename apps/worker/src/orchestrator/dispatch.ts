@@ -5,7 +5,7 @@ import { mapTurnEvent } from '../agent/events.js';
 import { AgentRunner, TurnTimeoutError } from '../agent/runner.js';
 import type { ResolvedConfig } from '../config/resolve.js';
 import { AlreadyRunningError, type Repo, type RunAttemptRow } from '../db/repo.js';
-import { appendRetryContext, renderPrompt } from '../prompt/render.js';
+import { appendRetryContext, buildRetryContext, renderPrompt } from '../prompt/render.js';
 import { type HookResult, runHook } from '../workspace/hooks.js';
 import { WorkspaceManager } from '../workspace/manager.js';
 
@@ -133,19 +133,8 @@ export function dispatchAttempt(
       }
 
       let prompt = renderPrompt(config.promptTemplate(), issue);
-      if (attempt.attempt_number > 1) {
-        const recent = await repo.recentEvents(attempt.id, 10);
-        prompt = appendRetryContext(prompt, {
-          attemptNumber: attempt.attempt_number,
-          priorErrorClass: attempt.error_class,
-          priorErrorMessage: attempt.error_message,
-          recentEvents: recent.map((r) => ({
-            kind: r.kind,
-            payload: r.payload,
-            created_at: r.created_at,
-          })),
-        });
-      }
+      const retryCtx = await buildRetryContext(repo, issue.id, attempt);
+      if (retryCtx) prompt = appendRetryContext(prompt, retryCtx);
 
       const backend = config.agentBackend();
       // Claude supports session pinning via --session-id; pre-generate a uuid

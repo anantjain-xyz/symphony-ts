@@ -88,6 +88,7 @@ export type Database = {
           identifier: string
           labels: string[]
           last_seen_at: string
+          pr_urls: string[]
           priority: number
           raw: Json
           state: string
@@ -101,6 +102,7 @@ export type Database = {
           identifier: string
           labels?: string[]
           last_seen_at?: string
+          pr_urls?: string[]
           priority?: number
           raw: Json
           state: string
@@ -114,6 +116,7 @@ export type Database = {
           identifier?: string
           labels?: string[]
           last_seen_at?: string
+          pr_urls?: string[]
           priority?: number
           raw?: Json
           state?: string

@@ -87,10 +87,18 @@ export function createLinearClient(opts: LinearClientOptions): TrackerClient {
     },
 
     async fetchById(id: string) {
-      const data = await execute<{ issue: LinearIssueNode | null }>(ctx, ISSUE_BY_ID_QUERY, {
-        id,
-      });
-      return data.issue ? normalize(data.issue) : null;
+      // Linear reports an unknown id as a GraphQL `INPUT_ERROR` (HTTP 200 with
+      // an `errors` array) rather than `{ issue: null }`. Map that shape to
+      // null so callers like `confirmNotActive` can clear stale state.
+      try {
+        const data = await execute<{ issue: LinearIssueNode | null }>(ctx, ISSUE_BY_ID_QUERY, {
+          id,
+        });
+        return data.issue ? normalize(data.issue) : null;
+      } catch (err) {
+        if (isEntityNotFoundError(err)) return null;
+        throw err;
+      }
     },
   };
 }
@@ -225,6 +233,24 @@ function readStatus(err: unknown): number | undefined {
   return e?.response?.status;
 }
 
+function isEntityNotFoundError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const errors = (
+    err as {
+      response?: {
+        errors?: Array<{ message?: string; extensions?: { code?: string } }>;
+      };
+    }
+  ).response?.errors;
+  if (!Array.isArray(errors)) return false;
+  return errors.some(
+    (e) =>
+      e?.extensions?.code === 'INPUT_ERROR' &&
+      typeof e.message === 'string' &&
+      e.message.startsWith('Entity not found'),
+  );
+}
+
 function readRetryAfterMs(err: unknown): number {
   const e = err as
     | { response?: { headers?: Headers | { get?: (k: string) => string | null } } }
@@ -269,7 +295,12 @@ interface LinearIssueNode {
       relatedIssue: { identifier: string } | null;
     }>;
   } | null;
+  attachments: { nodes: Array<{ url: string }> } | null;
 }
+
+// Match URL pattern rather than Linear's `sourceType` field — `sourceType` is
+// integration-dependent and not always populated, but the URL shape is stable.
+const GITHUB_PR_URL_RE = /^https?:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+(?:[/?#].*)?$/;
 
 export function normalize(node: LinearIssueNode): Issue {
   if (!node.state?.name) {
@@ -281,6 +312,11 @@ export function normalize(node: LinearIssueNode): Issue {
       blockers.push(rel.relatedIssue.identifier);
     }
   }
+  const prUrls = Array.from(
+    new Set(
+      (node.attachments?.nodes ?? []).map((a) => a.url).filter((u) => GITHUB_PR_URL_RE.test(u)),
+    ),
+  );
   return Issue.parse({
     id: node.id,
     identifier: node.identifier,
@@ -291,6 +327,7 @@ export function normalize(node: LinearIssueNode): Issue {
     branch: node.branchName,
     labels: (node.labels?.nodes ?? []).map((l) => l.name),
     blockers,
+    pr_urls: prUrls,
   });
 }
 
@@ -313,6 +350,7 @@ const ISSUE_FIELDS = `
       relatedIssue { identifier }
     }
   }
+  attachments { nodes { url } }
 `;
 
 const VIEWER_QUERY = gql`

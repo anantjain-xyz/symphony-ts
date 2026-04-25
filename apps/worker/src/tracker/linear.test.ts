@@ -68,6 +68,7 @@ const ENG42 = {
   state: { name: 'Todo' },
   labels: { nodes: [{ name: 'backend' }] },
   relations: { nodes: [{ type: 'blocked_by', relatedIssue: { identifier: 'ENG-40' } }] },
+  attachments: null,
 };
 
 const ENG41_URGENT = {
@@ -100,11 +101,13 @@ describe('normalize', () => {
       state: { name: 'Backlog' },
       labels: null,
       relations: null,
+      attachments: null,
     });
     expect(issue.state).toBe('backlog');
     expect(issue.branch).toBeNull();
     expect(issue.labels).toEqual([]);
     expect(issue.blockers).toEqual([]);
+    expect(issue.pr_urls).toEqual([]);
   });
 
   it('throws when Linear issue has no state', () => {
@@ -119,8 +122,28 @@ describe('normalize', () => {
         state: null,
         labels: null,
         relations: null,
+        attachments: null,
       }),
     ).toThrow(/no state/);
+  });
+
+  it('extracts GitHub PR URLs from attachments and dedups them', () => {
+    const issue = normalize({
+      ...ENG42,
+      attachments: {
+        nodes: [
+          { url: 'https://github.com/acme/repo/pull/42' },
+          { url: 'https://github.com/acme/repo/pull/42' }, // dup
+          { url: 'https://github.com/acme/repo/pull/57/files' },
+          { url: 'https://figma.com/file/abc' }, // non-PR
+          { url: 'https://github.com/acme/repo/issues/9' }, // issue, not PR
+        ],
+      },
+    });
+    expect(issue.pr_urls).toEqual([
+      'https://github.com/acme/repo/pull/42',
+      'https://github.com/acme/repo/pull/57/files',
+    ]);
   });
 });
 
@@ -163,6 +186,43 @@ describe('createLinearClient', () => {
       sleep: async (_ms: number) => {},
     });
     expect(await client.fetchById('missing')).toBeNull();
+  });
+
+  it('fetchById returns null when Linear reports Entity not found', async () => {
+    // Real Linear surfaces an unknown id as a GraphQL INPUT_ERROR (HTTP 200
+    // with errors[]) rather than `{ issue: null }`. Reproduces the warning
+    // logged by `confirmNotActive` against stale retry_queue rows.
+    const calls = vi.fn(() => {
+      const err = new Error('Entity not found: Issue') as Error & { response: unknown };
+      err.response = {
+        status: 200,
+        errors: [
+          {
+            message: 'Entity not found: Issue',
+            path: ['issue'],
+            extensions: {
+              type: 'invalid input',
+              code: 'INPUT_ERROR',
+              statusCode: 400,
+              userError: true,
+              userPresentableMessage: 'Could not find referenced Issue.',
+            },
+          },
+        ],
+      };
+      throw err;
+    });
+    const client = createLinearClient({
+      endpoint: 'http://stub',
+      apiKey: 'k',
+      activeStates: ['todo'],
+      terminalStates: ['done'],
+      client: stubClient(calls),
+      sleep: async (_ms: number) => {},
+    });
+    expect(await client.fetchById('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb')).toBeNull();
+    // Single call: don't burn retries on a hard "not found".
+    expect(calls).toHaveBeenCalledTimes(1);
   });
 });
 

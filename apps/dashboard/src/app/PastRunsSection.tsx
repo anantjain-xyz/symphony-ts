@@ -79,7 +79,7 @@ export function PastRunsSection({ initialRows }: { initialRows: RunAttemptWithIs
           {rows.map((r) => (
             <RunRow
               key={r.id}
-              href={`/issues/${r.issue_id}`}
+              href={`/sessions/${r.id}`}
               identifier={r.issues?.identifier ?? r.issue_id}
               title={r.issues?.title ?? '—'}
               attemptNumber={r.attempt_number}

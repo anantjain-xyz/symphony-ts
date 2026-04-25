@@ -79,6 +79,7 @@ export class Repo {
       branch: i.branch,
       labels: i.labels,
       blockers: i.blockers,
+      pr_urls: i.pr_urls,
       raw: i as unknown as TablesInsert<'issues'>['raw'],
       last_seen_at: new Date().toISOString(),
     }));
@@ -280,6 +281,38 @@ export class Repo {
     if (error) throw error;
   }
 
+  /**
+   * Sweep `live_sessions` rows whose `session_id` still has the placeholder
+   * shape (`pending-<attempt-id>`) and whose `run_attempt` has reached a
+   * terminal state. Codex inserts these placeholder rows on its first token
+   * event before the real `<thread_id>-<turn_id>` is known; if the dispatch
+   * crashes between that insert and the cleanup at the end of the run,
+   * the row outlives its attempt. Used by boot-time recovery.
+   *
+   * `issueIds` scopes the sweep so integration tests against a shared
+   * Supabase don't touch live worker data. Returns the number of rows deleted.
+   */
+  async deleteOrphanedPendingSessions(opts?: { issueIds?: string[] }): Promise<number> {
+    let attemptQ = this.db
+      .from('run_attempts')
+      .select('id')
+      .in('status', ['success', 'failure', 'timeout', 'cancelled']);
+    if (opts?.issueIds) attemptQ = attemptQ.in('issue_id', opts.issueIds);
+    const { data: terminalAttempts, error: e1 } = await attemptQ;
+    if (e1) throw e1;
+    if (!terminalAttempts || terminalAttempts.length === 0) return 0;
+
+    const ids = terminalAttempts.map((r) => r.id);
+    const { data: deleted, error: e2 } = await this.db
+      .from('live_sessions')
+      .delete()
+      .in('run_attempt_id', ids)
+      .like('session_id', 'pending-%')
+      .select('run_attempt_id');
+    if (e2) throw e2;
+    return deleted?.length ?? 0;
+  }
+
   // ---- agent_events ----
   async appendEvent(runAttemptId: string, kind: AgentEventKind, payload: unknown): Promise<void> {
     const { error } = await this.db.from('agent_events').insert({
@@ -299,6 +332,66 @@ export class Repo {
       .limit(limit);
     if (error) throw error;
     return (data ?? []).reverse();
+  }
+
+  /**
+   * Most recent attempt for `issueId` whose `attempt_number` is strictly less
+   * than `beforeAttemptId`'s. Returns `null` if `beforeAttemptId` is the first
+   * attempt (or doesn't exist). Used by the retry-context trailer so it reads
+   * the *prior* attempt's `error_class`/`error_message` rather than the
+   * not-yet-failed current attempt's null fields.
+   */
+  async priorAttempt(issueId: string, beforeAttemptId: string): Promise<RunAttemptRow | null> {
+    const { data: cur, error: curErr } = await this.db
+      .from('run_attempts')
+      .select('attempt_number')
+      .eq('id', beforeAttemptId)
+      .maybeSingle();
+    if (curErr) throw curErr;
+    if (!cur) return null;
+    const { data, error } = await this.db
+      .from('run_attempts')
+      .select('*')
+      .eq('issue_id', issueId)
+      .lt('attempt_number', cur.attempt_number)
+      .order('attempt_number', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+
+  /**
+   * Recent agent events from attempts *prior* to `beforeAttemptId` for the
+   * same issue, in chronological order, capped at `limit`. Used by the
+   * retry-context trailer — calling `recentEvents(beforeAttemptId, ...)` would
+   * return zero rows because the new attempt hasn't emitted any events yet.
+   */
+  async recentEventsForIssue(
+    issueId: string,
+    beforeAttemptId: string,
+    limit = 10,
+  ): Promise<AgentEventRow[]> {
+    const { data: cur, error: curErr } = await this.db
+      .from('run_attempts')
+      .select('attempt_number')
+      .eq('id', beforeAttemptId)
+      .maybeSingle();
+    if (curErr) throw curErr;
+    if (!cur) return [];
+    const { data, error } = await this.db
+      .from('agent_events')
+      .select(
+        'id, run_attempt_id, kind, payload, created_at, run_attempts!inner(attempt_number, issue_id)',
+      )
+      .eq('run_attempts.issue_id', issueId)
+      .lt('run_attempts.attempt_number', cur.attempt_number)
+      .order('id', { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    return (data ?? [])
+      .map(({ run_attempts: _ignored, ...event }) => event as AgentEventRow)
+      .reverse();
   }
 
   // ---- retry_queue ----

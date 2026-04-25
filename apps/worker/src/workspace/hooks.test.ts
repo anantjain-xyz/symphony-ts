@@ -15,6 +15,7 @@ const ISSUE: Issue = {
   branch: null,
   labels: [],
   blockers: [],
+  pr_urls: [],
 };
 
 describe('runHook', () => {

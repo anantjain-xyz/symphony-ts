@@ -101,4 +101,24 @@ describe('reloadWorkflowConfig', () => {
     expect(outcome).toBe('invalid');
     expect(live.pollIntervalMs()).toBe(1000);
   });
+
+  it('serializes overlapping reloads so an older read cannot roll back a newer swap', async () => {
+    // Race covered: SIGHUP A starts read (file = initial). File is rewritten.
+    // SIGHUP B starts read (file = updated). If reloads ran concurrently, A's
+    // late-completing read could swap initial back over B's already-applied
+    // updated config. Serialization makes A re-read after B finishes — at
+    // that point its read sees `updated` too, so the second outcome is
+    // 'unchanged' and live config stays on `updated`.
+    const live = liveConfig(resolveConfig(parseWorkflowSource(SRC_INITIAL)));
+    const a = reloadWorkflowConfig({ workflowPath, live, log });
+    await writeFile(workflowPath, SRC_UPDATED, 'utf8');
+    const b = reloadWorkflowConfig({ workflowPath, live, log });
+    const outcomes = await Promise.all([a, b]);
+    expect(outcomes).toContain('swapped');
+    // Whichever runs first picks up `updated`; the second sees no further
+    // change. The worker must end up on `updated` either way.
+    expect(live.pollIntervalMs()).toBe(5000);
+    expect(live.maxConcurrentAgents()).toBe(9);
+    expect(live.activeStates()).toEqual(['todo', 'in progress']);
+  });
 });

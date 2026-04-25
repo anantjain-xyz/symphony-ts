@@ -54,12 +54,7 @@ async function main(): Promise<void> {
   });
   const repo = new Repo(db);
 
-  const tracker = createLinearClient({
-    endpoint: config.trackerEndpoint(),
-    apiKey: config.trackerApiKey(),
-    activeStates: config.activeStates(),
-    terminalStates: config.terminalStates(),
-  });
+  const tracker = createLinearClient({ config });
 
   const workspaces = new WorkspaceManager(config.workspaceRoot());
 

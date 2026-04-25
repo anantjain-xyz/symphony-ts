@@ -18,6 +18,10 @@ export function makeTestWorkflow(opts: {
   sourceHash: string;
   wsRoot?: string;
   codexCommand?: string;
+  endpoint?: string;
+  apiKey?: string;
+  activeStates?: string[];
+  terminalStates?: string[];
 }): ParsedWorkflow {
   return {
     sourceHash: opts.sourceHash,
@@ -25,10 +29,10 @@ export function makeTestWorkflow(opts: {
     frontMatter: {
       tracker: {
         kind: 'linear',
-        endpoint: 'http://stub',
-        api_key: 'k',
-        active_states: ['todo'],
-        terminal_states: ['done'],
+        endpoint: opts.endpoint ?? 'http://stub',
+        api_key: opts.apiKey ?? 'k',
+        active_states: opts.activeStates ?? ['todo'],
+        terminal_states: opts.terminalStates ?? ['done'],
       },
       polling: { interval_ms: 30000 },
       workspace: { root: opts.wsRoot ?? '/tmp/symphony-tests' },

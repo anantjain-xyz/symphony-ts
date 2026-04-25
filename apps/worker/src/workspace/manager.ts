@@ -94,6 +94,34 @@ export class WorkspaceManager {
   }
 
   /**
+   * Remove a workspace directory iff it exists but is missing the ready
+   * sentinel — i.e. a partial after_create. Used by boot-time recovery so
+   * orphan run_attempts don't leave half-clones for the retry to inherit.
+   * Returns true when a directory was removed.
+   *
+   * The path is rejected if it doesn't resolve under this manager's root, so
+   * a corrupted run_attempts.workspace_path can never delete arbitrary files.
+   */
+  async removeIfStale(absPath: string): Promise<boolean> {
+    const rootResolved = path.resolve(this.root);
+    const resolved = path.resolve(absPath);
+    if (resolved === rootResolved) return false;
+    if (!resolved.startsWith(rootResolved + path.sep)) return false;
+    try {
+      await stat(resolved);
+    } catch {
+      return false;
+    }
+    try {
+      await stat(path.join(resolved, WORKSPACE_READY_SENTINEL));
+      return false;
+    } catch {
+      await rm(resolved, { recursive: true, force: true });
+      return true;
+    }
+  }
+
+  /**
    * Resolve the (possibly non-existent) workspace path for an identifier
    * without creating anything.
    */

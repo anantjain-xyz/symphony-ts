@@ -145,6 +145,78 @@ describe('createClaudeStream', () => {
     ]);
   });
 
+  it('reclassifies a 5xx/Overloaded API Error text + result.success as api_overloaded failure', () => {
+    const { stream, completions } = harness();
+    stream.push({
+      type: 'assistant',
+      message: {
+        content: [{ type: 'text', text: 'API Error: 529 Overloaded' }],
+      },
+    });
+    stream.push({ type: 'result', subtype: 'success' });
+    expect(completions).toHaveLength(1);
+    expect(completions[0]).toMatchObject({
+      outcome: 'failure',
+      error_class: 'api_overloaded',
+      error_message: 'API Error: 529 Overloaded',
+    });
+  });
+
+  it('reclassifies a content-filter API Error text + result.success as content_filter failure', () => {
+    const { stream, completions } = harness();
+    stream.push({
+      type: 'assistant',
+      message: {
+        content: [
+          {
+            type: 'text',
+            text: 'API Error: 400 Output blocked by content filtering policy',
+          },
+        ],
+      },
+    });
+    stream.push({ type: 'result', subtype: 'success' });
+    expect(completions[0]).toMatchObject({
+      outcome: 'failure',
+      error_class: 'content_filter',
+      error_message: 'API Error: 400 Output blocked by content filtering policy',
+    });
+  });
+
+  it('reclassifies an unrecognised API Error text + result.success as generic api_error failure', () => {
+    const { stream, completions } = harness();
+    stream.push({
+      type: 'assistant',
+      message: {
+        content: [{ type: 'text', text: 'API Error: 401 unauthorized' }],
+      },
+    });
+    stream.push({ type: 'result', subtype: 'success' });
+    expect(completions[0]).toMatchObject({
+      outcome: 'failure',
+      error_class: 'api_error',
+      error_message: 'API Error: 401 unauthorized',
+    });
+  });
+
+  it('keeps outcome=success when an earlier API Error text was followed by a genuine assistant reply', () => {
+    const { stream, completions } = harness();
+    stream.push({
+      type: 'assistant',
+      message: {
+        content: [{ type: 'text', text: 'API Error: 529 Overloaded' }],
+      },
+    });
+    stream.push({
+      type: 'assistant',
+      message: {
+        content: [{ type: 'text', text: 'Recovered and finished the task.' }],
+      },
+    });
+    stream.push({ type: 'result', subtype: 'success' });
+    expect(completions[0]).toMatchObject({ outcome: 'success' });
+  });
+
   it('warns on unknown event types without throwing', () => {
     const { stream, warns } = harness();
     stream.push({ type: 'something_new' });

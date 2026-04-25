@@ -34,6 +34,13 @@ export function createClaudeStream({
   /** tool_use_id -> tool name (for prettier result_summary emission) */
   const pendingTools = new Map();
   let completed = false;
+  /**
+   * Most recent non-empty assistant text block. The Claude CLI surfaces
+   * Anthropic API errors (overloads, content-filter rejections) as ordinary
+   * assistant text and still closes the stream with `result.subtype="success"`,
+   * so we keep the last text around to reclassify those turns as failures.
+   */
+  let lastAssistantText = '';
 
   function complete(params) {
     if (completed) return;
@@ -71,6 +78,7 @@ export function createClaudeStream({
             if (block.type === 'text') {
               const text = (block.text ?? '').trim();
               if (!text) continue;
+              lastAssistantText = text;
               emitEvent({
                 kind: 'status',
                 turn_id: turnId,
@@ -137,7 +145,16 @@ export function createClaudeStream({
             });
           }
           if (ev.subtype === 'success') {
-            complete({ outcome: 'success' });
+            const apiError = classifyApiError(lastAssistantText);
+            if (apiError) {
+              complete({
+                outcome: 'failure',
+                error_class: apiError.errorClass,
+                error_message: truncate(lastAssistantText, RESULT_TRUNCATE),
+              });
+            } else {
+              complete({ outcome: 'success' });
+            }
           } else {
             complete({
               outcome: 'failure',
@@ -170,6 +187,22 @@ function extractToolResult(content) {
     return content.map((c) => (typeof c === 'string' ? c : (c?.text ?? safeStringify(c)))).join('');
   }
   return safeStringify(content);
+}
+
+/**
+ * Detect Anthropic API errors that the Claude CLI surfaces as plain assistant
+ * text before closing the stream with `result.subtype="success"`. Returns null
+ * for genuine assistant replies.
+ */
+function classifyApiError(text) {
+  if (!text || !/^API Error:/.test(text)) return null;
+  if (/^API Error: 5\d\d/.test(text) || /Overloaded/i.test(text)) {
+    return { errorClass: 'api_overloaded' };
+  }
+  if (/Output blocked by content filtering policy/.test(text)) {
+    return { errorClass: 'content_filter' };
+  }
+  return { errorClass: 'api_error' };
 }
 
 function safeStringify(v) {

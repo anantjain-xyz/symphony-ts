@@ -1,0 +1,27 @@
+# gitleaks config — extends the default ruleset and allowlists the well-known
+# Supabase dev JWTs / dev JWT secret hardcoded in the docker compose stack.
+# These are documented development defaults (signed with the same value used
+# by Supabase's own self-hosted compose example) and only meaningful against
+# a local-only machine. They are not real production credentials.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allow well-known Supabase local-dev JWT defaults in the docker quickstart"
+paths = [
+  '''(^|/)docker-compose\.yml$''',
+  '''(^|/)docker/kong\.yml$''',
+  '''(^|/)apps/dashboard/Dockerfile$''',
+  '''(^|/)README\.md$''',
+]
+regexes = [
+  # The dev JWT signing secret documented in Supabase self-hosted compose.
+  '''super-secret-jwt-token-with-at-least-32-characters-long''',
+  # Anon JWT signed with the dev secret above (role: anon, iss: supabase-demo).
+  '''eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlLWRlbW8iLCJpYXQiOjE2NDE3NjkyMDAsImV4cCI6MTc5OTUzNTYwMH0\.F_rDxRTPE8OU83L_CNgEGXfmirMXmMMugT29Cvc8ygQ''',
+  # Service-role JWT signed with the dev secret above.
+  '''eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaXNzIjoic3VwYWJhc2UtZGVtbyIsImlhdCI6MTY0MTc2OTIwMCwiZXhwIjoxNzk5NTM1NjAwfQ\.5z-pJI1qwZg1LE5yavGLqum65WOnnaaI5eZ3V00pLww''',
+  # Realtime SECRET_KEY_BASE used by the dev compose stack.
+  '''UpNVNFUUfUKgz4zXJpwTKSHdJk3l9zQOFXmGW9oGJ4lSMBjCG6BQK1gJ5HQy1MDi''',
+]

@@ -205,6 +205,78 @@ d('OrchestratorLoop integration', () => {
     expect(q!.length).toBe(0);
   });
 
+  it('skips dispatch while rate_limit_state has a future reset_at for the backend', async () => {
+    // SYM-14 regression: before the rate-limit gate, every tick would launch
+    // a fresh attempt and immediately hammer the upstream that just told us
+    // to back off. With the gate in place, a future `reset_at` for any
+    // `codex_*` source pauses the entire tick.
+    const issue = makeTestIssue({ id: scope.newIssueId(), identifier: scope.newIdentifier() });
+    const codexCommand = `STUB_SCENARIO=happy node ${STUB}`;
+    const config = resolveConfig(
+      makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot, codexCommand }),
+    );
+    const source = scope.newRateLimitSource('codex');
+    await repo.upsertRateLimit({
+      source,
+      remaining: 0,
+      resetAt: new Date(Date.now() + 60_000),
+    });
+
+    const loop = new OrchestratorLoop({
+      tracker: stubTracker([issue]),
+      repo,
+      workspaces: new WorkspaceManager(wsRoot),
+      config,
+      log: pino({ level: 'silent' }),
+      scopedIssueIds: [...scope.issueIds],
+    });
+    await loop.tick();
+
+    // No attempts should have been reserved during a paused tick.
+    const active = (loop as unknown as { active: Map<string, unknown> }).active;
+    expect(active.size).toBe(0);
+    const { data: attempts } = await db.from('run_attempts').select('*').eq('issue_id', issue.id);
+    expect(attempts ?? []).toHaveLength(0);
+  });
+
+  it('resumes dispatch once reset_at passes', async () => {
+    // Companion to the previous test: ensures the gate is time-bound, not
+    // sticky. Once the upstream `reset_at` lapses, the very next tick must
+    // dispatch normally — no extra signal required.
+    const issue = makeTestIssue({ id: scope.newIssueId(), identifier: scope.newIdentifier() });
+    const codexCommand = `STUB_SCENARIO=happy node ${STUB}`;
+    const config = resolveConfig(
+      makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot, codexCommand }),
+    );
+    const source = scope.newRateLimitSource('codex');
+    await repo.upsertRateLimit({
+      source,
+      remaining: 0,
+      resetAt: new Date(Date.now() + 250),
+    });
+
+    const loop = new OrchestratorLoop({
+      tracker: stubTracker([issue]),
+      repo,
+      workspaces: new WorkspaceManager(wsRoot),
+      config,
+      log: pino({ level: 'silent' }),
+      scopedIssueIds: [...scope.issueIds],
+    });
+    await loop.tick();
+    {
+      const { data: attempts } = await db.from('run_attempts').select('*').eq('issue_id', issue.id);
+      expect(attempts ?? []).toHaveLength(0);
+    }
+
+    await new Promise((r) => setTimeout(r, 400));
+    await loop.tick();
+    const active = (loop as unknown as { active: Map<string, { done: Promise<void> }> }).active;
+    await Promise.all([...active.values()].map((h) => h.done));
+    const { data: attempts } = await db.from('run_attempts').select('*').eq('issue_id', issue.id);
+    expect(attempts ?? []).toHaveLength(1);
+  });
+
   it('does not redispatch while retry_queue.due_at is still in the future', async () => {
     // Regression for the SYM-1 infinite-loop bug: a fast-failing issue was
     // redispatched every pollIntervalMs because tick() eligibility only

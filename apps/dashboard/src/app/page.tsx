@@ -4,6 +4,7 @@ import type { Tables, WorkflowFrontMatter } from '@symphony/shared';
 import { trackerProjectUrl } from '@symphony/shared/schema';
 import { KpiBlock } from './KpiBlock';
 import { LiveRuntime } from './LiveRuntime';
+import { RateLimitPauseKpi } from './RateLimitPauseKpi';
 import { RealtimeRefresh } from './RealtimeRefresh';
 
 export const dynamic = 'force-dynamic';
@@ -19,6 +20,7 @@ type LatestEventRow = Tables<'agent_events_latest'>;
 export default async function FleetPage() {
   const supabase = createSupabaseServerClient();
 
+  const nowIso = new Date().toISOString();
   const [
     running,
     retries,
@@ -28,6 +30,7 @@ export default async function FleetPage() {
     issuesCount,
     heartbeatRes,
     workflowRes,
+    rateLimitRes,
   ] = await Promise.all([
     supabase
       .from('run_attempts')
@@ -60,6 +63,13 @@ export default async function FleetPage() {
       .order('loaded_at', { ascending: false })
       .limit(1)
       .maybeSingle(),
+    supabase
+      .from('rate_limit_state')
+      .select('*')
+      .gt('reset_at', nowIso)
+      .order('reset_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
 
   const runningRows = (running.data ?? []) as unknown as RunAttemptWithIssue[];
@@ -82,6 +92,7 @@ export default async function FleetPage() {
   const allQuiet = runningRows.length === 0 && retryRows.length === 0;
 
   const heartbeat = heartbeatRes.data ?? null;
+  const ratePause = rateLimitRes.data ?? null;
 
   const frontMatter = extractFrontMatter(workflowRes.data?.parsed);
   const maxConcurrent = frontMatter?.agent?.max_concurrent_agents ?? null;
@@ -112,15 +123,19 @@ export default async function FleetPage() {
           Dashboard
         </h1>
         <div className="mt-5 grid grid-cols-2 sm:grid-cols-5 gap-x-10 gap-y-4 max-w-3xl">
-          <KpiBlock
-            label="active"
-            value={
-              maxConcurrent !== null
-                ? `${runningRows.length}/${maxConcurrent}`
-                : runningRows.length.toLocaleString()
-            }
-            live={runningRows.length > 0}
-          />
+          {ratePause ? (
+            <RateLimitPauseKpi source={ratePause.source} resetAt={ratePause.reset_at} />
+          ) : (
+            <KpiBlock
+              label="active"
+              value={
+                maxConcurrent !== null
+                  ? `${runningRows.length}/${maxConcurrent}`
+                  : runningRows.length.toLocaleString()
+              }
+              live={runningRows.length > 0}
+            />
+          )}
           <KpiBlock
             label="pending retry"
             value={retryRows.length.toLocaleString()}

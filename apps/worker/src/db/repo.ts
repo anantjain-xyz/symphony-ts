@@ -22,6 +22,7 @@ export type WorkflowRow = Tables<'workflows'>;
 export type LiveSessionRow = Tables<'live_sessions'>;
 export type AgentEventRow = Tables<'agent_events'>;
 export type RetryQueueRow = Tables<'retry_queue'>;
+export type RateLimitStateRow = Tables<'rate_limit_state'>;
 
 /**
  * Typed CRUD over Supabase Postgres. The worker uses the service-role client,
@@ -230,6 +231,23 @@ export class Repo {
       updated_at: new Date().toISOString(),
     });
     if (error) throw error;
+  }
+
+  /**
+   * Rate-limit rows whose `reset_at` is still in the future. Used by the
+   * orchestrator to gate dispatch when an upstream provider has signalled a
+   * pause, and by the dashboard to surface the pause state on the KPI strip.
+   * Sorted by `reset_at` descending so callers can pick the longest pause
+   * with `[0]`.
+   */
+  async activeRateLimits(now: Date = new Date()): Promise<RateLimitStateRow[]> {
+    const { data, error } = await this.db
+      .from('rate_limit_state')
+      .select('*')
+      .gt('reset_at', now.toISOString())
+      .order('reset_at', { ascending: false });
+    if (error) throw error;
+    return data ?? [];
   }
 
   // ---- live_sessions ----

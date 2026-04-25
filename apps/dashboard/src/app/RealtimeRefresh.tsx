@@ -40,6 +40,11 @@ export function RealtimeRefresh() {
         { event: '*', schema: 'public', table: 'live_sessions' },
         scheduleRefresh,
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'rate_limit_state' },
+        scheduleRefresh,
+      )
       .subscribe();
 
     return () => {

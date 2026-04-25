@@ -79,6 +79,7 @@ export class Repo {
       branch: i.branch,
       labels: i.labels,
       blockers: i.blockers,
+      pr_urls: i.pr_urls,
       raw: i as unknown as TablesInsert<'issues'>['raw'],
       last_seen_at: new Date().toISOString(),
     }));

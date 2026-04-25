@@ -87,10 +87,18 @@ export function createLinearClient(opts: LinearClientOptions): TrackerClient {
     },
 
     async fetchById(id: string) {
-      const data = await execute<{ issue: LinearIssueNode | null }>(ctx, ISSUE_BY_ID_QUERY, {
-        id,
-      });
-      return data.issue ? normalize(data.issue) : null;
+      // Linear reports an unknown id as a GraphQL `INPUT_ERROR` (HTTP 200 with
+      // an `errors` array) rather than `{ issue: null }`. Map that shape to
+      // null so callers like `confirmNotActive` can clear stale state.
+      try {
+        const data = await execute<{ issue: LinearIssueNode | null }>(ctx, ISSUE_BY_ID_QUERY, {
+          id,
+        });
+        return data.issue ? normalize(data.issue) : null;
+      } catch (err) {
+        if (isEntityNotFoundError(err)) return null;
+        throw err;
+      }
     },
   };
 }
@@ -223,6 +231,24 @@ function isAbortError(err: unknown): boolean {
 function readStatus(err: unknown): number | undefined {
   const e = err as { response?: { status?: number } } | null | undefined;
   return e?.response?.status;
+}
+
+function isEntityNotFoundError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const errors = (
+    err as {
+      response?: {
+        errors?: Array<{ message?: string; extensions?: { code?: string } }>;
+      };
+    }
+  ).response?.errors;
+  if (!Array.isArray(errors)) return false;
+  return errors.some(
+    (e) =>
+      e?.extensions?.code === 'INPUT_ERROR' &&
+      typeof e.message === 'string' &&
+      e.message.startsWith('Entity not found'),
+  );
 }
 
 function readRetryAfterMs(err: unknown): number {

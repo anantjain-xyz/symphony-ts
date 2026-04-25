@@ -93,6 +93,16 @@ export function createLinearClient(opts: LinearClientOptions): TrackerClient {
 
   // Read the prefix at call time (not capture time) so a SIGHUP-driven config
   // swap takes effect on the next fetch, matching how states/endpoint are read.
+  // The prefix becomes a server-side `team.key` filter on the GraphQL query so
+  // the `first: 100` page can't be filled by off-team issues that get dropped
+  // locally — without this, a busy shared workspace silently starves the
+  // configured team. The client-side check below is defense-in-depth in case
+  // the prefix doesn't follow the standard `<TEAMKEY>-` shape.
+  const teamKeyFromPrefix = (): string | null => {
+    const prefix = opts.config.identifierPrefix();
+    if (!prefix || !prefix.endsWith('-')) return null;
+    return prefix.slice(0, -1);
+  };
   const filterByPrefix = (issues: Issue[]): Issue[] => {
     const prefix = opts.config.identifierPrefix();
     return prefix ? issues.filter((i) => i.identifier.startsWith(prefix)) : issues;
@@ -104,12 +114,16 @@ export function createLinearClient(opts: LinearClientOptions): TrackerClient {
     },
 
     async fetchActive() {
-      const issues = await fetchByStateNames(ctx, opts.config.activeStates());
+      const issues = await fetchByStateNames(ctx, opts.config.activeStates(), teamKeyFromPrefix());
       return filterByPrefix(issues).sort(byPriorityThenIdentifier);
     },
 
     async fetchTerminal() {
-      const issues = await fetchByStateNames(ctx, opts.config.terminalStates());
+      const issues = await fetchByStateNames(
+        ctx,
+        opts.config.terminalStates(),
+        teamKeyFromPrefix(),
+      );
       return filterByPrefix(issues);
     },
 
@@ -134,25 +148,37 @@ export function createLinearClient(opts: LinearClientOptions): TrackerClient {
   };
 }
 
-async function fetchByStateNames(ctx: ResilienceCtx, states: string[]): Promise<Issue[]> {
+async function fetchByStateNames(
+  ctx: ResilienceCtx,
+  states: string[],
+  teamKey: string | null,
+): Promise<Issue[]> {
   if (states.length === 0) return [];
   // Linear's StringComparator doesn't support `inIgnoreCase`, so we OR together
   // one `eqIgnoreCase` branch per state name. Operators may configure state
   // names in any case in WORKFLOW.md.
-  const varDecls = states.map((_, i) => `$s${i}: String!`).join(', ');
+  const varDecls = states.map((_, i) => `$s${i}: String!`);
   const orClauses = states
     .map((_, i) => `{ state: { name: { eqIgnoreCase: $s${i} } } }`)
     .join(', ');
+  // Bind the team-key restriction inside the same filter so it intersects with
+  // the state OR-list — `first: 100` then applies to in-team issues only.
+  const filterParts = [`or: [${orClauses}]`];
+  if (teamKey !== null) {
+    varDecls.push('$teamKey: String!');
+    filterParts.push('team: { key: { eq: $teamKey } }');
+  }
   const query = `
-    query SymphonyIssuesByState(${varDecls}) {
-      issues(filter: { or: [${orClauses}] }, first: 100) {
+    query SymphonyIssuesByState(${varDecls.join(', ')}) {
+      issues(filter: { ${filterParts.join(', ')} }, first: 100) {
         nodes {
           ${ISSUE_FIELDS}
         }
       }
     }
   `;
-  const vars = Object.fromEntries(states.map((s, i) => [`s${i}`, s]));
+  const vars: Record<string, string> = Object.fromEntries(states.map((s, i) => [`s${i}`, s]));
+  if (teamKey !== null) vars.teamKey = teamKey;
   const data = await execute<{ issues: { nodes: LinearIssueNode[] } }>(ctx, query, vars);
   return data.issues.nodes.map(normalize);
 }

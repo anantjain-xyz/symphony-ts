@@ -125,6 +125,144 @@ d('Repo integration', () => {
     expect(dueAfter.length).toBe(0);
   });
 
+  it('priorAttempt returns the last finished attempt for the same issue', async () => {
+    const issueId = scope.newIssueId();
+    await repo.upsertIssues([makeTestIssue({ id: issueId, identifier: scope.newIdentifier() })]);
+
+    const a1 = await repo.tryReserveAttempt({
+      issueId,
+      attemptNumber: 1,
+      workspacePath: '/tmp/symphony-tests/prior',
+    });
+    await repo.markRunning(a1!.id);
+    await repo.finishAttempt({
+      attemptId: a1!.id,
+      status: 'failure',
+      errorClass: 'tool_failure',
+      errorMessage: 'tests failed',
+    });
+    const a2 = await repo.tryReserveAttempt({
+      issueId,
+      attemptNumber: 2,
+      workspacePath: '/tmp/symphony-tests/prior',
+    });
+
+    const prior = await repo.priorAttempt(issueId, a2!.id);
+    expect(prior?.id).toBe(a1!.id);
+    expect(prior?.error_class).toBe('tool_failure');
+    expect(prior?.error_message).toBe('tests failed');
+  });
+
+  it('priorAttempt returns null for the first attempt', async () => {
+    const issueId = scope.newIssueId();
+    await repo.upsertIssues([makeTestIssue({ id: issueId, identifier: scope.newIdentifier() })]);
+
+    const a1 = await repo.tryReserveAttempt({
+      issueId,
+      attemptNumber: 1,
+      workspacePath: '/tmp/symphony-tests/prior-none',
+    });
+    expect(await repo.priorAttempt(issueId, a1!.id)).toBeNull();
+  });
+
+  it('recentEventsForIssue returns events from prior attempts in chronological order', async () => {
+    const issueId = scope.newIssueId();
+    await repo.upsertIssues([makeTestIssue({ id: issueId, identifier: scope.newIdentifier() })]);
+
+    const a1 = await repo.tryReserveAttempt({
+      issueId,
+      attemptNumber: 1,
+      workspacePath: '/tmp/symphony-tests/events-prior',
+    });
+    await repo.appendEvent(a1!.id, 'status', { message: 'first' });
+    await repo.appendEvent(a1!.id, 'status', { message: 'second' });
+    await repo.appendEvent(a1!.id, 'status', { message: 'third' });
+    await repo.markRunning(a1!.id);
+    await repo.finishAttempt({ attemptId: a1!.id, status: 'failure' });
+
+    const a2 = await repo.tryReserveAttempt({
+      issueId,
+      attemptNumber: 2,
+      workspacePath: '/tmp/symphony-tests/events-prior',
+    });
+    // The new attempt has no events of its own at prompt-render time; without
+    // the new helper this would return [].
+    expect(await repo.recentEvents(a2!.id)).toEqual([]);
+
+    const recent = await repo.recentEventsForIssue(issueId, a2!.id, 10);
+    expect(recent.map((e) => (e.payload as { message: string }).message)).toEqual([
+      'first',
+      'second',
+      'third',
+    ]);
+  });
+
+  it('recentEventsForIssue caps at limit and excludes the new attempt', async () => {
+    const issueId = scope.newIssueId();
+    await repo.upsertIssues([makeTestIssue({ id: issueId, identifier: scope.newIdentifier() })]);
+
+    const a1 = await repo.tryReserveAttempt({
+      issueId,
+      attemptNumber: 1,
+      workspacePath: '/tmp/symphony-tests/events-cap',
+    });
+    for (let i = 0; i < 5; i++) {
+      await repo.appendEvent(a1!.id, 'status', { message: `e${i}` });
+    }
+    await repo.markRunning(a1!.id);
+    await repo.finishAttempt({ attemptId: a1!.id, status: 'failure' });
+
+    const a2 = await repo.tryReserveAttempt({
+      issueId,
+      attemptNumber: 2,
+      workspacePath: '/tmp/symphony-tests/events-cap',
+    });
+    // Seed an event on the new attempt — it must NOT appear in the result.
+    await repo.appendEvent(a2!.id, 'status', { message: 'new-attempt-leak' });
+
+    const recent = await repo.recentEventsForIssue(issueId, a2!.id, 3);
+    expect(recent).toHaveLength(3);
+    // Most recent 3 from the prior attempt, in chronological order.
+    expect(recent.map((e) => (e.payload as { message: string }).message)).toEqual([
+      'e2',
+      'e3',
+      'e4',
+    ]);
+  });
+
+  it('recentEventsForIssue does not leak events from other issues', async () => {
+    const mineId = scope.newIssueId();
+    const otherId = scope.newIssueId();
+    await repo.upsertIssues([
+      makeTestIssue({ id: mineId, identifier: scope.newIdentifier() }),
+      makeTestIssue({ id: otherId, identifier: scope.newIdentifier() }),
+    ]);
+
+    const otherA1 = await repo.tryReserveAttempt({
+      issueId: otherId,
+      attemptNumber: 1,
+      workspacePath: '/tmp/symphony-tests/events-iso',
+    });
+    await repo.appendEvent(otherA1!.id, 'status', { message: 'other-issue-event' });
+
+    const mineA1 = await repo.tryReserveAttempt({
+      issueId: mineId,
+      attemptNumber: 1,
+      workspacePath: '/tmp/symphony-tests/events-iso',
+    });
+    await repo.appendEvent(mineA1!.id, 'status', { message: 'mine' });
+    await repo.markRunning(mineA1!.id);
+    await repo.finishAttempt({ attemptId: mineA1!.id, status: 'failure' });
+
+    const mineA2 = await repo.tryReserveAttempt({
+      issueId: mineId,
+      attemptNumber: 2,
+      workspacePath: '/tmp/symphony-tests/events-iso',
+    });
+    const recent = await repo.recentEventsForIssue(mineId, mineA2!.id, 10);
+    expect(recent.map((e) => (e.payload as { message: string }).message)).toEqual(['mine']);
+  });
+
   it('live_sessions upsert + token update + delete', async () => {
     const issueId = scope.newIssueId();
     await repo.upsertIssues([makeTestIssue({ id: issueId, identifier: scope.newIdentifier() })]);

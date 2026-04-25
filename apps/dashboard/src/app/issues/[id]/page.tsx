@@ -43,7 +43,8 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
       .maybeSingle(),
   ]);
 
-  const tracker = (workflowRes.data?.parsed as Partial<WorkflowFrontMatter> | null)?.tracker ?? null;
+  const tracker =
+    (workflowRes.data?.parsed as Partial<WorkflowFrontMatter> | null)?.tracker ?? null;
 
   const attemptRows = (attempts ?? []) as Attempt[];
   const tokensByAttempt = new Map<string, number>(
@@ -121,11 +122,7 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
               </div>
             </div>
           )}
-          <IssueLinks
-            identifier={issue.identifier}
-            prUrls={issue.pr_urls}
-            tracker={tracker}
-          />
+          <IssueLinks identifier={issue.identifier} prUrls={issue.pr_urls} tracker={tracker} />
         </aside>
 
         {/* Center — description + attempts */}

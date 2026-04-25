@@ -40,7 +40,8 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
 
   const issue = attempt.issues;
   const terminal = TERMINAL.has(attempt.status);
-  const tracker = (workflowRes.data?.parsed as Partial<WorkflowFrontMatter> | null)?.tracker ?? null;
+  const tracker =
+    (workflowRes.data?.parsed as Partial<WorkflowFrontMatter> | null)?.tracker ?? null;
 
   return (
     <>

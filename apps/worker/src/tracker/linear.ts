@@ -288,9 +288,7 @@ export function normalize(node: LinearIssueNode): Issue {
   }
   const prUrls = Array.from(
     new Set(
-      (node.attachments?.nodes ?? [])
-        .map((a) => a.url)
-        .filter((u) => GITHUB_PR_URL_RE.test(u)),
+      (node.attachments?.nodes ?? []).map((a) => a.url).filter((u) => GITHUB_PR_URL_RE.test(u)),
     ),
   );
   return Issue.parse({

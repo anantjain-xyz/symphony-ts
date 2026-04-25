@@ -180,23 +180,26 @@ Route on the issue's current state. Before routing, check whether the branch PR 
    - **Mandatory**: ticket-provided `Validation`/`Test Plan`/`Testing` items must pass. Unmet items = incomplete work.
    - Prefer a targeted proof that directly exercises the change.
    - Temporary local proof edits allowed; revert before commit; document in `### Validation`/`### Notes`.
-   - User-facing → exercise the path locally (dashboard/worker) and capture evidence (logs/screenshot/CLI output) in the workpad.
-3. **Before every `git push`**: run required validation; rerun until green; commit; push.
-4. Attach the PR URL to the issue (Linear attachment preferred; workpad only if attachment isn't possible). Add `symphony` label on the GitHub PR.
-5. Merge `origin/main` into the branch; resolve conflicts; rerun checks.
-6. Final workpad pass before `In Review`:
+   - User-facing → exercise the path locally (dashboard/worker) and capture evidence in the workpad. Screenshots **must** be Playwright-captured (`mcp__plugin_playwright_playwright__browser_navigate` + `..._take_screenshot`); logs/CLI output supplement screenshots, they do not replace them. Embed the screenshot inline in the workpad.
+3. **Cleanup test data.** Anything you created in external systems for testing — Linear issues, comments, attachments; non-issue GitHub branches, draft PRs, gists; database rows in shared instances; etc. — must be deleted before moving the issue to `In Review`. Do not delete the active issue branch, its PR, or issue-owned evidence/attachments needed for review. The end state must match the start state plus only the artifacts that belong to this issue. Test-data cleanup is mandatory; record the cleanup actions in `### Notes`.
+4. **Before every `git push`**: run required validation; rerun until green; commit; push.
+5. Attach the PR URL to the issue (Linear attachment preferred; workpad only if attachment isn't possible). Add `symphony` label on the GitHub PR. For user-facing changes, keep Playwright screenshots in the Linear workpad only; do not require or manually upload screenshots in the GitHub PR description. Do not commit proof screenshots to the repository.
+6. Merge `origin/main` into the branch; resolve conflicts; rerun checks.
+7. Final workpad pass before `In Review`:
    - All plan / acceptance / validation checkboxes reflect reality.
    - Add `### Confusions` section only if something during execution was unclear.
    - Do not put the PR URL in the workpad (it's on the issue via attachment).
    - Do not post any additional "done"/summary comment.
-7. **Gate before `In Review`**:
+8. **Gate before `In Review`**:
    - Read the PR's `Manual QA Plan` comment if present; sharpen UI/runtime coverage accordingly.
    - Run the PR feedback sweep (below).
    - PR checks must be green on the latest commit.
    - All ticket-mandated validation items must be checked in the workpad.
+   - For user-facing changes: confirm Playwright screenshots are embedded in the Linear workpad.
+   - Confirm test data created during validation has been cleaned up.
    - Loop until no actionable comments remain and checks are fully green.
-8. Move to `In Review`. Exception: if blocked per the escape hatch below, move to `In Review` with the blocker brief.
-9. If the ticket started as `Todo` with a PR already attached, ensure all existing PR feedback (including inline review comments) is resolved — code update OR explicit justified pushback reply — before moving.
+9. Move to `In Review`. Exception: if blocked per the escape hatch below, move to `In Review` with the blocker brief.
+10. If the ticket started as `Todo` with a PR already attached, ensure all existing PR feedback (including inline review comments) is resolved — code update OR explicit justified pushback reply — before moving.
 
 ### PR feedback sweep
 
@@ -243,6 +246,8 @@ Use only for genuine external blockers after fallbacks exhausted.
 - Workpad is the single source of truth. One `## Symphony Workpad` comment per issue, ever. Do not edit the issue body/description for planning or progress.
 - Do not post additional "done"/summary comments outside the workpad.
 - Temporary proof edits must be reverted before commit.
+- **Test data cleanup is mandatory.** Any artifacts created in external systems during testing (Linear issues/comments/attachments, non-issue GitHub branches/draft PRs/gists, rows in shared databases, etc.) must be deleted before transitioning to `In Review`. Do not delete the active issue branch, its PR, or issue-owned evidence/attachments needed for review. Leaving test residue is treated the same as leaving a temporary code edit unrevert.
+- **Proof-of-testing screenshots must be Playwright-captured** for user-facing changes, and must appear in the Linear workpad via Linear-hosted markdown images or attachments. Do not require screenshots in the GitHub PR description, do not upload them manually to GitHub, and do not check screenshot files into the repository. Hand-cropped screenshots, `console.log` snippets, or text-only descriptions do not satisfy this requirement.
 - Out-of-scope improvements → new Backlog issue (clear title / description / acceptance criteria, same project as current issue, `related` link to current, `blockedBy` if dependent).
 - Never `--no-verify`, `git reset --hard`, `git push --force*`, or `git clean -f*` without an explicit ask.
 - `In Review` / `Done` / `Backlog` → do not modify the issue or its code.
@@ -256,7 +261,8 @@ Use only for genuine external blockers after fallbacks exhausted.
 - Validation/tests green for the latest commit.
 - PR feedback sweep clean (no actionable comments remain).
 - PR checks green, branch pushed, PR linked on the issue, `symphony` label present.
-- User-facing changes: runtime evidence captured in the workpad.
+- User-facing changes: Playwright-captured screenshots embedded in the Linear workpad.
+- All test data created during validation has been cleaned up; no residue left in Linear, GitHub, or shared backends.
 
 ## Appendix: Workpad template
 

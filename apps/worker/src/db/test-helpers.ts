@@ -22,6 +22,7 @@ export function makeTestWorkflow(opts: {
   apiKey?: string;
   activeStates?: string[];
   terminalStates?: string[];
+  identifierPrefix?: string;
 }): ParsedWorkflow {
   return {
     sourceHash: opts.sourceHash,
@@ -33,6 +34,7 @@ export function makeTestWorkflow(opts: {
         api_key: opts.apiKey ?? 'k',
         active_states: opts.activeStates ?? ['todo'],
         terminal_states: opts.terminalStates ?? ['done'],
+        ...(opts.identifierPrefix ? { identifier_prefix: opts.identifierPrefix } : {}),
       },
       polling: { interval_ms: 30000 },
       workspace: { root: opts.wsRoot ?? '/tmp/symphony-tests' },

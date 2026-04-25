@@ -91,6 +91,13 @@ export function createLinearClient(opts: LinearClientOptions): TrackerClient {
     sleep: opts.sleep ?? defaultSleep,
   };
 
+  // Read the prefix at call time (not capture time) so a SIGHUP-driven config
+  // swap takes effect on the next fetch, matching how states/endpoint are read.
+  const filterByPrefix = (issues: Issue[]): Issue[] => {
+    const prefix = opts.config.identifierPrefix();
+    return prefix ? issues.filter((i) => i.identifier.startsWith(prefix)) : issues;
+  };
+
   return {
     async preflight() {
       await execute<{ viewer: { id: string } }>(ctx, VIEWER_QUERY, undefined);
@@ -98,11 +105,12 @@ export function createLinearClient(opts: LinearClientOptions): TrackerClient {
 
     async fetchActive() {
       const issues = await fetchByStateNames(ctx, opts.config.activeStates());
-      return issues.sort(byPriorityThenIdentifier);
+      return filterByPrefix(issues).sort(byPriorityThenIdentifier);
     },
 
     async fetchTerminal() {
-      return fetchByStateNames(ctx, opts.config.terminalStates());
+      const issues = await fetchByStateNames(ctx, opts.config.terminalStates());
+      return filterByPrefix(issues);
     },
 
     async fetchById(id: string) {
@@ -113,7 +121,11 @@ export function createLinearClient(opts: LinearClientOptions): TrackerClient {
         const data = await execute<{ issue: LinearIssueNode | null }>(ctx, ISSUE_BY_ID_QUERY, {
           id,
         });
-        return data.issue ? normalize(data.issue) : null;
+        if (!data.issue) return null;
+        const issue = normalize(data.issue);
+        const prefix = opts.config.identifierPrefix();
+        if (prefix && !issue.identifier.startsWith(prefix)) return null;
+        return issue;
       } catch (err) {
         if (isEntityNotFoundError(err)) return null;
         throw err;

@@ -47,6 +47,29 @@ describe('WorkflowFrontMatter', () => {
   it('rejects missing required tracker fields', () => {
     expect(() => WorkflowFrontMatter.parse({ tracker: { kind: 'linear' } })).toThrow();
   });
+
+  it('parses optional identifier_prefix when set, and leaves it undefined when omitted', () => {
+    const withPrefix = WorkflowFrontMatter.parse({
+      tracker: {
+        kind: 'linear',
+        api_key: 'k',
+        active_states: ['todo'],
+        terminal_states: ['done'],
+        identifier_prefix: 'PB-',
+      },
+    });
+    expect(withPrefix.tracker.identifier_prefix).toBe('PB-');
+
+    const withoutPrefix = WorkflowFrontMatter.parse({
+      tracker: {
+        kind: 'linear',
+        api_key: 'k',
+        active_states: ['todo'],
+        terminal_states: ['done'],
+      },
+    });
+    expect(withoutPrefix.tracker.identifier_prefix).toBeUndefined();
+  });
 });
 
 describe('Issue', () => {

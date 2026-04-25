@@ -376,7 +376,7 @@ See [SPEC.md](https://github.com/openai/symphony/blob/main/SPEC.md) for the sour
 
 ## License & publishing
 
-Licensed under [Apache-2.0](./LICENSE).
+Licensed under [MIT](./LICENSE).
 
 All workspaces are `private: true`: this is an app, not a library, and we don't publish to npm. The name `symphony-ts` already exists on npm under a different maintainer, so if we ever flip publishing on we'll need to rename (e.g. `@anantjain/symphony` or scoped per workspace). Until then, the collision is harmless.
 

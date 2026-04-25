@@ -21,7 +21,7 @@
     "type": "git",
     "url": "git+https://github.com/anantjain-xyz/symphony-ts.git"
   },
-  "license": "Apache-2.0",
+  "license": "MIT",
   "author": "Anant Jain",
   "packageManager": "pnpm@10.15.0",
   "engines": {

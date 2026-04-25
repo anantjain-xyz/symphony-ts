@@ -19,7 +19,7 @@
     "url": "git+https://github.com/anantjain-xyz/symphony-ts.git",
     "directory": "packages/shared"
   },
-  "license": "Apache-2.0",
+  "license": "MIT",
   "author": "Anant Jain",
   "type": "module",
   "main": "./src/index.ts",

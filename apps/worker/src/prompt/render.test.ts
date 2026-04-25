@@ -17,6 +17,7 @@ const ISSUE: Issue = {
   branch: null,
   labels: ['backend', 'bug'],
   blockers: ['ENG-40', 'ENG-41'],
+  pr_urls: [],
 };
 
 describe('renderPrompt', () => {

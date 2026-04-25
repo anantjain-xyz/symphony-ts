@@ -27,6 +27,7 @@ const ISSUES: Issue[] = [
     branch: 'feat/foo-widget',
     labels: ['frontend'],
     blockers: [],
+    pr_urls: [],
   },
   {
     id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
@@ -38,6 +39,7 @@ const ISSUES: Issue[] = [
     branch: null,
     labels: ['flake', 'tests'],
     blockers: ['SEED-1'],
+    pr_urls: [],
   },
 ];
 

@@ -2,6 +2,10 @@
 tracker:
   kind: linear
   api_key: ${LINEAR_API_KEY}
+  # Linear workspace slug from the URL (linear.app/<workspace>/...). Optional;
+  # when set, the dashboard renders direct "linear ↗" links on issue and
+  # session pages.
+  # workspace: your-workspace
   active_states:
     - todo
     - in progress

@@ -13,6 +13,7 @@ function mk(id: string, state: string, priority = 2): Issue {
     branch: null,
     labels: [],
     blockers: [],
+    pr_urls: [],
   };
 }
 

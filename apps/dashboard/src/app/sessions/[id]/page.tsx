@@ -1,13 +1,14 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
-import type { Tables } from '@symphony/shared';
+import { IssueLinks } from '@/components/IssueLinks';
+import type { Tables, TrackerConfig, WorkflowFrontMatter } from '@symphony/shared';
 import { LiveStream } from './LiveStream';
 
 export const dynamic = 'force-dynamic';
 
 type AttemptWithIssue = Tables<'run_attempts'> & {
-  issues: Pick<Tables<'issues'>, 'identifier' | 'title' | 'state'> | null;
+  issues: Pick<Tables<'issues'>, 'identifier' | 'title' | 'state' | 'pr_urls'> | null;
 };
 
 const TERMINAL = new Set(['success', 'failure', 'timeout', 'cancelled']);
@@ -15,27 +16,35 @@ const TERMINAL = new Set(['success', 'failure', 'timeout', 'cancelled']);
 export default async function SessionPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = createSupabaseServerClient();
-  const { data: rawAttempt } = await supabase
-    .from('run_attempts')
-    .select('*, issues(identifier, title, state)')
-    .eq('id', id)
-    .maybeSingle();
+  const [{ data: rawAttempt }, { data: initialEvents }, workflowRes] = await Promise.all([
+    supabase
+      .from('run_attempts')
+      .select('*, issues(identifier, title, state, pr_urls)')
+      .eq('id', id)
+      .maybeSingle(),
+    supabase
+      .from('agent_events')
+      .select('*')
+      .eq('run_attempt_id', id)
+      .order('id', { ascending: true })
+      .limit(10000),
+    supabase
+      .from('workflows')
+      .select('parsed')
+      .order('loaded_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
   if (!rawAttempt) notFound();
   const attempt = rawAttempt as unknown as AttemptWithIssue;
 
-  const { data: initialEvents } = await supabase
-    .from('agent_events')
-    .select('*')
-    .eq('run_attempt_id', id)
-    .order('id', { ascending: true })
-    .limit(10000);
-
   const issue = attempt.issues;
   const terminal = TERMINAL.has(attempt.status);
+  const tracker = (workflowRes.data?.parsed as Partial<WorkflowFrontMatter> | null)?.tracker ?? null;
 
   return (
     <>
-      <Header attempt={attempt} issue={issue} terminal={terminal} />
+      <Header attempt={attempt} issue={issue} terminal={terminal} tracker={tracker} />
       <LiveStream
         attemptId={id}
         attempt={attempt}
@@ -50,10 +59,12 @@ function Header({
   attempt,
   issue,
   terminal,
+  tracker,
 }: {
   attempt: AttemptWithIssue;
   issue: AttemptWithIssue['issues'];
   terminal: boolean;
+  tracker: TrackerConfig | null;
 }) {
   const status = attempt.status;
   return (
@@ -86,6 +97,14 @@ function Header({
         <Stat label="duration" value={formatDuration(attempt.started_at, attempt.ended_at)} />
         {terminal && <Stat label="state" value="terminal" valueClass="text-ink-2" />}
       </div>
+      {issue && (
+        <IssueLinks
+          identifier={issue.identifier}
+          prUrls={issue.pr_urls}
+          tracker={tracker}
+          className="mt-4"
+        />
+      )}
     </header>
   );
 }

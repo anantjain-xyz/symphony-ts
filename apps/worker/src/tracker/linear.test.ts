@@ -68,6 +68,7 @@ const ENG42 = {
   state: { name: 'Todo' },
   labels: { nodes: [{ name: 'backend' }] },
   relations: { nodes: [{ type: 'blocked_by', relatedIssue: { identifier: 'ENG-40' } }] },
+  attachments: null,
 };
 
 const ENG41_URGENT = {
@@ -100,11 +101,13 @@ describe('normalize', () => {
       state: { name: 'Backlog' },
       labels: null,
       relations: null,
+      attachments: null,
     });
     expect(issue.state).toBe('backlog');
     expect(issue.branch).toBeNull();
     expect(issue.labels).toEqual([]);
     expect(issue.blockers).toEqual([]);
+    expect(issue.pr_urls).toEqual([]);
   });
 
   it('throws when Linear issue has no state', () => {
@@ -119,8 +122,28 @@ describe('normalize', () => {
         state: null,
         labels: null,
         relations: null,
+        attachments: null,
       }),
     ).toThrow(/no state/);
+  });
+
+  it('extracts GitHub PR URLs from attachments and dedups them', () => {
+    const issue = normalize({
+      ...ENG42,
+      attachments: {
+        nodes: [
+          { url: 'https://github.com/acme/repo/pull/42' },
+          { url: 'https://github.com/acme/repo/pull/42' }, // dup
+          { url: 'https://github.com/acme/repo/pull/57/files' },
+          { url: 'https://figma.com/file/abc' }, // non-PR
+          { url: 'https://github.com/acme/repo/issues/9' }, // issue, not PR
+        ],
+      },
+    });
+    expect(issue.pr_urls).toEqual([
+      'https://github.com/acme/repo/pull/42',
+      'https://github.com/acme/repo/pull/57/files',
+    ]);
   });
 });
 

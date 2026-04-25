@@ -269,7 +269,12 @@ interface LinearIssueNode {
       relatedIssue: { identifier: string } | null;
     }>;
   } | null;
+  attachments: { nodes: Array<{ url: string }> } | null;
 }
+
+// Match URL pattern rather than Linear's `sourceType` field — `sourceType` is
+// integration-dependent and not always populated, but the URL shape is stable.
+const GITHUB_PR_URL_RE = /^https?:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+(?:[/?#].*)?$/;
 
 export function normalize(node: LinearIssueNode): Issue {
   if (!node.state?.name) {
@@ -281,6 +286,13 @@ export function normalize(node: LinearIssueNode): Issue {
       blockers.push(rel.relatedIssue.identifier);
     }
   }
+  const prUrls = Array.from(
+    new Set(
+      (node.attachments?.nodes ?? [])
+        .map((a) => a.url)
+        .filter((u) => GITHUB_PR_URL_RE.test(u)),
+    ),
+  );
   return Issue.parse({
     id: node.id,
     identifier: node.identifier,
@@ -291,6 +303,7 @@ export function normalize(node: LinearIssueNode): Issue {
     branch: node.branchName,
     labels: (node.labels?.nodes ?? []).map((l) => l.name),
     blockers,
+    pr_urls: prUrls,
   });
 }
 
@@ -313,6 +326,7 @@ const ISSUE_FIELDS = `
       relatedIssue { identifier }
     }
   }
+  attachments { nodes { url } }
 `;
 
 const VIEWER_QUERY = gql`

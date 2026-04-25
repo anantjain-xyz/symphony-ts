@@ -1,7 +1,7 @@
 import type { Issue } from '@symphony/shared';
 import type { Logger } from 'pino';
 import type { ResolvedConfig } from '../config/resolve.js';
-import type { Repo } from '../db/repo.js';
+import type { RateLimitStateRow, Repo } from '../db/repo.js';
 import type { TrackerClient } from '../tracker/linear.js';
 import { WorkspaceManager } from '../workspace/manager.js';
 import { selectDispatchable } from './concurrency.js';
@@ -155,6 +155,26 @@ export class OrchestratorLoop {
       }
     }
 
+    // 2b. Rate-limit gate. If the active backend has any `rate_limit_state`
+    //     row with `reset_at` in the future, suppress new dispatches and
+    //     due-retry firing for this tick — otherwise we'd keep launching
+    //     attempts that immediately fail upstream, hammering the provider
+    //     and wasting quota (the original SYM-14 motivation). Reconcile and
+    //     stale-retry sweep above intentionally still run: cancellations
+    //     and tracker-driven cleanup are unrelated to upstream throttling.
+    const pause = await this.rateLimitPause();
+    if (pause) {
+      log.info(
+        {
+          backend: config.agentBackend(),
+          source: pause.source,
+          resetAt: pause.reset_at,
+        },
+        'rate-limited; skipping dispatch and due retries',
+      );
+      return;
+    }
+
     // 3. Compute eligible: not blocked, not already in flight, and not
     //    currently holding a future retry-queue slot. The last check is what
     //    makes exponential backoff actually take effect — without it, a
@@ -221,6 +241,22 @@ export class OrchestratorLoop {
       const handle = await this.dispatch(issue, r.attempt_number);
       if (handle) this.registerActive(handle);
     }
+  }
+
+  /**
+   * Find the live rate-limit row for the configured backend, if any. Returns
+   * the row with the latest `reset_at` whose `source` matches the backend
+   * prefix (`codex_*` / `claude_*`); otherwise null. The adapter-emitted
+   * `source` values follow `<backend>_<bucket>` — see `agents/codex-adapter.mjs`.
+   */
+  private async rateLimitPause(): Promise<RateLimitStateRow | null> {
+    const backend = this.deps.config.agentBackend();
+    const prefix = `${backend}_`;
+    const rows = await this.deps.repo.activeRateLimits();
+    for (const row of rows) {
+      if (row.source.startsWith(prefix)) return row;
+    }
+    return null;
   }
 
   /**

@@ -12,6 +12,7 @@ import type { SymphonyClient } from '@symphony/shared';
 export class TestScope {
   private readonly _issueIds = new Set<string>();
   private readonly _workflowHashes = new Set<string>();
+  private readonly _rateLimitSources = new Set<string>();
 
   get issueIds(): ReadonlySet<string> {
     return this._issueIds;
@@ -33,6 +34,18 @@ export class TestScope {
     return hash;
   }
 
+  /**
+   * Allocate a `rate_limit_state.source` value scoped to this test. Tests use
+   * the returned string as the `source` column when seeding pause rows; the
+   * scope tracks them so `cleanup()` removes only its own rows — never the
+   * live worker's `codex_*` / `claude_*` entries on a shared Supabase.
+   */
+  newRateLimitSource(prefix: string): string {
+    const source = `${prefix}__test-${randomUUID().slice(0, 8)}`;
+    this._rateLimitSources.add(source);
+    return source;
+  }
+
   async cleanup(db: SymphonyClient): Promise<void> {
     if (this._issueIds.size > 0) {
       const { error } = await db
@@ -46,6 +59,13 @@ export class TestScope {
         .from('workflows')
         .delete()
         .in('source_hash', [...this._workflowHashes]);
+      if (error) throw error;
+    }
+    if (this._rateLimitSources.size > 0) {
+      const { error } = await db
+        .from('rate_limit_state')
+        .delete()
+        .in('source', [...this._rateLimitSources]);
       if (error) throw error;
     }
   }

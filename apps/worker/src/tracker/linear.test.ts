@@ -187,6 +187,43 @@ describe('createLinearClient', () => {
     });
     expect(await client.fetchById('missing')).toBeNull();
   });
+
+  it('fetchById returns null when Linear reports Entity not found', async () => {
+    // Real Linear surfaces an unknown id as a GraphQL INPUT_ERROR (HTTP 200
+    // with errors[]) rather than `{ issue: null }`. Reproduces the warning
+    // logged by `confirmNotActive` against stale retry_queue rows.
+    const calls = vi.fn(() => {
+      const err = new Error('Entity not found: Issue') as Error & { response: unknown };
+      err.response = {
+        status: 200,
+        errors: [
+          {
+            message: 'Entity not found: Issue',
+            path: ['issue'],
+            extensions: {
+              type: 'invalid input',
+              code: 'INPUT_ERROR',
+              statusCode: 400,
+              userError: true,
+              userPresentableMessage: 'Could not find referenced Issue.',
+            },
+          },
+        ],
+      };
+      throw err;
+    });
+    const client = createLinearClient({
+      endpoint: 'http://stub',
+      apiKey: 'k',
+      activeStates: ['todo'],
+      terminalStates: ['done'],
+      client: stubClient(calls),
+      sleep: async (_ms: number) => {},
+    });
+    expect(await client.fetchById('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb')).toBeNull();
+    // Single call: don't burn retries on a hard "not found".
+    expect(calls).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('createLinearClient – resilience', () => {

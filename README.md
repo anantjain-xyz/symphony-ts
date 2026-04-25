@@ -1,5 +1,8 @@
 # symphony-ts
 
+[![CI](https://github.com/anantjain-xyz/symphony-ts/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/anantjain-xyz/symphony-ts/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/anantjain-xyz/symphony-ts/branch/main/graph/badge.svg)](https://codecov.io/gh/anantjain-xyz/symphony-ts)
+
 TypeScript port of [Symphony](https://github.com/openai/symphony), backed by Supabase for persistence and realtime.
 
 A long-running daemon that polls Linear for active issues, provisions isolated workspaces per issue, and runs Claude Code (or Codex) coding-agent sessions against them with retries, concurrency caps, and live operator observability.

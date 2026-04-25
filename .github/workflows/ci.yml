@@ -14,37 +14,116 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  checks:
-    name: ${{ matrix.check.name }}
+  format:
+    name: format
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        check:
-          - name: formatting
-            command: pnpm format:check
-          - name: lint
-            command: pnpm lint && pnpm typecheck
-          - name: test
-            command: pnpm test
-
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: pnpm format:check
 
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: pnpm lint
+
+  typecheck:
+    name: typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: pnpm typecheck
+
+  test:
+    name: test (unit + coverage)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - name: Run unit tests with coverage
+        run: pnpm test:coverage
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
         with:
-          version: 10.15.0
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: |
+            apps/worker/coverage/lcov.info
+            packages/shared/coverage/lcov.info
+          fail_ci_if_error: false
+        continue-on-error: true
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+  audit:
+    name: dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - name: pnpm audit (fail on high+)
+        run: pnpm audit --prod --audit-level high
+
+  secret-scan:
+    name: secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
         with:
-          node-version: 22
-          cache: pnpm
+          fetch-depth: 0
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: false
+          GITLEAKS_ENABLE_SUMMARY: true
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+  dashboard-build:
+    name: dashboard build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - name: Build Next.js dashboard
+        run: pnpm --filter @symphony/dashboard build
 
-      - name: Run ${{ matrix.check.name }}
-        run: ${{ matrix.check.command }}
+  integration:
+    name: integration (worker ↔ supabase)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+
+      - name: Set up Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start local Supabase stack
+        run: supabase start --workdir .
+
+      - name: Export Supabase credentials
+        id: supabase
+        run: |
+          set -euo pipefail
+          status_json="$(supabase status -o json --workdir .)"
+          api_url="$(jq -r '.API_URL' <<<"$status_json")"
+          service_role="$(jq -r '.SERVICE_ROLE_KEY' <<<"$status_json")"
+          if [[ -z "$api_url" || "$api_url" == "null" || -z "$service_role" || "$service_role" == "null" ]]; then
+            echo "supabase status missing API_URL/SERVICE_ROLE_KEY:" >&2
+            echo "$status_json" >&2
+            exit 1
+          fi
+          {
+            echo "TEST_SUPABASE_URL=$api_url"
+            echo "TEST_SUPABASE_SERVICE_ROLE_KEY=$service_role"
+          } >> "$GITHUB_ENV"
+
+      - name: Run worker tests (incl. integration)
+        run: pnpm --filter @symphony/worker test
+
+      - name: Stop Supabase
+        if: always()
+        run: supabase stop --workdir . --no-backup || true

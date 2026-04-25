@@ -20,3 +20,6 @@ supabase/seed.sql
 
 # playwright MCP artifacts
 .playwright-mcp/
+
+# vitest coverage
+coverage/

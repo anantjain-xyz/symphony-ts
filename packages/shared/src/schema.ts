@@ -19,6 +19,11 @@ export const TrackerConfig = z
     project_url: z.string().url().optional(),
     active_states: z.array(z.string()).min(1),
     terminal_states: z.array(z.string()).min(1),
+    // Restrict the worker to issues whose identifier starts with this prefix
+    // (e.g. "PB-"). Use when the configured Linear API key has access to
+    // multiple teams in one workspace and only one team's issues should be
+    // worked on. When unset, all issues matching the state filters are picked up.
+    identifier_prefix: z.string().min(1).optional(),
   })
   .strict();
 export type TrackerConfig = z.infer<typeof TrackerConfig>;

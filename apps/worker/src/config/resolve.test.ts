@@ -44,6 +44,23 @@ describe('resolveConfig', () => {
     const c = resolveConfig(parseWorkflowSource(SRC));
     expect(c.snapshot()).toBe(c);
   });
+
+  it('identifierPrefix() defaults to null and reflects tracker.identifier_prefix when set', () => {
+    const cNone = resolveConfig(parseWorkflowSource(SRC));
+    expect(cNone.identifierPrefix()).toBeNull();
+
+    const SRC_PREFIX = `---
+tracker:
+  kind: linear
+  api_key: k
+  active_states: [Todo]
+  terminal_states: [Done]
+  identifier_prefix: PB-
+---
+prompt`;
+    const cSet = resolveConfig(parseWorkflowSource(SRC_PREFIX));
+    expect(cSet.identifierPrefix()).toBe('PB-');
+  });
 });
 
 const SRC_A = `---

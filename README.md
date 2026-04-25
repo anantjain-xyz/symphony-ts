@@ -85,6 +85,29 @@ cp .env.example .env.local
 The worker loads it via `dotenv` in `apps/worker/src/index.ts`; the dashboard
 loads it via `loadEnvConfig` in `apps/dashboard/next.config.mjs`.
 
+### Retargeting at a different repo / Linear team
+
+Symphony is repo-agnostic. To point it at a different GitHub repo and Linear team, edit two files.
+
+**`.env.local`**
+
+| Field | Change to |
+|---|---|
+| `REPO_URL` | The new repo's git URL — `after_create` clones from this. |
+| `LINEAR_API_KEY` | Only if the new team is in a different Linear workspace than the previous one. |
+
+**`WORKFLOW.md`** (frontmatter)
+
+| Field | Change to |
+|---|---|
+| `tracker.workspace` | The new Linear workspace slug (`linear.app/<slug>/...`). Used by the dashboard to render "linear ↗" links. |
+| `tracker.identifier_prefix` | The new team's issue prefix (e.g. `PB-`). **Required when the API key has access to multiple teams in one workspace** — otherwise the worker picks up every team's issues. Omit when the workspace has only one team. |
+| `tracker.active_states` / `tracker.terminal_states` | Only if the new team's Linear states differ from the previous team's. The `Status routing` table in the prompt body assumes `Todo`, `In Progress`, `Rework`, `Merging`, `In Review`, `Done` exist — if any are missing, either add them to the team in Linear or trim the routing table. |
+| `hooks.after_create` | Switch `pnpm install --frozen-lockfile` ↔ `npm ci` ↔ `yarn install --frozen-lockfile` etc. to match the target repo's package manager. Drop the install line entirely if the repo isn't a Node project. |
+| `claude.allowed_tools` | Match the package-manager / language tooling the agent will need (`Bash(npm *)` vs `Bash(pnpm *)`, `Bash(cargo *)`, `Bash(uv *)`, etc.). |
+
+The Mustache-templated prompt body below the frontmatter is repo-neutral and usually doesn't need editing.
+
 ### Worker
 
 ```sh

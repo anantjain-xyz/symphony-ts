@@ -19,6 +19,8 @@ export interface ResolvedConfig {
   trackerApiKey(): string;
   activeStates(): string[];
   terminalStates(): string[];
+  /** Optional identifier prefix (e.g. "PB-"). When set, the tracker drops issues whose identifier doesn't start with it. */
+  identifierPrefix(): string | null;
   /** Selected agent backend. */
   agentBackend(): AgentBackend;
   /** Command to spawn for the selected backend's adapter. */
@@ -76,6 +78,7 @@ export function resolveConfig(
     trackerApiKey: () => workflow.frontMatter.tracker.api_key,
     activeStates: () => workflow.frontMatter.tracker.active_states.map((s) => s.toLowerCase()),
     terminalStates: () => workflow.frontMatter.tracker.terminal_states.map((s) => s.toLowerCase()),
+    identifierPrefix: () => workflow.frontMatter.tracker.identifier_prefix ?? null,
     agentBackend: () => workflow.frontMatter.agent.backend,
     agentCommand: () =>
       workflow.frontMatter.agent.backend === 'claude'
@@ -116,6 +119,7 @@ export function liveConfig(initial: ResolvedConfig): LiveResolvedConfig {
     trackerApiKey: () => current.trackerApiKey(),
     activeStates: () => current.activeStates(),
     terminalStates: () => current.terminalStates(),
+    identifierPrefix: () => current.identifierPrefix(),
     agentBackend: () => current.agentBackend(),
     agentCommand: () => current.agentCommand(),
     codexCommand: () => current.codexCommand(),

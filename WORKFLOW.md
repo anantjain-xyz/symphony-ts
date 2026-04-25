@@ -6,6 +6,10 @@ tracker:
   # when set, the dashboard renders direct "linear ↗" links on issue and
   # session pages.
   workspace: optimism-llc
+  # Restrict the worker to one team in the workspace by issue-identifier prefix
+  # (Polyblind shares the workspace with other teams, so without this the
+  # worker would pick up SYM-* issues too).
+  identifier_prefix: PB-
   active_states:
     - todo
     - in progress
@@ -14,8 +18,6 @@ tracker:
   terminal_states:
     - done
     - canceled
-    - duplicate
-    - closed
 
 polling:
   interval_ms: 30000
@@ -27,7 +29,7 @@ hooks:
   after_create: |
     git clone "$REPO_URL" .
     git checkout -B "${ISSUE_BRANCH:-symphony/${ISSUE_IDENTIFIER}}"
-    pnpm install --frozen-lockfile
+    npm ci
   before_run: |
     echo "starting attempt for ${ISSUE_IDENTIFIER}"
   after_run: |
@@ -85,7 +87,6 @@ claude:
     # Read-only diagnostics the agent commonly probes for.
     - Bash(which *)
     - Bash(node --version)
-    - Bash(pnpm --version)
     - Bash(npm --version)
     - Bash(python3 --version)
     # Fetching canonical boilerplate docs (LICENSE, CODE_OF_CONDUCT, ...) — see Guardrails.
@@ -132,7 +133,7 @@ Facts about this run — do not waste turns rediscovering them.
 
 - **Linear**: the Linear MCP server is the primary path — use its tools (`mcp__linear-server__*`) directly. If — and only if — no Linear MCP tools appear in your environment, fall back to the HTTP API: `curl -fsS -H "Authorization: $LINEAR_API_KEY" -H "Content-Type: application/json" https://api.linear.app/graphql -d '{"query":"..."}'`. `$LINEAR_API_KEY` is always present. Do not spend turns probing — one of these two paths is configured.
 - **GitHub**: `gh` CLI is authenticated.
-- **Workspace**: already `cd`'d into `$TMPDIR/symphony-workspaces/<IDENTIFIER>/`; branch is checked out; `pnpm install` already ran via `after_create`.
+- **Workspace**: already `cd`'d into `$TMPDIR/symphony-workspaces/<IDENTIFIER>/`; branch is checked out; `npm ci` already ran via `after_create`.
 - **Deferred tools you will likely need**: load in a single call — `ToolSearch("select:TodoWrite,WebFetch")`. Do not make multiple discovery queries.
 
 ## Attempt N > 1 fast-path

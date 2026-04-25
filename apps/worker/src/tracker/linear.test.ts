@@ -16,6 +16,7 @@ function mkConfig(
     terminalStates?: string[];
     endpoint?: string;
     apiKey?: string;
+    identifierPrefix?: string;
   } = {},
 ) {
   return resolveConfig(makeTestWorkflow({ sourceHash: 'linear-test', ...overrides }));
@@ -224,6 +225,58 @@ describe('createLinearClient', () => {
     expect(await client.fetchById('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb')).toBeNull();
     // Single call: don't burn retries on a hard "not found".
     expect(calls).toHaveBeenCalledTimes(1);
+  });
+
+  it('identifier_prefix scopes the GraphQL query to the team and drops off-team issues defensively', async () => {
+    // Polyblind + Symphony share a Linear workspace; the worker must only see
+    // PB-* issues when configured for the Polyblind team. The team-key filter
+    // must be in the GraphQL query — without it, a busy workspace can fill the
+    // `first: 100` page with off-team issues and starve the configured team.
+    const PB7 = { ...ENG42, id: 'uuid-pb-7', identifier: 'PB-7' };
+    const PB8 = { ...ENG42, id: 'uuid-pb-8', identifier: 'PB-8' };
+    const SYM3 = { ...ENG42, id: 'uuid-sym-3', identifier: 'SYM-3' };
+
+    const seenVars: Array<Record<string, unknown>> = [];
+    // Server returns the rogue SYM-3 too; the post-fetch filter is the
+    // defense-in-depth check that the test asserts also runs.
+    const stub = (op: string, vars: unknown) => {
+      seenVars.push(vars as Record<string, unknown>);
+      if (op === 'SymphonyIssueById') return { issue: SYM3 };
+      return { issues: { nodes: [PB7, SYM3, PB8] } };
+    };
+
+    const client = createLinearClient({
+      config: mkConfig({
+        activeStates: ['todo'],
+        terminalStates: ['done'],
+        identifierPrefix: 'PB-',
+      }),
+      client: stubClient(stub),
+      sleep: async (_ms: number) => {},
+    });
+
+    const active = await client.fetchActive();
+    expect(active.map((i) => i.identifier)).toEqual(['PB-7', 'PB-8']);
+    expect(seenVars[0]).toMatchObject({ teamKey: 'PB' });
+
+    const terminal = await client.fetchTerminal();
+    expect(terminal.map((i) => i.identifier)).toEqual(['PB-7', 'PB-8']);
+    expect(seenVars[1]).toMatchObject({ teamKey: 'PB' });
+
+    // fetchById of an off-team issue is treated as "not ours".
+    expect(await client.fetchById('uuid-sym-3')).toBeNull();
+  });
+
+  it('omitting identifier_prefix returns every fetched issue unchanged', async () => {
+    const PB7 = { ...ENG42, id: 'uuid-pb-7', identifier: 'PB-7' };
+    const SYM3 = { ...ENG42, id: 'uuid-sym-3', identifier: 'SYM-3' };
+    const client = createLinearClient({
+      config: mkConfig({ activeStates: ['todo'] }),
+      client: stubClient(() => ({ issues: { nodes: [PB7, SYM3] } })),
+      sleep: async (_ms: number) => {},
+    });
+    const active = await client.fetchActive();
+    expect(active.map((i) => i.identifier).sort()).toEqual(['PB-7', 'SYM-3']);
   });
 
   it('reads activeStates / terminalStates from live config on every call', async () => {

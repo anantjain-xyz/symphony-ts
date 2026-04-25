@@ -19,6 +19,12 @@ export interface LinearClientOptions {
   terminalStates: string[]; // lowercased
   /** Inject a custom client for tests. */
   client?: GraphQLClient;
+  /** Per-request abort timeout in ms. Default 15_000. */
+  requestTimeoutMs?: number;
+  /** Total attempts (initial + retries) for transient failures. Default 3. */
+  maxAttempts?: number;
+  /** Sleep injection for tests; defaults to setTimeout-based real sleep. */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 export class LinearAuthError extends Error {
@@ -30,10 +36,28 @@ export class LinearRateLimitError extends Error {
     super(`Linear rate limited; retry after ${retryAfterMs}ms`);
   }
 }
+export class LinearTimeoutError extends Error {
+  override readonly name = 'LinearTimeoutError';
+  constructor(public readonly timeoutMs: number) {
+    super(`Linear request timed out after ${timeoutMs}ms`);
+  }
+}
 
 // =========================================================================
 // Implementation
 // =========================================================================
+
+const DEFAULT_TIMEOUT_MS = 15_000;
+const DEFAULT_MAX_ATTEMPTS = 3;
+const BACKOFF_BASE_MS = 500;
+const BACKOFF_CAP_MS = 5_000;
+
+interface ResilienceCtx {
+  client: GraphQLClient;
+  timeoutMs: number;
+  maxAttempts: number;
+  sleep: (ms: number) => Promise<void>;
+}
 
 export function createLinearClient(opts: LinearClientOptions): TrackerClient {
   const client =
@@ -41,39 +65,37 @@ export function createLinearClient(opts: LinearClientOptions): TrackerClient {
     new GraphQLClient(opts.endpoint, {
       headers: { authorization: opts.apiKey },
     });
+  const ctx: ResilienceCtx = {
+    client,
+    timeoutMs: opts.requestTimeoutMs ?? DEFAULT_TIMEOUT_MS,
+    maxAttempts: Math.max(1, opts.maxAttempts ?? DEFAULT_MAX_ATTEMPTS),
+    sleep: opts.sleep ?? defaultSleep,
+  };
 
   return {
     async preflight() {
-      try {
-        await client.request<{ viewer: { id: string } }>(VIEWER_QUERY);
-      } catch (err) {
-        throw classify(err);
-      }
+      await execute<{ viewer: { id: string } }>(ctx, VIEWER_QUERY, undefined);
     },
 
     async fetchActive() {
-      const issues = await fetchByStateNames(client, opts.activeStates);
+      const issues = await fetchByStateNames(ctx, opts.activeStates);
       return issues.sort(byPriorityThenIdentifier);
     },
 
     async fetchTerminal() {
-      return fetchByStateNames(client, opts.terminalStates);
+      return fetchByStateNames(ctx, opts.terminalStates);
     },
 
     async fetchById(id: string) {
-      try {
-        const data = await client.request<{ issue: LinearIssueNode | null }>(ISSUE_BY_ID_QUERY, {
-          id,
-        });
-        return data.issue ? normalize(data.issue) : null;
-      } catch (err) {
-        throw classify(err);
-      }
+      const data = await execute<{ issue: LinearIssueNode | null }>(ctx, ISSUE_BY_ID_QUERY, {
+        id,
+      });
+      return data.issue ? normalize(data.issue) : null;
     },
   };
 }
 
-async function fetchByStateNames(client: GraphQLClient, states: string[]): Promise<Issue[]> {
+async function fetchByStateNames(ctx: ResilienceCtx, states: string[]): Promise<Issue[]> {
   if (states.length === 0) return [];
   // Linear's StringComparator doesn't support `inIgnoreCase`, so we OR together
   // one `eqIgnoreCase` branch per state name. Operators may configure state
@@ -92,12 +114,8 @@ async function fetchByStateNames(client: GraphQLClient, states: string[]): Promi
     }
   `;
   const vars = Object.fromEntries(states.map((s, i) => [`s${i}`, s]));
-  try {
-    const data = await client.request<{ issues: { nodes: LinearIssueNode[] } }>(query, vars);
-    return data.issues.nodes.map(normalize);
-  } catch (err) {
-    throw classify(err);
-  }
+  const data = await execute<{ issues: { nodes: LinearIssueNode[] } }>(ctx, query, vars);
+  return data.issues.nodes.map(normalize);
 }
 
 function byPriorityThenIdentifier(a: Issue, b: Issue): number {
@@ -109,23 +127,121 @@ function byPriorityThenIdentifier(a: Issue, b: Issue): number {
   return a.identifier.localeCompare(b.identifier);
 }
 
-function classify(err: unknown): Error {
-  // graphql-request throws ClientError with .response containing status + errors.
-  const e = err as {
-    response?: { status?: number; errors?: Array<{ message: string }> };
-    message?: string;
-  };
-  const status = e.response?.status;
-  if (status === 401 || status === 403) return new LinearAuthError(e.message ?? 'auth failed');
-  if (status === 429) {
-    const retry = Number(
-      (
-        e.response as { headers?: { get?: (k: string) => string | null } } | undefined
-      )?.headers?.get?.('retry-after') ?? '5',
-    );
-    return new LinearRateLimitError(retry * 1000);
+// =========================================================================
+// Resilience: per-request timeout + retry on 429 / 5xx / network / timeout
+// =========================================================================
+
+type Attempt<T> = { ok: true; value: T } | { ok: false; err: unknown };
+
+async function execute<T>(
+  ctx: ResilienceCtx,
+  document: string,
+  variables: Record<string, unknown> | undefined,
+): Promise<T> {
+  let lastErr: unknown = new Error('linear: no attempts made');
+  for (let attempt = 1; attempt <= ctx.maxAttempts; attempt++) {
+    const outcome = await tryOnce<T>(ctx, document, variables);
+    if (outcome.ok) return outcome.value;
+    lastErr = outcome.err;
+
+    const decision = classifyForRetry(outcome.err, ctx.timeoutMs);
+    const isLast = attempt === ctx.maxAttempts;
+    if (decision.kind === 'fatal' || isLast) throw decision.error;
+
+    await ctx.sleep(retryDelay(decision, attempt));
   }
-  return err instanceof Error ? err : new Error(String(err));
+  // Loop bound guarantees this is unreachable, but keep the throw for type safety.
+  throw classify(lastErr, ctx.timeoutMs);
+}
+
+async function tryOnce<T>(
+  ctx: ResilienceCtx,
+  document: string,
+  variables: Record<string, unknown> | undefined,
+): Promise<Attempt<T>> {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), ctx.timeoutMs);
+  try {
+    const value = await ctx.client.request<T>({
+      document,
+      variables: variables as Record<string, unknown>,
+      signal: ac.signal,
+    });
+    return { ok: true, value };
+  } catch (err) {
+    return { ok: false, err };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+type RetryDecision =
+  | { kind: 'fatal'; error: Error }
+  | { kind: 'rate-limit'; retryAfterMs: number; error: LinearRateLimitError }
+  | { kind: 'transient'; error: Error };
+
+function classifyForRetry(err: unknown, timeoutMs: number): RetryDecision {
+  if (isAbortError(err)) {
+    return { kind: 'transient', error: new LinearTimeoutError(timeoutMs) };
+  }
+  const status = readStatus(err);
+  if (status === 401 || status === 403) {
+    const msg = (err as { message?: string }).message ?? 'auth failed';
+    return { kind: 'fatal', error: new LinearAuthError(msg) };
+  }
+  if (status === 429) {
+    const ms = readRetryAfterMs(err);
+    return { kind: 'rate-limit', retryAfterMs: ms, error: new LinearRateLimitError(ms) };
+  }
+  if (status === undefined || (status >= 500 && status < 600)) {
+    return { kind: 'transient', error: err instanceof Error ? err : new Error(String(err)) };
+  }
+  return { kind: 'fatal', error: err instanceof Error ? err : new Error(String(err)) };
+}
+
+function classify(err: unknown, timeoutMs: number): Error {
+  return classifyForRetry(err, timeoutMs).error;
+}
+
+function retryDelay(decision: RetryDecision, attempt: number): number {
+  if (decision.kind === 'rate-limit') {
+    // Honour Retry-After exactly, plus small additive jitter (0–250 ms) so a
+    // herd of workers don't all wake at the same instant.
+    return decision.retryAfterMs + Math.random() * 250;
+  }
+  // Exponential backoff: base * 2^(attempt-1), capped, with ±50% multiplicative jitter.
+  const exp = Math.min(BACKOFF_BASE_MS * 2 ** (attempt - 1), BACKOFF_CAP_MS);
+  return exp + Math.random() * exp * 0.5;
+}
+
+function isAbortError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as { name?: string; code?: string };
+  return e.name === 'AbortError' || e.code === 'ABORT_ERR';
+}
+
+function readStatus(err: unknown): number | undefined {
+  const e = err as { response?: { status?: number } } | null | undefined;
+  return e?.response?.status;
+}
+
+function readRetryAfterMs(err: unknown): number {
+  const e = err as
+    | { response?: { headers?: Headers | { get?: (k: string) => string | null } } }
+    | null
+    | undefined;
+  const hdrs = e?.response?.headers;
+  let raw: string | null = null;
+  if (hdrs && typeof (hdrs as { get?: unknown }).get === 'function') {
+    raw = (hdrs as { get: (k: string) => string | null }).get('retry-after') ?? null;
+  }
+  const n = Number(raw ?? '5');
+  if (!Number.isFinite(n) || n < 0) return 5_000;
+  return n * 1000;
+}
+
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((res) => setTimeout(res, ms));
 }
 
 // =========================================================================

@@ -29,8 +29,10 @@ jobs:
         id: changesets
         uses: changesets/action@v1
         with:
-          version: pnpm version
-          publish: pnpm release
+          # `pnpm run` is required: `pnpm version` collides with pnpm's
+          # built-in version subcommand and would never invoke the script.
+          version: pnpm run version
+          publish: pnpm run release
           title: "chore: release"
           commit: "chore: release"
           createGithubReleases: true

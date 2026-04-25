@@ -1,7 +1,28 @@
 {
   "name": "@symphony/dashboard",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
+  "description": "Symphony operator dashboard — Next.js 15 UI for the fleet, sessions, and live agent event streams from Supabase Realtime.",
+  "keywords": [
+    "symphony",
+    "dashboard",
+    "nextjs",
+    "supabase",
+    "realtime",
+    "claude-code",
+    "codex"
+  ],
+  "homepage": "https://github.com/anantjain-xyz/symphony-ts/tree/main/apps/dashboard#readme",
+  "bugs": {
+    "url": "https://github.com/anantjain-xyz/symphony-ts/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anantjain-xyz/symphony-ts.git",
+    "directory": "apps/dashboard"
+  },
+  "license": "Apache-2.0",
+  "author": "Anant Jain",
   "type": "module",
   "scripts": {
     "dev": "next dev -p 3000",

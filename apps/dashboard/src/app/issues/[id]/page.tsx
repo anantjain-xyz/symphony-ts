@@ -255,9 +255,7 @@ function RunCard({ attempt, tokens }: { attempt: Attempt; tokens: number }) {
             )}
           </div>
         </div>
-        <span className="smallcaps text-[10px] text-ink-3 group-hover:text-signal pr-1">
-          run →
-        </span>
+        <span className="smallcaps text-[10px] text-ink-3 group-hover:text-signal pr-1">run →</span>
       </div>
     </Link>
   );

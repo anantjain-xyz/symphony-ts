@@ -9,7 +9,7 @@ import { createSupabaseServerClient } from '@/lib/supabase-server';
 export const dynamic = 'force-dynamic';
 
 type Issue = Tables<'issues'>;
-type Attempt = Tables<'run_attempts'>;
+type Run = Tables<'runs'>;
 
 const TERMINAL = new Set(['success', 'failure', 'timeout', 'cancelled']);
 
@@ -20,20 +20,14 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
   if (!issueRaw) notFound();
   const issue = issueRaw as Issue;
 
-  const [{ data: attempts }, { data: sessions }, workflowRes] = await Promise.all([
-    supabase
-      .from('run_attempts')
-      .select('*')
-      .eq('issue_id', id)
-      .order('attempt_number', { ascending: false }),
+  const [{ data: runs }, { data: sessions }, workflowRes] = await Promise.all([
+    supabase.from('runs').select('*').eq('issue_id', id).order('run_number', { ascending: false }),
     supabase
       .from('live_sessions')
-      .select('run_attempt_id, total_tokens')
+      .select('run_id, total_tokens')
       .in(
-        'run_attempt_id',
-        ((await supabase.from('run_attempts').select('id').eq('issue_id', id)).data ?? []).map(
-          (r) => r.id,
-        ),
+        'run_id',
+        ((await supabase.from('runs').select('id').eq('issue_id', id)).data ?? []).map((r) => r.id),
       ),
     supabase
       .from('workflows')
@@ -46,23 +40,23 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
   const tracker =
     (workflowRes.data?.parsed as Partial<WorkflowFrontMatter> | null)?.tracker ?? null;
 
-  const attemptRows = (attempts ?? []) as Attempt[];
-  const tokensByAttempt = new Map<string, number>(
-    (sessions ?? []).map((s) => [s.run_attempt_id, s.total_tokens]),
+  const runRows = (runs ?? []) as Run[];
+  const tokensByRun = new Map<string, number>(
+    (sessions ?? []).map((s) => [s.run_id, s.total_tokens]),
   );
 
-  const counts = countByStatus(attemptRows);
-  const lastAttempt = attemptRows[0];
-  const totalTokens = [...tokensByAttempt.values()].reduce((a, b) => a + b, 0);
+  const counts = countByStatus(runRows);
+  const lastRun = runRows[0];
+  const totalTokens = [...tokensByRun.values()].reduce((a, b) => a + b, 0);
 
   return (
     <>
-      <Header issue={issue} lastAttempt={lastAttempt} />
+      <Header issue={issue} lastRun={lastRun} />
 
       <div className="grid grid-cols-1 lg:grid-cols-[220px_minmax(0,1fr)] gap-6">
         {/* Left rail — issue telemetry */}
         <aside className="lg:sticky lg:top-4 lg:self-start space-y-5">
-          <Telemetry label="runs" value={attemptRows.length.toString()} />
+          <Telemetry label="runs" value={runRows.length.toString()} />
           {counts.success > 0 && (
             <Telemetry
               label="success"
@@ -143,16 +137,16 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
               runs
               <span className="text-ink-4">·</span>
               <span className="font-mono normal-case tracking-normal text-ink-1">
-                {attemptRows.length}
+                {runRows.length}
               </span>
             </div>
-            {attemptRows.length === 0 ? (
+            {runRows.length === 0 ? (
               <EmptyRuns />
             ) : (
               <ol className="space-y-2">
-                {attemptRows.map((a) => (
+                {runRows.map((a) => (
                   <li key={a.id}>
-                    <RunCard attempt={a} tokens={tokensByAttempt.get(a.id) ?? 0} />
+                    <RunCard run={a} tokens={tokensByRun.get(a.id) ?? 0} />
                   </li>
                 ))}
               </ol>
@@ -164,7 +158,7 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
   );
 }
 
-function Header({ issue, lastAttempt }: { issue: Issue; lastAttempt: Attempt | undefined }) {
+function Header({ issue, lastRun }: { issue: Issue; lastRun: Run | undefined }) {
   return (
     <header className="mb-8">
       <div className="flex items-baseline gap-3 mb-2">
@@ -185,15 +179,12 @@ function Header({ issue, lastAttempt }: { issue: Issue; lastAttempt: Attempt | u
       </h1>
       <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 smallcaps text-[10px] text-ink-3">
         <Stat label="last seen" value={formatRelative(issue.last_seen_at)} />
-        {lastAttempt && (
+        {lastRun && (
           <>
-            <Stat label="latest" value={`#${lastAttempt.attempt_number} · ${lastAttempt.status}`} />
-            <Stat label="started" value={formatRelative(lastAttempt.started_at)} />
-            {lastAttempt.ended_at && (
-              <Stat
-                label="duration"
-                value={formatDuration(lastAttempt.started_at, lastAttempt.ended_at)}
-              />
+            <Stat label="latest" value={`#${lastRun.run_number} · ${lastRun.status}`} />
+            <Stat label="started" value={formatRelative(lastRun.started_at)} />
+            {lastRun.ended_at && (
+              <Stat label="duration" value={formatDuration(lastRun.started_at, lastRun.ended_at)} />
             )}
           </>
         )}
@@ -202,41 +193,41 @@ function Header({ issue, lastAttempt }: { issue: Issue; lastAttempt: Attempt | u
   );
 }
 
-function RunCard({ attempt, tokens }: { attempt: Attempt; tokens: number }) {
-  const terminal = TERMINAL.has(attempt.status);
-  const duration = attempt.started_at
+function RunCard({ run, tokens }: { run: Run; tokens: number }) {
+  const terminal = TERMINAL.has(run.status);
+  const duration = run.started_at
     ? formatDuration(
-        attempt.started_at,
-        attempt.ended_at ?? (terminal ? attempt.started_at : new Date().toISOString()),
+        run.started_at,
+        run.ended_at ?? (terminal ? run.started_at : new Date().toISOString()),
       )
     : null;
 
   return (
     <Link
-      href={`/runs/${attempt.id}`}
+      href={`/runs/${run.id}`}
       className="block group rounded border border-hairline bg-surface-1 hover:border-hairline-strong hover:bg-surface-2 transition-colors"
     >
       <div className="grid grid-cols-[88px_180px_minmax(0,1fr)_auto] gap-4 px-4 py-3 items-center">
         <div className="flex items-baseline gap-2">
           <span className="font-display text-[22px] tabular text-ink-0 leading-none">
-            {attempt.attempt_number}
+            {run.run_number}
           </span>
           <span className="smallcaps text-[9px] text-ink-3">run</span>
         </div>
         <div>
-          <RunStatusBadge status={attempt.status} />
-          {attempt.error_class && (
+          <RunStatusBadge status={run.status} />
+          {run.error_class && (
             <div className="font-mono text-[10.5px] text-danger mt-1 truncate">
-              {attempt.error_class}
+              {run.error_class}
             </div>
           )}
         </div>
         <div className="min-w-0">
-          {attempt.error_message ? (
-            <div className="text-[12.5px] text-ink-1 truncate">{attempt.error_message}</div>
+          {run.error_message ? (
+            <div className="text-[12.5px] text-ink-1 truncate">{run.error_message}</div>
           ) : (
             <div className="text-[12.5px] text-ink-3 italic">
-              {attempt.status === 'success' ? 'Completed without error.' : '—'}
+              {run.status === 'success' ? 'Completed without error.' : '—'}
             </div>
           )}
           <div className="mt-1 flex items-center gap-3 font-mono text-[10.5px] text-ink-3 tabular">
@@ -250,9 +241,7 @@ function RunCard({ attempt, tokens }: { attempt: Attempt; tokens: number }) {
                 <span className="text-ink-4">tok</span> {tokens.toLocaleString()}
               </span>
             )}
-            {attempt.started_at && (
-              <span className="text-ink-3">{formatRelative(attempt.started_at)}</span>
-            )}
+            {run.started_at && <span className="text-ink-3">{formatRelative(run.started_at)}</span>}
           </div>
         </div>
         <span className="smallcaps text-[10px] text-ink-3 group-hover:text-signal pr-1">run →</span>
@@ -441,9 +430,9 @@ function EmptyRuns() {
   );
 }
 
-function countByStatus(attempts: Attempt[]) {
+function countByStatus(runs: Run[]) {
   const c = { success: 0, failure: 0, timeout: 0, cancelled: 0, running: 0, pending: 0 };
-  for (const a of attempts) {
+  for (const a of runs) {
     const k = a.status as keyof typeof c;
     if (k in c) c[k]++;
   }

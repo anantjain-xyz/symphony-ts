@@ -3,7 +3,6 @@ import type { Tables, WorkflowFrontMatter } from '@symphony/shared';
 import { trackerProjectUrl } from '@symphony/shared/schema';
 import { KpiBlock } from './KpiBlock';
 import { LiveRuntime } from './LiveRuntime';
-import { PastRunsSection } from './PastRunsSection';
 import { RateLimitPauseKpi } from './RateLimitPauseKpi';
 import { RealtimeRefresh } from './RealtimeRefresh';
 import { RunRow, relativeTime } from './RunRow';
@@ -11,7 +10,7 @@ import { RunRow, relativeTime } from './RunRow';
 export const dynamic = 'force-dynamic';
 
 type IssueSummary = Pick<Tables<'issues'>, 'identifier' | 'title' | 'state'>;
-type RunAttemptWithIssue = Tables<'run_attempts'> & { issues: IssueSummary | null };
+type RunWithIssue = Tables<'runs'> & { issues: IssueSummary | null };
 type RetryWithIssue = Tables<'retry_queue'> & {
   issues: Pick<Tables<'issues'>, 'identifier' | 'title'> | null;
 };
@@ -21,66 +20,50 @@ type LatestEventRow = Tables<'agent_events_latest'>;
 export default async function FleetPage() {
   const supabase = createSupabaseServerClient();
 
-  const [
-    running,
-    retries,
-    recentFails,
-    pastRuns,
-    sessions,
-    issuesCount,
-    heartbeatRes,
-    workflowRes,
-  ] = await Promise.all([
-    supabase
-      .from('run_attempts')
-      .select('*, issues(identifier, title, state)')
-      .eq('status', 'running')
-      .order('started_at', { ascending: false }),
-    supabase
-      .from('retry_queue')
-      .select('*, issues(identifier, title)')
-      .order('due_at', { ascending: true })
-      .limit(20),
-    supabase
-      .from('run_attempts')
-      .select('*, issues(identifier, title)')
-      .in('status', ['failure', 'timeout'])
-      .order('ended_at', { ascending: false })
-      .limit(10),
-    supabase
-      .from('run_attempts')
-      .select('*, issues(identifier, title, state)')
-      .in('status', ['success', 'cancelled'])
-      .order('ended_at', { ascending: false })
-      .order('id', { ascending: false })
-      .limit(100),
-    supabase.from('live_sessions').select('*'),
-    supabase.from('issues').select('id', { count: 'exact', head: true }),
-    supabase.from('worker_heartbeat').select('*').eq('id', 'worker').maybeSingle(),
-    supabase
-      .from('workflows')
-      .select('parsed')
-      .order('loaded_at', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-  ]);
+  const [running, retries, recentFails, liveTokens, issuesCount, heartbeatRes, workflowRes] =
+    await Promise.all([
+      supabase
+        .from('runs')
+        .select('*, issues(identifier, title, state)')
+        .eq('status', 'running')
+        .order('started_at', { ascending: false }),
+      supabase
+        .from('retry_queue')
+        .select('*, issues(identifier, title)')
+        .order('due_at', { ascending: true })
+        .limit(20),
+      supabase
+        .from('runs')
+        .select('*, issues(identifier, title)')
+        .in('status', ['failure', 'timeout'])
+        .order('ended_at', { ascending: false })
+        .limit(10),
+      supabase.from('live_sessions').select('*'),
+      supabase.from('issues').select('id', { count: 'exact', head: true }),
+      supabase.from('worker_heartbeat').select('*').eq('id', 'worker').maybeSingle(),
+      supabase
+        .from('workflows')
+        .select('parsed')
+        .order('loaded_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
 
-  const runningRows = (running.data ?? []) as unknown as RunAttemptWithIssue[];
+  const runningRows = (running.data ?? []) as unknown as RunWithIssue[];
   const retryRows = (retries.data ?? []) as unknown as RetryWithIssue[];
-  const failedRows = (recentFails.data ?? []) as unknown as RunAttemptWithIssue[];
-  const pastRows = (pastRuns.data ?? []) as unknown as RunAttemptWithIssue[];
-  const sessionRows = sessions.data ?? [];
+  const failedRows = (recentFails.data ?? []) as unknown as RunWithIssue[];
+  const liveTokenRows = liveTokens.data ?? [];
 
-  // Second-pass fetch: only look up latest-event-per-attempt when we have
-  // running attempts. agent_events_latest is a DISTINCT ON view, still cheap,
-  // but skipping it keeps the empty-fleet page round-trip minimal.
+  // Second-pass fetch: only look up latest-event-per-run when we have running
+  // runs. agent_events_latest is a DISTINCT ON view, still cheap, but skipping
+  // it keeps the empty-fleet page round-trip minimal.
   const runningIds = runningRows.map((r) => r.id);
   const latestEventsRes =
     runningIds.length > 0
-      ? await supabase.from('agent_events_latest').select('*').in('run_attempt_id', runningIds)
+      ? await supabase.from('agent_events_latest').select('*').in('run_id', runningIds)
       : { data: [] as LatestEventRow[] };
 
-  const liveTokens = sessionRows.reduce((sum, s) => sum + s.total_tokens, 0);
+  const liveTokenTotal = liveTokenRows.reduce((sum, s) => sum + s.total_tokens, 0);
   const trackedIssues = issuesCount.count ?? 0;
   const allQuiet = runningRows.length === 0 && retryRows.length === 0;
 
@@ -101,12 +84,12 @@ export default async function FleetPage() {
   const heartbeat = heartbeatRes.data ?? null;
   const ratePause = rateLimitRes.data ?? null;
 
-  const latestEventByAttempt = new Map<string, AgentEventRow>();
+  const latestEventByRun = new Map<string, AgentEventRow>();
   for (const row of (latestEventsRes.data ?? []) as LatestEventRow[]) {
-    if (!row.run_attempt_id || row.id === null || row.kind === null) continue;
-    latestEventByAttempt.set(row.run_attempt_id, {
+    if (!row.run_id || row.id === null || row.kind === null) continue;
+    latestEventByRun.set(row.run_id, {
       id: row.id,
-      run_attempt_id: row.run_attempt_id,
+      run_id: row.run_id,
       kind: row.kind,
       payload: row.payload ?? {},
       created_at: row.created_at ?? new Date(0).toISOString(),
@@ -155,11 +138,11 @@ export default async function FleetPage() {
             lastBeatAt={heartbeat?.last_beat_at ?? null}
           />
         </div>
-        {liveTokens > 0 && (
+        {liveTokenTotal > 0 && (
           <div className="mt-3 smallcaps text-[10px] text-ink-3 inline-flex items-baseline gap-1.5">
             tokens in flight
             <span className="font-mono normal-case tracking-normal text-ink-1 tabular">
-              {liveTokens.toLocaleString()}
+              {liveTokenTotal.toLocaleString()}
             </span>
           </div>
         )}
@@ -191,10 +174,10 @@ export default async function FleetPage() {
               href={`/runs/${r.id}`}
               identifier={r.issues?.identifier ?? r.issue_id}
               title={r.issues?.title ?? '—'}
-              attemptNumber={r.attempt_number}
+              runNumber={r.run_number}
               status={r.status}
               pid={r.worker_pid}
-              latestEvent={formatLatestEvent(latestEventByAttempt.get(r.id))}
+              latestEvent={formatLatestEvent(latestEventByRun.get(r.id))}
               when={relativeTime(r.started_at)}
               whenLabel="started"
             />
@@ -213,7 +196,7 @@ export default async function FleetPage() {
               href={`/issues/${r.issue_id}`}
               identifier={r.issues?.identifier ?? r.issue_id}
               title={r.issues?.title ?? '—'}
-              attemptNumber={r.attempt_number}
+              runNumber={r.run_number}
               status="queued"
               errorClass={r.error_class}
               when={relativeTime(r.due_at)}
@@ -234,7 +217,7 @@ export default async function FleetPage() {
               href={`/runs/${r.id}`}
               identifier={r.issues?.identifier ?? r.issue_id}
               title={r.issues?.title ?? '—'}
-              attemptNumber={r.attempt_number}
+              runNumber={r.run_number}
               status={r.status}
               errorClass={r.error_class}
               when={relativeTime(r.ended_at)}
@@ -242,8 +225,6 @@ export default async function FleetPage() {
             />
           ))}
         </Section>
-
-        <PastRunsSection initialRows={pastRows} />
       </div>
     </>
   );

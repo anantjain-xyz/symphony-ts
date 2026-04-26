@@ -31,7 +31,7 @@ describe('runHook', () => {
     const result = await runHook(
       'after_create',
       'echo hi > out.txt',
-      { issue: ISSUE, workspacePath: ws, attemptNumber: 1 },
+      { issue: ISSUE, workspacePath: ws, runNumber: 1 },
       { timeoutMs: 5000 },
     );
     expect(result.exitCode).toBe(0);
@@ -43,7 +43,7 @@ describe('runHook', () => {
     const result = await runHook(
       'before_run',
       'echo "bad things" >&2 && exit 7',
-      { issue: ISSUE, workspacePath: ws, attemptNumber: 1 },
+      { issue: ISSUE, workspacePath: ws, runNumber: 1 },
       { timeoutMs: 5000 },
     );
     expect(result.exitCode).toBe(7);
@@ -54,7 +54,7 @@ describe('runHook', () => {
     const result = await runHook(
       'before_run',
       'echo "$ISSUE_IDENTIFIER@$WORKSPACE_PATH" > meta.txt',
-      { issue: ISSUE, workspacePath: ws, attemptNumber: 3 },
+      { issue: ISSUE, workspacePath: ws, runNumber: 3 },
       { timeoutMs: 5000 },
     );
     expect(result.exitCode).toBe(0);
@@ -68,7 +68,7 @@ describe('runHook', () => {
       const result = await runHook(
         'after_run',
         'echo "key=${SUPABASE_SERVICE_ROLE_KEY:-MISSING}" > leak.txt',
-        { issue: ISSUE, workspacePath: ws, attemptNumber: 1 },
+        { issue: ISSUE, workspacePath: ws, runNumber: 1 },
         { timeoutMs: 5000 },
       );
       expect(result.exitCode).toBe(0);
@@ -84,7 +84,7 @@ describe('runHook', () => {
       const result = await runHook(
         'after_create',
         'echo "$REPO_URL" > repo.txt',
-        { issue: ISSUE, workspacePath: ws, attemptNumber: 1 },
+        { issue: ISSUE, workspacePath: ws, runNumber: 1 },
         { timeoutMs: 5000 },
       );
       expect(result.exitCode).toBe(0);
@@ -100,7 +100,7 @@ describe('runHook', () => {
     const result = await runHook(
       'before_remove',
       'sleep 5',
-      { issue: ISSUE, workspacePath: ws, attemptNumber: 1 },
+      { issue: ISSUE, workspacePath: ws, runNumber: 1 },
       { timeoutMs: 100 },
     );
     expect(result.timedOut).toBe(true);

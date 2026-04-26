@@ -7,7 +7,7 @@ import { RunRow, relativeTime } from '../RunRow';
 export const dynamic = 'force-dynamic';
 
 type IssueSummary = Pick<Tables<'issues'>, 'identifier' | 'title' | 'state'>;
-type RunAttemptWithIssue = Tables<'run_attempts'> & { issues: IssueSummary | null };
+type RunWithIssue = Tables<'runs'> & { issues: IssueSummary | null };
 
 const STATUS_OPTIONS = [
   { value: 'running', label: 'running' },
@@ -21,7 +21,7 @@ type Status = (typeof STATUS_OPTIONS)[number]['value'];
 
 const PAGE_SIZE = 200;
 
-export default async function SessionsListPage({
+export default async function RunsListPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -35,7 +35,7 @@ export default async function SessionsListPage({
   const supabase = createSupabaseServerClient();
 
   // PostgREST can't `.or` across joined tables, so when the user searches
-  // we first resolve matching issue IDs and then constrain run_attempts.
+  // we first resolve matching issue IDs and then constrain runs.
   let issueIdFilter: string[] | null = null;
   if (search) {
     const escaped = search.replace(/[%,]/g, '');
@@ -46,10 +46,10 @@ export default async function SessionsListPage({
     issueIdFilter = (matching ?? []).map((r) => r.id);
   }
 
-  let rows: RunAttemptWithIssue[] = [];
+  let rows: RunWithIssue[] = [];
   if (!issueIdFilter || issueIdFilter.length > 0) {
     let query = supabase
-      .from('run_attempts')
+      .from('runs')
       .select('*, issues(identifier, title, state)')
       .order('started_at', { ascending: false, nullsFirst: false })
       .limit(PAGE_SIZE);
@@ -58,7 +58,7 @@ export default async function SessionsListPage({
     if (issueIdFilter) query = query.in('issue_id', issueIdFilter);
 
     const { data } = await query;
-    rows = (data ?? []) as unknown as RunAttemptWithIssue[];
+    rows = (data ?? []) as unknown as RunWithIssue[];
   }
 
   return (
@@ -67,10 +67,10 @@ export default async function SessionsListPage({
         <div className="flex items-baseline gap-3 mb-2">
           <span className="smallcaps text-[10px] text-ink-3">runs</span>
           <span className="text-ink-4">/</span>
-          <span className="smallcaps text-[10px] text-ink-2">all sessions</span>
+          <span className="smallcaps text-[10px] text-ink-2">all runs</span>
         </div>
         <h1 className="font-display text-[34px] leading-[1.08] text-ink-0 tracking-[-0.01em] font-medium">
-          Sessions
+          Runs
         </h1>
       </header>
 
@@ -85,17 +85,17 @@ export default async function SessionsListPage({
 
       {rows.length === 0 ? (
         <div className="rounded border border-dashed border-hairline px-4 py-8 text-[13px] text-ink-3 italic font-display">
-          No sessions match the current filters.
+          No runs match the current filters.
         </div>
       ) : (
         <div className="border-t border-hairline">
           {rows.map((r) => (
             <RunRow
               key={r.id}
-              href={`/sessions/${r.id}`}
+              href={`/runs/${r.id}`}
               identifier={r.issues?.identifier ?? r.issue_id}
               title={r.issues?.title ?? '—'}
-              attemptNumber={r.attempt_number}
+              runNumber={r.run_number}
               status={r.status}
               pid={r.worker_pid}
               errorClass={r.error_class}

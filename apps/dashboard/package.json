@@ -2,7 +2,7 @@
   "name": "@symphony/dashboard",
   "version": "0.1.0",
   "private": true,
-  "description": "Symphony operator dashboard — Next.js 15 UI for the fleet, sessions, and live agent event streams from Supabase Realtime.",
+  "description": "Symphony operator dashboard — Next.js 15 UI for the fleet, runs, and live agent event streams from Supabase Realtime.",
   "keywords": [
     "symphony",
     "dashboard",

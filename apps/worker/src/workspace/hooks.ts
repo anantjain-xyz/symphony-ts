@@ -11,7 +11,7 @@ export interface HookResult {
 export interface HookEnv {
   issue: Issue;
   workspacePath: string;
-  attemptNumber: number;
+  runNumber: number;
 }
 
 /**
@@ -48,7 +48,7 @@ export async function runHook(
   childEnv.ISSUE_TITLE = env.issue.title;
   childEnv.ISSUE_STATE = env.issue.state;
   childEnv.ISSUE_BRANCH = env.issue.branch ?? '';
-  childEnv.ATTEMPT_NUMBER = String(env.attemptNumber);
+  childEnv.RUN_NUMBER = String(env.runNumber);
   childEnv.WORKSPACE_PATH = env.workspacePath;
 
   try {

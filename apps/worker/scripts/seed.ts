@@ -48,34 +48,34 @@ async function main() {
   const repo = new Repo(db);
   await repo.upsertIssues(ISSUES);
 
-  // A finished, successful attempt for SEED-1 with a few events.
-  const attempt = await repo.tryReserveAttempt({
+  // A finished, successful run for SEED-1 with a few events.
+  const run = await repo.tryReserveRun({
     issueId: ISSUES[0]!.id,
-    attemptNumber: 1,
+    runNumber: 1,
     workspacePath: '/tmp/symphony-seed/SEED-1',
   });
-  if (attempt) {
-    await repo.markRunning(attempt.id);
-    await repo.appendEvent(attempt.id, 'status', { message: 'Reading repository' });
-    await repo.appendEvent(attempt.id, 'humanized', { summary: 'Reading repository' });
-    await repo.appendEvent(attempt.id, 'tool_call', {
+  if (run) {
+    await repo.markRunning(run.id);
+    await repo.appendEvent(run.id, 'status', { message: 'Reading repository' });
+    await repo.appendEvent(run.id, 'humanized', { summary: 'Reading repository' });
+    await repo.appendEvent(run.id, 'tool_call', {
       tool: 'bash',
       args: { cmd: 'pnpm test' },
       result_summary: '40 tests passed',
     });
-    await repo.appendEvent(attempt.id, 'humanized', { summary: 'bash: 40 tests passed' });
-    await repo.appendEvent(attempt.id, 'token_count', {
+    await repo.appendEvent(run.id, 'humanized', { summary: 'bash: 40 tests passed' });
+    await repo.appendEvent(run.id, 'token_count', {
       input_tokens: 1024,
       output_tokens: 256,
       total_tokens: 1280,
     });
-    await repo.finishAttempt({ attemptId: attempt.id, status: 'success' });
+    await repo.finishRun({ runId: run.id, status: 'success' });
   }
 
-  // A failed attempt for SEED-2 + a retry queued.
-  const failed = await repo.tryReserveAttempt({
+  // A failed run for SEED-2 + a retry queued.
+  const failed = await repo.tryReserveRun({
     issueId: ISSUES[1]!.id,
-    attemptNumber: 1,
+    runNumber: 1,
     workspacePath: '/tmp/symphony-seed/SEED-2',
   });
   if (failed) {
@@ -84,15 +84,15 @@ async function main() {
       class: 'tool_failure',
       message: 'tests failed',
     });
-    await repo.finishAttempt({
-      attemptId: failed.id,
+    await repo.finishRun({
+      runId: failed.id,
       status: 'failure',
       errorClass: 'tool_failure',
       errorMessage: 'tests failed',
     });
     await repo.scheduleRetry({
       issueId: ISSUES[1]!.id,
-      attemptNumber: 2,
+      runNumber: 2,
       dueAt: new Date(Date.now() + 60_000),
       errorClass: 'tool_failure',
       errorMessage: 'tests failed',
@@ -102,7 +102,7 @@ async function main() {
   console.log('Seeded. Visit http://localhost:3000');
   console.log(`  /issues/${ISSUES[0]!.id}`);
   console.log(`  /issues/${ISSUES[1]!.id}`);
-  if (attempt) console.log(`  /runs/${attempt.id}`);
+  if (run) console.log(`  /runs/${run.id}`);
 }
 
 main().catch((e) => {

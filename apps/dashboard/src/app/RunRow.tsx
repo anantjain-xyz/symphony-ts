@@ -4,7 +4,7 @@ export function RunRow({
   href,
   identifier,
   title,
-  attemptNumber,
+  runNumber,
   status,
   pid,
   latestEvent,
@@ -15,7 +15,7 @@ export function RunRow({
   href: string;
   identifier: string;
   title: string;
-  attemptNumber: number;
+  runNumber: number;
   status: string;
   pid?: number | null;
   latestEvent?: string;
@@ -39,7 +39,7 @@ export function RunRow({
           </span>
         ) : null}
       </span>
-      <RunCounter n={attemptNumber} />
+      <RunCounter n={runNumber} />
       <StatusBadge status={status} />
       <div className="font-mono text-[11px] text-ink-3 tabular truncate">
         {errorClass ? (

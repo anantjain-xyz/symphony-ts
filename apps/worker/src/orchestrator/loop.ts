@@ -5,7 +5,7 @@ import type { RateLimitStateRow, Repo } from '../db/repo.js';
 import type { TrackerClient } from '../tracker/linear.js';
 import { WorkspaceManager } from '../workspace/manager.js';
 import { selectDispatchable } from './concurrency.js';
-import { type DispatchHandle, dispatchAttempt } from './dispatch.js';
+import { type DispatchHandle, dispatchRun } from './dispatch.js';
 
 export interface LoopDeps {
   tracker: TrackerClient;
@@ -24,13 +24,13 @@ export interface LoopDeps {
 
 /**
  * Long-running orchestrator. Holds an in-memory map of currently-dispatched
- * attempts so we can:
+ * runs so we can:
  *  - skip re-dispatching an issue that's already in flight
  *  - request cancellation when the underlying issue's state changes
  *
- * The map is reconstructed from `run_attempts` rows on startup (see
- * recovery.ts); during normal operation, dispatch() registers handles and
- * the dispatch promise unregisters on completion.
+ * The map is reconstructed from `runs` rows on startup (see recovery.ts);
+ * during normal operation, dispatch() registers handles and the dispatch
+ * promise unregisters on completion.
  */
 export class OrchestratorLoop {
   private active = new Map<string, DispatchHandle>(); // issue_id -> handle
@@ -48,7 +48,7 @@ export class OrchestratorLoop {
     });
   }
 
-  /** True if an attempt for this issue is currently in flight. */
+  /** True if a run for this issue is currently in flight. */
   isActive(issueId: string): boolean {
     return this.active.has(issueId);
   }
@@ -124,7 +124,7 @@ export class OrchestratorLoop {
     for (const [issueId, handle] of this.active) {
       if (!activeIds.has(issueId)) {
         log.info(
-          { issueId, attemptId: handle.attemptId },
+          { issueId, runId: handle.runId },
           'reconciling: issue no longer active, cancelling',
         );
         void handle.cancel('issue state changed');
@@ -158,7 +158,7 @@ export class OrchestratorLoop {
     // 2b. Rate-limit gate. If the active backend has any `rate_limit_state`
     //     row with `reset_at` in the future, suppress new dispatches and
     //     due-retry firing for this tick — otherwise we'd keep launching
-    //     attempts that immediately fail upstream, hammering the provider
+    //     runs that immediately fail upstream, hammering the provider
     //     and wasting quota (the original SYM-14 motivation). Reconcile and
     //     stale-retry sweep above intentionally still run: cancellations
     //     and tracker-driven cleanup are unrelated to upstream throttling.
@@ -229,16 +229,16 @@ export class OrchestratorLoop {
         // a direct `fetchById` before clearing — same guard as step 2a.
         if (await this.confirmNotActive(r.issue_id)) {
           log.info(
-            { issueId: r.issue_id, attemptNumber: r.attempt_number },
+            { issueId: r.issue_id, runNumber: r.run_number },
             'clearing due retry: issue confirmed no longer active',
           );
           await repo.clearRetry(r.issue_id);
         }
         continue;
       }
-      log.info({ issueId: r.issue_id, attemptNumber: r.attempt_number }, 'firing retry');
+      log.info({ issueId: r.issue_id, runNumber: r.run_number }, 'firing retry');
       await repo.clearRetry(r.issue_id);
-      const handle = await this.dispatch(issue, r.attempt_number);
+      const handle = await this.dispatch(issue, r.run_number);
       if (handle) this.registerActive(handle);
     }
   }
@@ -283,25 +283,22 @@ export class OrchestratorLoop {
     }
   }
 
-  private async dispatch(
-    issue: Issue,
-    forceAttemptNumber?: number,
-  ): Promise<DispatchHandle | null> {
+  private async dispatch(issue: Issue, forceRunNumber?: number): Promise<DispatchHandle | null> {
     const { repo, workspaces, config, log } = this.deps;
-    const attemptNumber = forceAttemptNumber ?? (await repo.lastAttemptNumber(issue.id)) + 1;
+    const runNumber = forceRunNumber ?? (await repo.lastRunNumber(issue.id)) + 1;
     const ws = workspaces.pathFor(issue.identifier);
-    const reserved = await repo.tryReserveAttempt({
+    const reserved = await repo.tryReserveRun({
       issueId: issue.id,
-      attemptNumber,
+      runNumber,
       workspacePath: ws,
     });
     if (!reserved) {
-      log.debug({ issueId: issue.id, attemptNumber }, 'reservation lost (race); skipping');
+      log.debug({ issueId: issue.id, runNumber }, 'reservation lost (race); skipping');
       return null;
     }
-    // Snapshot at dispatch time so an in-flight attempt finishes under the
-    // config it started with, even if SIGHUP swaps the live ref mid-flight.
-    return dispatchAttempt({ repo, workspaces, config: config.snapshot(), log }, issue, reserved);
+    // Snapshot at dispatch time so an in-flight run finishes under the config
+    // it started with, even if SIGHUP swaps the live ref mid-flight.
+    return dispatchRun({ repo, workspaces, config: config.snapshot(), log }, issue, reserved);
   }
 }
 

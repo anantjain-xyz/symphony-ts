@@ -71,7 +71,7 @@ function lookup(field: string, issue: Issue): unknown {
 }
 
 export interface RetryContext {
-  attemptNumber: number;
+  runNumber: number;
   priorErrorClass: string | null;
   priorErrorMessage: string | null;
   recentEvents: Array<{ kind: string; payload: unknown; created_at: string }>;
@@ -79,41 +79,41 @@ export interface RetryContext {
 
 /**
  * Repo surface buildRetryContext needs — narrower than the full Repo so the
- * helper can be unit-tested with a fake. Both methods return prior-attempt
- * data for the same issue, deliberately *excluding* `beforeAttemptId`.
+ * helper can be unit-tested with a fake. Both methods return prior-run data
+ * for the same issue, deliberately *excluding* `beforeRunId`.
  */
 export interface RetryContextRepo {
-  priorAttempt(
+  priorRun(
     issueId: string,
-    beforeAttemptId: string,
+    beforeRunId: string,
   ): Promise<{ error_class: string | null; error_message: string | null } | null>;
   recentEventsForIssue(
     issueId: string,
-    beforeAttemptId: string,
+    beforeRunId: string,
     limit: number,
   ): Promise<Array<{ kind: string; payload: unknown; created_at: string }>>;
 }
 
 /**
- * Assemble a {@link RetryContext} for the in-flight attempt. Returns `null`
- * for first attempts (caller should skip {@link appendRetryContext}). Pulls
- * `priorErrorClass`/`priorErrorMessage` from the *prior* attempt's row and
- * `recentEvents` from prior attempts' `agent_events` — the new attempt's row
- * has null errors and no events at prompt-render time.
+ * Assemble a {@link RetryContext} for the in-flight run. Returns `null` for
+ * first runs (caller should skip {@link appendRetryContext}). Pulls
+ * `priorErrorClass`/`priorErrorMessage` from the *prior* run's row and
+ * `recentEvents` from prior runs' `agent_events` — the new run's row has
+ * null errors and no events at prompt-render time.
  */
 export async function buildRetryContext(
   repo: RetryContextRepo,
   issueId: string,
-  attempt: { id: string; attempt_number: number },
+  run: { id: string; run_number: number },
   recentEventsLimit = 10,
 ): Promise<RetryContext | null> {
-  if (attempt.attempt_number <= 1) return null;
+  if (run.run_number <= 1) return null;
   const [prior, recent] = await Promise.all([
-    repo.priorAttempt(issueId, attempt.id),
-    repo.recentEventsForIssue(issueId, attempt.id, recentEventsLimit),
+    repo.priorRun(issueId, run.id),
+    repo.recentEventsForIssue(issueId, run.id, recentEventsLimit),
   ]);
   return {
-    attemptNumber: attempt.attempt_number,
+    runNumber: run.run_number,
     priorErrorClass: prior?.error_class ?? null,
     priorErrorMessage: prior?.error_message ?? null,
     recentEvents: recent,
@@ -121,26 +121,20 @@ export async function buildRetryContext(
 }
 
 /**
- * Append a "Prior attempt context" trailer so the agent can avoid repeating
- * what already failed. Caller passes the rendered prompt + context for the
- * earlier attempt.
+ * Append a "Prior run context" trailer so the agent can avoid repeating what
+ * already failed. Caller passes the rendered prompt + context for the earlier
+ * run.
  */
 export function appendRetryContext(prompt: string, ctx: RetryContext): string {
-  const lines = [
-    '',
-    '---',
-    '',
-    `## Prior attempt context (this is attempt ${ctx.attemptNumber})`,
-    '',
-  ];
+  const lines = ['', '---', '', `## Prior run context (this is run ${ctx.runNumber})`, ''];
   if (ctx.priorErrorClass || ctx.priorErrorMessage) {
     lines.push(
-      `Last attempt failed: **${ctx.priorErrorClass ?? 'unknown'}** \u2014 ${ctx.priorErrorMessage ?? ''}`.trim(),
+      `Previous run failed: **${ctx.priorErrorClass ?? 'unknown'}** \u2014 ${ctx.priorErrorMessage ?? ''}`.trim(),
     );
     lines.push('');
   }
   if (ctx.recentEvents.length > 0) {
-    lines.push('Recent agent events from the previous attempt (most recent last):');
+    lines.push('Recent agent events from the previous run (most recent last):');
     lines.push('');
     for (const e of ctx.recentEvents.slice(-10)) {
       lines.push(`- [${e.kind}] ${summarize(e.payload)}`);

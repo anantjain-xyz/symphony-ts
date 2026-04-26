@@ -35,8 +35,8 @@ function fakeRepo(overrides: Partial<Repo>): Repo {
     pendingRetryIssueIds: vi.fn(async () => new Set<string>()),
     dueRetries: vi.fn(async () => []),
     activeRateLimits: vi.fn(async () => [] as RateLimitStateRow[]),
-    lastAttemptNumber: vi.fn(async () => 0),
-    tryReserveAttempt: vi.fn(async () => null),
+    lastRunNumber: vi.fn(async () => 0),
+    tryReserveRun: vi.fn(async () => null),
     ...overrides,
   };
   return new Proxy(base as unknown as Repo, {
@@ -69,7 +69,7 @@ describe('OrchestratorLoop rate-limit gate', () => {
       activeRateLimits,
       pendingRetryIssueIds: pendingRetries,
       dueRetries,
-      tryReserveAttempt: reserve,
+      tryReserveRun: reserve,
     });
 
     const loop = new OrchestratorLoop({
@@ -104,7 +104,7 @@ describe('OrchestratorLoop rate-limit gate', () => {
           updated_at: new Date().toISOString(),
         } satisfies RateLimitStateRow,
       ]),
-      tryReserveAttempt: reserve,
+      tryReserveRun: reserve,
     });
 
     const loop = new OrchestratorLoop({

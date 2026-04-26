@@ -7,9 +7,9 @@ const NAV: Array<{ href: string; label: string; match: (pathname: string) => boo
   { href: '/', label: 'Dashboard', match: (p) => p === '/' },
   { href: '/issues', label: 'Issues', match: (p) => p === '/issues' || p.startsWith('/issues/') },
   {
-    href: '/sessions',
-    label: 'Sessions',
-    match: (p) => p === '/sessions' || p.startsWith('/sessions/'),
+    href: '/runs',
+    label: 'Runs',
+    match: (p) => p === '/runs' || p.startsWith('/runs/'),
   },
 ];
 

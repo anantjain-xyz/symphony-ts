@@ -36,9 +36,9 @@ export function selectDispatchable(
 }
 
 /**
- * Pull the active-attempt counts grouped by issue state from the DB. "Active"
- * = pending OR running. We join `run_attempts` to `issues` so we can group by
- * the issue's state at dispatch time.
+ * Pull the active-run counts grouped by issue state from the DB. "Active"
+ * = pending OR running. We join `runs` to `issues` so we can group by the
+ * issue's state at dispatch time.
  */
 export async function fetchActiveCounts(repo: Repo): Promise<{
   byState: Map<string, number>;
@@ -48,7 +48,7 @@ export async function fetchActiveCounts(repo: Repo): Promise<{
   const total = running.length;
   const byState = new Map<string, number>();
   if (total === 0) return { byState, total: 0 };
-  // Looking up the issue state per attempt is cheap because the set is small
+  // Looking up the issue state per run is cheap because the set is small
   // (bounded by max_concurrent_agents). But we avoid the join here by leaning
   // on the orchestrator: it will pass `byState` derived from the current
   // dispatch tick's issue set. For now, return the running count by id and let

@@ -6,13 +6,13 @@ import { IssueLinks } from '@/components/IssueLinks';
 import type { Tables, TrackerConfig } from '@symphony/shared';
 import { EventBlock, ToolRunGroup, previewArgs, type EventRow } from './EventBlock';
 
-type Attempt = Tables<'run_attempts'>;
+type Run = Tables<'runs'>;
 
 interface Props {
-  attemptId: string;
-  attempt: Attempt;
+  runId: string;
+  run: Run;
   initialEvents: EventRow[];
-  attemptIsTerminal: boolean;
+  runIsTerminal: boolean;
   issueIdentifier: string | null;
   prUrls: string[];
   tracker: TrackerConfig | null;
@@ -23,10 +23,10 @@ const RUN_GROUP_THRESHOLD = 3; // collapse N+ consecutive same-tool calls
 type Item = { kind: 'single'; ev: EventRow } | { kind: 'group'; events: EventRow[] };
 
 export function LiveStream({
-  attemptId,
-  attempt,
+  runId,
+  run,
   initialEvents,
-  attemptIsTerminal,
+  runIsTerminal,
   issueIdentifier,
   prUrls,
   tracker,
@@ -53,17 +53,17 @@ export function LiveStream({
 
   /* Realtime subscription */
   useEffect(() => {
-    if (attemptIsTerminal) return;
+    if (runIsTerminal) return;
     const supabase = getSupabaseBrowserClient();
     const channel = supabase
-      .channel(`run:${attemptId}`)
+      .channel(`run:${runId}`)
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
           table: 'agent_events',
-          filter: `run_attempt_id=eq.${attemptId}`,
+          filter: `run_id=eq.${runId}`,
         },
         (payload) => {
           setEvents((prev) => [...prev, payload.new as EventRow]);
@@ -76,14 +76,14 @@ export function LiveStream({
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [attemptId, attemptIsTerminal]);
+  }, [runId, runIsTerminal]);
 
   /* Tick clock once a second for live duration */
   useEffect(() => {
-    if (attemptIsTerminal) return;
+    if (runIsTerminal) return;
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
-  }, [attemptIsTerminal]);
+  }, [runIsTerminal]);
 
   /* Auto-follow: only scroll if user is parked near the bottom */
   useEffect(() => {
@@ -119,12 +119,12 @@ export function LiveStream({
   const stats = useMemo(() => computeStats(events), [events]);
 
   const selectedEvent = selectedId ? (events.find((e) => e.id === selectedId) ?? null) : null;
-  const isLive = !attemptIsTerminal;
+  const isLive = !runIsTerminal;
   const elapsedMs = useMemo(() => {
-    if (!attempt.started_at) return 0;
-    const end = attempt.ended_at ? new Date(attempt.ended_at).getTime() : now;
-    return Math.max(0, end - new Date(attempt.started_at).getTime());
-  }, [attempt.started_at, attempt.ended_at, now]);
+    if (!run.started_at) return 0;
+    const end = run.ended_at ? new Date(run.ended_at).getTime() : now;
+    return Math.max(0, end - new Date(run.started_at).getTime());
+  }, [run.started_at, run.ended_at, now]);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[220px_minmax(0,1fr)_320px] gap-6">
@@ -133,15 +133,15 @@ export function LiveStream({
         <TelemetryBlock label="elapsed" value={formatDuration(elapsedMs)} live={isLive} />
         <TelemetryBlock label="events" value={events.length.toLocaleString()} />
         <TelemetryBlock label="tools" value={stats.toolTotal.toLocaleString()} />
-        <ConnectionDot connected={connected} terminal={attemptIsTerminal} />
+        <ConnectionDot connected={connected} terminal={runIsTerminal} />
         <button
           type="button"
-          onClick={() => navigator.clipboard.writeText(attemptId)}
+          onClick={() => navigator.clipboard.writeText(runId)}
           className="block w-full text-left smallcaps text-[10px] text-ink-3 hover:text-ink-1 link-hover"
         >
           ⎘ run id
           <div className="font-mono text-[10.5px] text-ink-2 mt-0.5 truncate normal-case tracking-normal">
-            {attemptId}
+            {runId}
           </div>
         </button>
         {issueIdentifier && (
@@ -200,20 +200,18 @@ export function LiveStream({
       {/* Right: inspector */}
       <aside className="lg:sticky lg:top-4 lg:self-start space-y-4">
         <Inspector ev={selectedEvent} onClose={() => selectEvent(null)} />
-        {attemptIsTerminal && (
-          <TerminalSummary attempt={attempt} stats={stats} elapsedMs={elapsedMs} />
-        )}
+        {runIsTerminal && <TerminalSummary run={run} stats={stats} elapsedMs={elapsedMs} />}
       </aside>
     </div>
   );
 }
 
 function TerminalSummary({
-  attempt,
+  run,
   stats,
   elapsedMs,
 }: {
-  attempt: Attempt;
+  run: Run;
   stats: { toolTotal: number };
   elapsedMs: number;
 }) {
@@ -225,18 +223,16 @@ function TerminalSummary({
         <Cell label="tool calls" value={stats.toolTotal.toLocaleString()} />
         <Cell
           label="status"
-          value={attempt.status}
-          tone={
-            attempt.status === 'success' ? 'good' : attempt.status === 'cancelled' ? 'muted' : 'bad'
-          }
+          value={run.status}
+          tone={run.status === 'success' ? 'good' : run.status === 'cancelled' ? 'muted' : 'bad'}
         />
       </div>
-      {attempt.error_class && (
+      {run.error_class && (
         <div className="mt-3 pt-3 border-t border-hairline">
           <div className="smallcaps text-[10px] text-danger mb-1">error</div>
-          <div className="font-mono text-[12px] text-ink-0">{attempt.error_class}</div>
-          {attempt.error_message && (
-            <div className="text-[12px] text-ink-2 mt-1 break-words">{attempt.error_message}</div>
+          <div className="font-mono text-[12px] text-ink-0">{run.error_class}</div>
+          {run.error_message && (
+            <div className="text-[12px] text-ink-2 mt-1 break-words">{run.error_message}</div>
           )}
         </div>
       )}

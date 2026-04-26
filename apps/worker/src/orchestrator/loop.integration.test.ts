@@ -11,7 +11,7 @@ import { makeTestIssue, makeTestWorkflow } from '../db/test-helpers.js';
 import { TestScope } from '../db/test-scope.js';
 import type { TrackerClient } from '../tracker/linear.js';
 import { WorkspaceManager } from '../workspace/manager.js';
-import { dispatchAttempt } from './dispatch.js';
+import { dispatchRun } from './dispatch.js';
 import { OrchestratorLoop } from './loop.js';
 
 const SUPA_URL = process.env.TEST_SUPABASE_URL ?? 'http://127.0.0.1:54421';
@@ -60,7 +60,7 @@ d('OrchestratorLoop integration', () => {
     await rm(wsRoot, { recursive: true, force: true });
   });
 
-  it('one tick: dispatches, succeeds, persists events and finishes attempt', async () => {
+  it('one tick: dispatches, succeeds, persists events and finishes run', async () => {
     const issue = makeTestIssue({ id: scope.newIssueId(), identifier: scope.newIdentifier() });
     const codexCommand = `STUB_SCENARIO=happy node ${STUB}`;
     const config = resolveConfig(
@@ -78,17 +78,13 @@ d('OrchestratorLoop integration', () => {
     const handles = (loop as unknown as { active: Map<string, { done: Promise<void> }> }).active;
     await Promise.all([...handles.values()].map((h) => h.done));
 
-    const { data: attempt } = await db
-      .from('run_attempts')
-      .select('*')
-      .eq('issue_id', issue.id)
-      .single();
-    expect(attempt!.status).toBe('success');
+    const { data: run } = await db.from('runs').select('*').eq('issue_id', issue.id).single();
+    expect(run!.status).toBe('success');
 
     const { data: events } = await db
       .from('agent_events')
       .select('*')
-      .eq('run_attempt_id', attempt!.id)
+      .eq('run_id', run!.id)
       .order('id', { ascending: true });
     const kinds = events!.map((e) => e.kind);
     expect(kinds).toContain('status');
@@ -141,22 +137,22 @@ d('OrchestratorLoop integration', () => {
     await Promise.all([...active.values()].map((h) => h.done));
     const { data: q } = await db.from('retry_queue').select('*').eq('issue_id', issue.id);
     expect(q!.length).toBe(1);
-    expect(q![0]!.attempt_number).toBe(2);
+    expect(q![0]!.run_number).toBe(2);
   });
 
-  it('cancelling a mid-run attempt clears the pre-existing retry_queue row', async () => {
-    // Regression for SYM-7: a prior failed attempt scheduled a retry; the
-    // next attempt starts, is cancelled mid-run (issue state changed
+  it('cancelling a mid-run clears the pre-existing retry_queue row', async () => {
+    // Regression for SYM-7: a prior failed run scheduled a retry; the
+    // next run starts, is cancelled mid-flight (issue state changed
     // externally, triggering reconcile), and must not leave the stale
     // retry row behind — the issue has moved on.
     const issue = makeTestIssue({ id: scope.newIssueId(), identifier: scope.newIdentifier() });
     await repo.upsertIssues([issue]);
     await repo.scheduleRetry({
       issueId: issue.id,
-      attemptNumber: 2,
+      runNumber: 2,
       dueAt: new Date(Date.now() + 60_000),
       errorClass: 'turn_failed',
-      errorMessage: 'prior attempt failed',
+      errorMessage: 'prior run failed',
     });
 
     const codexCommand = `STUB_SCENARIO=interrupt node ${STUB}`;
@@ -164,14 +160,14 @@ d('OrchestratorLoop integration', () => {
       makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot, codexCommand }),
     );
     const workspaces = new WorkspaceManager(wsRoot);
-    const reserved = await repo.tryReserveAttempt({
+    const reserved = await repo.tryReserveRun({
       issueId: issue.id,
-      attemptNumber: 2,
+      runNumber: 2,
       workspacePath: workspaces.pathFor(issue.identifier),
     });
     expect(reserved).not.toBeNull();
 
-    const handle = dispatchAttempt(
+    const handle = dispatchRun(
       { repo, workspaces, config, log: pino({ level: 'silent' }) },
       issue,
       reserved!,
@@ -181,11 +177,7 @@ d('OrchestratorLoop integration', () => {
     // mid-run cancel branch rather than the AlreadyRunningError path.
     const deadline = Date.now() + 5_000;
     while (Date.now() < deadline) {
-      const { data } = await db
-        .from('run_attempts')
-        .select('status')
-        .eq('id', reserved!.id)
-        .single();
+      const { data } = await db.from('runs').select('status').eq('id', reserved!.id).single();
       if (data?.status === 'running') break;
       await new Promise((r) => setTimeout(r, 25));
     }
@@ -193,11 +185,7 @@ d('OrchestratorLoop integration', () => {
     await handle.cancel('issue state changed');
     await handle.done;
 
-    const { data: finished } = await db
-      .from('run_attempts')
-      .select('*')
-      .eq('id', reserved!.id)
-      .single();
+    const { data: finished } = await db.from('runs').select('*').eq('id', reserved!.id).single();
     expect(finished!.status).toBe('cancelled');
     expect(finished!.error_class).toBe('reconciled');
 
@@ -207,7 +195,7 @@ d('OrchestratorLoop integration', () => {
 
   it('skips dispatch while rate_limit_state has a future reset_at for the backend', async () => {
     // SYM-14 regression: before the rate-limit gate, every tick would launch
-    // a fresh attempt and immediately hammer the upstream that just told us
+    // a fresh run and immediately hammer the upstream that just told us
     // to back off. With the gate in place, a future `reset_at` for any
     // `codex_*` source pauses the entire tick.
     const issue = makeTestIssue({ id: scope.newIssueId(), identifier: scope.newIdentifier() });
@@ -232,11 +220,11 @@ d('OrchestratorLoop integration', () => {
     });
     await loop.tick();
 
-    // No attempts should have been reserved during a paused tick.
+    // No runs should have been reserved during a paused tick.
     const active = (loop as unknown as { active: Map<string, unknown> }).active;
     expect(active.size).toBe(0);
-    const { data: attempts } = await db.from('run_attempts').select('*').eq('issue_id', issue.id);
-    expect(attempts ?? []).toHaveLength(0);
+    const { data: runs } = await db.from('runs').select('*').eq('issue_id', issue.id);
+    expect(runs ?? []).toHaveLength(0);
   });
 
   it('resumes dispatch once reset_at passes', async () => {
@@ -265,16 +253,16 @@ d('OrchestratorLoop integration', () => {
     });
     await loop.tick();
     {
-      const { data: attempts } = await db.from('run_attempts').select('*').eq('issue_id', issue.id);
-      expect(attempts ?? []).toHaveLength(0);
+      const { data: runs } = await db.from('runs').select('*').eq('issue_id', issue.id);
+      expect(runs ?? []).toHaveLength(0);
     }
 
     await new Promise((r) => setTimeout(r, 400));
     await loop.tick();
     const active = (loop as unknown as { active: Map<string, { done: Promise<void> }> }).active;
     await Promise.all([...active.values()].map((h) => h.done));
-    const { data: attempts } = await db.from('run_attempts').select('*').eq('issue_id', issue.id);
-    expect(attempts ?? []).toHaveLength(1);
+    const { data: runs } = await db.from('runs').select('*').eq('issue_id', issue.id);
+    expect(runs ?? []).toHaveLength(1);
   });
 
   it('does not redispatch while retry_queue.due_at is still in the future', async () => {
@@ -283,7 +271,7 @@ d('OrchestratorLoop integration', () => {
     // checked blockers + in-flight map, never the retry_queue's due_at.
     const issue = makeTestIssue({ id: scope.newIssueId(), identifier: scope.newIdentifier() });
     const codexCommand = `STUB_SCENARIO=error node ${STUB}`;
-    // maxRetryBackoffMs=60s ensures attempt-1's backoff lands ~4-6s out, far
+    // maxRetryBackoffMs=60s ensures run-1's backoff lands ~4-6s out, far
     // beyond the sub-second window this test completes in.
     const wf = makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot, codexCommand });
     wf.frontMatter.agent.max_retry_backoff_ms = 60_000;
@@ -302,20 +290,17 @@ d('OrchestratorLoop integration', () => {
     const active = (loop as unknown as { active: Map<string, { done: Promise<void> }> }).active;
     await Promise.all([...active.values()].map((h) => h.done));
 
-    const { data: afterFirst } = await db.from('run_attempts').select('*').eq('issue_id', issue.id);
+    const { data: afterFirst } = await db.from('runs').select('*').eq('issue_id', issue.id);
     expect(afterFirst!.length).toBe(1);
     const { data: q } = await db.from('retry_queue').select('*').eq('issue_id', issue.id);
     expect(q!.length).toBe(1);
     const dueAtMs = new Date(q![0]!.due_at).getTime();
     expect(dueAtMs).toBeGreaterThan(Date.now() + 1_000); // clearly in the future
 
-    // Second tick while the retry is still pending: no new attempt should fire.
+    // Second tick while the retry is still pending: no new run should fire.
     await loop.tick();
     await Promise.all([...active.values()].map((h) => h.done));
-    const { data: afterSecond } = await db
-      .from('run_attempts')
-      .select('*')
-      .eq('issue_id', issue.id);
+    const { data: afterSecond } = await db.from('runs').select('*').eq('issue_id', issue.id);
     expect(afterSecond!.length).toBe(1); // still exactly one — no redispatch
   });
 });

@@ -132,8 +132,11 @@ You are working on issue **{{identifier}}: {{title}}**.
 Facts about this run — do not waste turns rediscovering them.
 
 - **Linear**: the Linear MCP server is the primary path — use its tools (`mcp__linear-server__*`) directly. If — and only if — no Linear MCP tools appear in your environment, fall back to the HTTP API: `curl -fsS -H "Authorization: $LINEAR_API_KEY" -H "Content-Type: application/json" https://api.linear.app/graphql -d '{"query":"..."}'`. `$LINEAR_API_KEY` is always present. Do not spend turns probing — one of these two paths is configured.
-- **GitHub**: `gh` CLI is authenticated.
-- **Workspace**: already `cd`'d into `$TMPDIR/symphony-workspaces/<IDENTIFIER>/`; branch is checked out; `npm ci` already ran via `after_create`.
+- **Linear MCP gotchas** (known broken; use the workaround the first time, do not rediscover):
+  - `mcp__linear-server__save_comment` with a `commentId` creates a NEW comment instead of updating in place — this is what causes duplicate workpads. To update the canonical workpad, use raw GraphQL: `curl -fsS -H "Authorization: $LINEAR_API_KEY" -H "Content-Type: application/json" https://api.linear.app/graphql -d '{"query":"mutation($id:String!,$body:String!){commentUpdate(id:$id,input:{body:$body}){success}}","variables":{"id":"<comment-id>","body":"<new body>"}}'`.
+  - `mcp__linear-server__create_attachment` only accepts file uploads (base64). For URL attachments (e.g., a PR link), the auto-link from `git push` usually suffices; if you need an explicit one, use `attachmentLinkCreate` via GraphQL.
+- **GitHub**: `gh` CLI is authenticated. `gh pr edit --add-label` currently 500s with a Projects-classic GraphQL deprecation — add labels via REST instead: `gh api -X POST repos/{owner}/{repo}/issues/{n}/labels -f 'labels[]=symphony'`.
+- **Workspace**: already `cd`'d into `$TMPDIR/symphony-workspaces/<IDENTIFIER>/`; branch is checked out; `npm ci` already ran via `after_create`. The `.symphony-workspace-ready` file at the workspace root is the init sentinel — ignore it in `git status` and never `git add` it.
 - **Deferred tools you will likely need**: load in a single call — `ToolSearch("select:TodoWrite,WebFetch")`. Do not make multiple discovery queries.
 
 ## Attempt N > 1 fast-path
@@ -144,6 +147,7 @@ If this is a retry (attempt number > 1 or the workpad already exists), do these 
 2. Run `git status && git log --oneline origin/main..HEAD` to see what prior attempts already committed. Pick up their work; do not re-do committed files.
 3. Scan the workpad `### Confusions` and `### Notes` for known failure modes (content-filter hits, tool access, flaky tests) and avoid repeating them.
 4. If the workpad's last-update timestamp is older than the prior attempt's start, prior attempts died mid-stream without persisting — rebuild your picture from repo state (committed files, open PR) rather than the workpad's plan alone.
+5. **No-op redispatch short-circuit.** If the workpad shows every Plan / Acceptance / Validation checkbox already ticked AND a PR is linked AND `gh pr view --json state,statusCheckRollup` shows the PR `OPEN`/`MERGED` with green checks AND `git log --oneline origin/main..HEAD` matches the workpad's recorded commits, the work is already complete. Append a one-line `### Notes` entry (`no-op redispatch — work already complete on <short-sha> / PR #<n>`) and shut down without re-running validation. Only re-engage if the on-disk state contradicts the workpad.
 
 ## Status routing
 
@@ -181,10 +185,10 @@ Route on the issue's current state. Before routing, check whether the branch PR 
    - **Mandatory**: ticket-provided `Validation`/`Test Plan`/`Testing` items must pass. Unmet items = incomplete work.
    - Prefer a targeted proof that directly exercises the change.
    - Temporary local proof edits allowed; revert before commit; document in `### Validation`/`### Notes`.
-   - User-facing → exercise the path locally (dashboard/worker) and capture evidence in the workpad. Screenshots **must** be Playwright-captured (`mcp__plugin_playwright_playwright__browser_navigate` + `..._take_screenshot`); logs/CLI output supplement screenshots, they do not replace them. Embed the screenshot inline in the workpad.
+   - User-facing → exercise the path locally (dashboard/worker) and capture evidence in the workpad. Screenshots **must** be Playwright-captured (`mcp__plugin_playwright_playwright__browser_navigate` + `..._take_screenshot`); logs/CLI output supplement screenshots, they do not replace them. Save screenshots to a workspace-relative path (e.g., `./<name>.png` or `.playwright-mcp/<name>.png`) — the Playwright sandbox blocks `/tmp/...` and any path outside the workspace + `.playwright-mcp/` roots. Embed the screenshot inline in the workpad.
 3. **Cleanup test data.** Anything you created in external systems for testing — Linear issues, comments, attachments; non-issue GitHub branches, draft PRs, gists; database rows in shared instances; etc. — must be deleted before moving the issue to `In Review`. Do not delete the active issue branch, its PR, or issue-owned evidence/attachments needed for review. The end state must match the start state plus only the artifacts that belong to this issue. Test-data cleanup is mandatory; record the cleanup actions in `### Notes`.
 4. **Before every `git push`**: run required validation; rerun until green; commit; push.
-5. Attach the PR URL to the issue (Linear attachment preferred; workpad only if attachment isn't possible). Add `symphony` label on the GitHub PR. For user-facing changes, keep Playwright screenshots in the Linear workpad only; do not require or manually upload screenshots in the GitHub PR description. Do not commit proof screenshots to the repository.
+5. Attach the PR URL to the issue (Linear attachment preferred; workpad only if attachment isn't possible). Add the `symphony` label on the GitHub PR via `gh api -X POST repos/{owner}/{repo}/issues/{n}/labels -f 'labels[]=symphony'` (`gh pr edit --add-label` is currently broken — see Environment). For user-facing changes, keep Playwright screenshots in the Linear workpad only; do not require or manually upload screenshots in the GitHub PR description. Do not commit proof screenshots to the repository.
 6. Merge `origin/main` into the branch; resolve conflicts; rerun checks.
 7. Final workpad pass before `In Review`:
    - All plan / acceptance / validation checkboxes reflect reality.
@@ -245,6 +249,7 @@ Use only for genuine external blockers after fallbacks exhausted.
   - MIT LICENSE (template): `https://opensource.org/license/mit/`
   - Contributor Covenant 2.1: `https://www.contributor-covenant.org/version/2/1/code_of_conduct/code_of_conduct.md`
 - Workpad is the single source of truth. One `## Symphony Workpad` comment per issue, ever. Do not edit the issue body/description for planning or progress.
+- **The Symphony Workpad comment is never test data and must not be deleted** — not at end-of-task, not for cleanup, not even to consolidate accidental duplicates. If `save_comment` created a duplicate (a known MCP bug — see Environment), edit the canonical comment in place via the GraphQL `commentUpdate` workaround and replace the duplicate's body with `Superseded — see canonical Symphony Workpad above.` rather than deleting it.
 - Do not post additional "done"/summary comments outside the workpad.
 - Temporary proof edits must be reverted before commit.
 - **Test data cleanup is mandatory.** Any artifacts created in external systems during testing (Linear issues/comments/attachments, non-issue GitHub branches/draft PRs/gists, rows in shared databases, etc.) must be deleted before transitioning to `In Review`. Do not delete the active issue branch, its PR, or issue-owned evidence/attachments needed for review. Leaving test residue is treated the same as leaving a temporary code edit unrevert.

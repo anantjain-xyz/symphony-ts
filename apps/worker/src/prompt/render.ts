@@ -126,13 +126,7 @@ export async function buildRetryContext(
  * run.
  */
 export function appendRetryContext(prompt: string, ctx: RetryContext): string {
-  const lines = [
-    '',
-    '---',
-    '',
-    `## Prior run context (this is run ${ctx.runNumber})`,
-    '',
-  ];
+  const lines = ['', '---', '', `## Prior run context (this is run ${ctx.runNumber})`, ''];
   if (ctx.priorErrorClass || ctx.priorErrorMessage) {
     lines.push(
       `Previous run failed: **${ctx.priorErrorClass ?? 'unknown'}** \u2014 ${ctx.priorErrorMessage ?? ''}`.trim(),

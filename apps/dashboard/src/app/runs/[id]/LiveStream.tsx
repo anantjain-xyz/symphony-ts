@@ -200,9 +200,7 @@ export function LiveStream({
       {/* Right: inspector */}
       <aside className="lg:sticky lg:top-4 lg:self-start space-y-4">
         <Inspector ev={selectedEvent} onClose={() => selectEvent(null)} />
-        {runIsTerminal && (
-          <TerminalSummary run={run} stats={stats} elapsedMs={elapsedMs} />
-        )}
+        {runIsTerminal && <TerminalSummary run={run} stats={stats} elapsedMs={elapsedMs} />}
       </aside>
     </div>
   );
@@ -226,9 +224,7 @@ function TerminalSummary({
         <Cell
           label="status"
           value={run.status}
-          tone={
-            run.status === 'success' ? 'good' : run.status === 'cancelled' ? 'muted' : 'bad'
-          }
+          tone={run.status === 'success' ? 'good' : run.status === 'cancelled' ? 'muted' : 'bad'}
         />
       </div>
       {run.error_class && (

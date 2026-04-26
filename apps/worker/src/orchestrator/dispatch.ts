@@ -121,10 +121,7 @@ export function dispatchRun(deps: DispatchDeps, issue: Issue, run: RunRow): Disp
         );
         await recordHook(deps, run.id, 'before_run', r);
         if (r.exitCode !== 0) {
-          log.warn(
-            { runId: run.id, stderr: r.stderrTail },
-            'before_run hook failed (non-fatal)',
-          );
+          log.warn({ runId: run.id, stderr: r.stderrTail }, 'before_run hook failed (non-fatal)');
         }
       }
 
@@ -216,10 +213,7 @@ export function dispatchRun(deps: DispatchDeps, issue: Issue, run: RunRow): Disp
         );
         await recordHook(deps, run.id, 'after_run', r);
         if (r.exitCode !== 0) {
-          log.warn(
-            { runId: run.id, stderr: r.stderrTail },
-            'after_run hook failed (non-fatal)',
-          );
+          log.warn({ runId: run.id, stderr: r.stderrTail }, 'after_run hook failed (non-fatal)');
         }
       }
 

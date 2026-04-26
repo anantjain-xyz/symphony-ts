@@ -283,10 +283,7 @@ export class OrchestratorLoop {
     }
   }
 
-  private async dispatch(
-    issue: Issue,
-    forceRunNumber?: number,
-  ): Promise<DispatchHandle | null> {
+  private async dispatch(issue: Issue, forceRunNumber?: number): Promise<DispatchHandle | null> {
     const { repo, workspaces, config, log } = this.deps;
     const runNumber = forceRunNumber ?? (await repo.lastRunNumber(issue.id)) + 1;
     const ws = workspaces.pathFor(issue.identifier);

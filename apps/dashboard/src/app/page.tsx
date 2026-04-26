@@ -20,41 +20,34 @@ type LatestEventRow = Tables<'agent_events_latest'>;
 export default async function FleetPage() {
   const supabase = createSupabaseServerClient();
 
-  const [
-    running,
-    retries,
-    recentFails,
-    liveTokens,
-    issuesCount,
-    heartbeatRes,
-    workflowRes,
-  ] = await Promise.all([
-    supabase
-      .from('runs')
-      .select('*, issues(identifier, title, state)')
-      .eq('status', 'running')
-      .order('started_at', { ascending: false }),
-    supabase
-      .from('retry_queue')
-      .select('*, issues(identifier, title)')
-      .order('due_at', { ascending: true })
-      .limit(20),
-    supabase
-      .from('runs')
-      .select('*, issues(identifier, title)')
-      .in('status', ['failure', 'timeout'])
-      .order('ended_at', { ascending: false })
-      .limit(10),
-    supabase.from('live_sessions').select('*'),
-    supabase.from('issues').select('id', { count: 'exact', head: true }),
-    supabase.from('worker_heartbeat').select('*').eq('id', 'worker').maybeSingle(),
-    supabase
-      .from('workflows')
-      .select('parsed')
-      .order('loaded_at', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-  ]);
+  const [running, retries, recentFails, liveTokens, issuesCount, heartbeatRes, workflowRes] =
+    await Promise.all([
+      supabase
+        .from('runs')
+        .select('*, issues(identifier, title, state)')
+        .eq('status', 'running')
+        .order('started_at', { ascending: false }),
+      supabase
+        .from('retry_queue')
+        .select('*, issues(identifier, title)')
+        .order('due_at', { ascending: true })
+        .limit(20),
+      supabase
+        .from('runs')
+        .select('*, issues(identifier, title)')
+        .in('status', ['failure', 'timeout'])
+        .order('ended_at', { ascending: false })
+        .limit(10),
+      supabase.from('live_sessions').select('*'),
+      supabase.from('issues').select('id', { count: 'exact', head: true }),
+      supabase.from('worker_heartbeat').select('*').eq('id', 'worker').maybeSingle(),
+      supabase
+        .from('workflows')
+        .select('parsed')
+        .order('loaded_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
 
   const runningRows = (running.data ?? []) as unknown as RunWithIssue[];
   const retryRows = (retries.data ?? []) as unknown as RetryWithIssue[];

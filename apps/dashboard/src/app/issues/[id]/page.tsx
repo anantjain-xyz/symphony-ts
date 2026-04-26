@@ -21,19 +21,13 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
   const issue = issueRaw as Issue;
 
   const [{ data: runs }, { data: sessions }, workflowRes] = await Promise.all([
-    supabase
-      .from('runs')
-      .select('*')
-      .eq('issue_id', id)
-      .order('run_number', { ascending: false }),
+    supabase.from('runs').select('*').eq('issue_id', id).order('run_number', { ascending: false }),
     supabase
       .from('live_sessions')
       .select('run_id, total_tokens')
       .in(
         'run_id',
-        ((await supabase.from('runs').select('id').eq('issue_id', id)).data ?? []).map(
-          (r) => r.id,
-        ),
+        ((await supabase.from('runs').select('id').eq('issue_id', id)).data ?? []).map((r) => r.id),
       ),
     supabase
       .from('workflows')
@@ -190,10 +184,7 @@ function Header({ issue, lastRun }: { issue: Issue; lastRun: Run | undefined }) 
             <Stat label="latest" value={`#${lastRun.run_number} · ${lastRun.status}`} />
             <Stat label="started" value={formatRelative(lastRun.started_at)} />
             {lastRun.ended_at && (
-              <Stat
-                label="duration"
-                value={formatDuration(lastRun.started_at, lastRun.ended_at)}
-              />
+              <Stat label="duration" value={formatDuration(lastRun.started_at, lastRun.ended_at)} />
             )}
           </>
         )}
@@ -250,9 +241,7 @@ function RunCard({ run, tokens }: { run: Run; tokens: number }) {
                 <span className="text-ink-4">tok</span> {tokens.toLocaleString()}
               </span>
             )}
-            {run.started_at && (
-              <span className="text-ink-3">{formatRelative(run.started_at)}</span>
-            )}
+            {run.started_at && <span className="text-ink-3">{formatRelative(run.started_at)}</span>}
           </div>
         </div>
         <span className="smallcaps text-[10px] text-ink-3 group-hover:text-signal pr-1">run →</span>

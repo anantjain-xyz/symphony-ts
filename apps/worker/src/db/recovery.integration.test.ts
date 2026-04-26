@@ -241,10 +241,7 @@ d('recover', () => {
     });
 
     expect(out.placeholderSessionsCleaned).toBe(1);
-    const { data: rows } = await db
-      .from('live_sessions')
-      .select('*')
-      .eq('run_id', reserved!.id);
+    const { data: rows } = await db.from('live_sessions').select('*').eq('run_id', reserved!.id);
     expect(rows ?? []).toHaveLength(0);
   });
 
@@ -284,10 +281,7 @@ d('recover', () => {
     });
 
     expect(out.placeholderSessionsCleaned).toBe(0);
-    const { data: rows } = await db
-      .from('live_sessions')
-      .select('*')
-      .eq('run_id', reserved!.id);
+    const { data: rows } = await db.from('live_sessions').select('*').eq('run_id', reserved!.id);
     expect(rows ?? []).toHaveLength(1);
   });
 });

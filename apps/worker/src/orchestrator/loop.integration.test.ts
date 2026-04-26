@@ -78,11 +78,7 @@ d('OrchestratorLoop integration', () => {
     const handles = (loop as unknown as { active: Map<string, { done: Promise<void> }> }).active;
     await Promise.all([...handles.values()].map((h) => h.done));
 
-    const { data: run } = await db
-      .from('runs')
-      .select('*')
-      .eq('issue_id', issue.id)
-      .single();
+    const { data: run } = await db.from('runs').select('*').eq('issue_id', issue.id).single();
     expect(run!.status).toBe('success');
 
     const { data: events } = await db
@@ -181,11 +177,7 @@ d('OrchestratorLoop integration', () => {
     // mid-run cancel branch rather than the AlreadyRunningError path.
     const deadline = Date.now() + 5_000;
     while (Date.now() < deadline) {
-      const { data } = await db
-        .from('runs')
-        .select('status')
-        .eq('id', reserved!.id)
-        .single();
+      const { data } = await db.from('runs').select('status').eq('id', reserved!.id).single();
       if (data?.status === 'running') break;
       await new Promise((r) => setTimeout(r, 25));
     }
@@ -193,11 +185,7 @@ d('OrchestratorLoop integration', () => {
     await handle.cancel('issue state changed');
     await handle.done;
 
-    const { data: finished } = await db
-      .from('runs')
-      .select('*')
-      .eq('id', reserved!.id)
-      .single();
+    const { data: finished } = await db.from('runs').select('*').eq('id', reserved!.id).single();
     expect(finished!.status).toBe('cancelled');
     expect(finished!.error_class).toBe('reconciled');
 
@@ -312,10 +300,7 @@ d('OrchestratorLoop integration', () => {
     // Second tick while the retry is still pending: no new run should fire.
     await loop.tick();
     await Promise.all([...active.values()].map((h) => h.done));
-    const { data: afterSecond } = await db
-      .from('runs')
-      .select('*')
-      .eq('issue_id', issue.id);
+    const { data: afterSecond } = await db.from('runs').select('*').eq('issue_id', issue.id);
     expect(afterSecond!.length).toBe(1); // still exactly one — no redispatch
   });
 });

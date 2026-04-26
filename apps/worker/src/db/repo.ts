@@ -381,9 +381,7 @@ export class Repo {
       .order('id', { ascending: false })
       .limit(limit);
     if (error) throw error;
-    return (data ?? [])
-      .map(({ runs: _ignored, ...event }) => event as AgentEventRow)
-      .reverse();
+    return (data ?? []).map(({ runs: _ignored, ...event }) => event as AgentEventRow).reverse();
   }
 
   // ---- retry_queue ----

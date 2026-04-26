@@ -25,11 +25,7 @@ export function RealtimeRefresh() {
 
     const channel = supabase
       .channel('fleet-dashboard')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'runs' },
-        scheduleRefresh,
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'runs' }, scheduleRefresh)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'retry_queue' },

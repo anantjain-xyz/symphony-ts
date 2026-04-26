@@ -61,6 +61,23 @@ prompt`;
     const cSet = resolveConfig(parseWorkflowSource(SRC_PREFIX));
     expect(cSet.identifierPrefix()).toBe('PB-');
   });
+
+  it('projectId() defaults to null and reflects tracker.project_id when set', () => {
+    const cNone = resolveConfig(parseWorkflowSource(SRC));
+    expect(cNone.projectId()).toBeNull();
+
+    const SRC_PROJECT = `---
+tracker:
+  kind: linear
+  api_key: k
+  active_states: [Todo]
+  terminal_states: [Done]
+  project_id: 11111111-1111-4111-8111-111111111111
+---
+prompt`;
+    const cSet = resolveConfig(parseWorkflowSource(SRC_PROJECT));
+    expect(cSet.projectId()).toBe('11111111-1111-4111-8111-111111111111');
+  });
 });
 
 const SRC_A = `---

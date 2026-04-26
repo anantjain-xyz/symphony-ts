@@ -24,6 +24,12 @@ export const TrackerConfig = z
     // multiple teams in one workspace and only one team's issues should be
     // worked on. When unset, all issues matching the state filters are picked up.
     identifier_prefix: z.string().min(1).optional(),
+    // Restrict the worker to issues belonging to a single Linear project (by
+    // project UUID — find it in the project URL or via the API). Stricter than
+    // `identifier_prefix`: a project lives inside one team, so this implies
+    // the team scope without needing the prefix. The two may be combined; the
+    // GraphQL filters intersect.
+    project_id: z.string().uuid().optional(),
   })
   .strict();
 export type TrackerConfig = z.infer<typeof TrackerConfig>;

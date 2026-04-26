@@ -114,7 +114,12 @@ export function createLinearClient(opts: LinearClientOptions): TrackerClient {
     },
 
     async fetchActive() {
-      const issues = await fetchByStateNames(ctx, opts.config.activeStates(), teamKeyFromPrefix());
+      const issues = await fetchByStateNames(
+        ctx,
+        opts.config.activeStates(),
+        teamKeyFromPrefix(),
+        opts.config.projectId(),
+      );
       return filterByPrefix(issues).sort(byPriorityThenIdentifier);
     },
 
@@ -123,6 +128,7 @@ export function createLinearClient(opts: LinearClientOptions): TrackerClient {
         ctx,
         opts.config.terminalStates(),
         teamKeyFromPrefix(),
+        opts.config.projectId(),
       );
       return filterByPrefix(issues);
     },
@@ -136,6 +142,8 @@ export function createLinearClient(opts: LinearClientOptions): TrackerClient {
           id,
         });
         if (!data.issue) return null;
+        const projectId = opts.config.projectId();
+        if (projectId && data.issue.project?.id !== projectId) return null;
         const issue = normalize(data.issue);
         const prefix = opts.config.identifierPrefix();
         if (prefix && !issue.identifier.startsWith(prefix)) return null;
@@ -152,6 +160,7 @@ async function fetchByStateNames(
   ctx: ResilienceCtx,
   states: string[],
   teamKey: string | null,
+  projectId: string | null,
 ): Promise<Issue[]> {
   if (states.length === 0) return [];
   // Linear's StringComparator doesn't support `inIgnoreCase`, so we OR together
@@ -161,12 +170,19 @@ async function fetchByStateNames(
   const orClauses = states
     .map((_, i) => `{ state: { name: { eqIgnoreCase: $s${i} } } }`)
     .join(', ');
-  // Bind the team-key restriction inside the same filter so it intersects with
-  // the state OR-list — `first: 100` then applies to in-team issues only.
+  // Bind the team-key and project-id restrictions inside the same filter so
+  // they intersect with the state OR-list — `first: 100` then applies to
+  // in-scope issues only. Same starvation-prevention rationale as the team
+  // filter (a busy shared workspace would otherwise fill the page with
+  // off-project issues that we'd drop locally).
   const filterParts = [`or: [${orClauses}]`];
   if (teamKey !== null) {
     varDecls.push('$teamKey: String!');
     filterParts.push('team: { key: { eq: $teamKey } }');
+  }
+  if (projectId !== null) {
+    varDecls.push('$projectId: ID!');
+    filterParts.push('project: { id: { eq: $projectId } }');
   }
   const query = `
     query SymphonyIssuesByState(${varDecls.join(', ')}) {
@@ -179,6 +195,7 @@ async function fetchByStateNames(
   `;
   const vars: Record<string, string> = Object.fromEntries(states.map((s, i) => [`s${i}`, s]));
   if (teamKey !== null) vars.teamKey = teamKey;
+  if (projectId !== null) vars.projectId = projectId;
   const data = await execute<{ issues: { nodes: LinearIssueNode[] } }>(ctx, query, vars);
   return data.issues.nodes.map(normalize);
 }
@@ -345,6 +362,10 @@ interface LinearIssueNode {
   priority: number;
   branchName: string | null;
   state: { name: string } | null;
+  // Only used by `fetchById` for project-scope defense-in-depth; not surfaced
+  // on the normalized `Issue` type. Optional so test fixtures (and pre-SYM-34
+  // shapes) without the field still type-check.
+  project?: { id: string } | null;
   labels: { nodes: Array<{ name: string }> } | null;
   relations: {
     nodes: Array<{
@@ -400,6 +421,7 @@ const ISSUE_FIELDS = `
   priority
   branchName
   state { name }
+  project { id }
   labels { nodes { name } }
   relations {
     nodes {

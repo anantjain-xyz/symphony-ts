@@ -10,6 +10,11 @@ tracker:
   # (e.g. "PB-"). Required when the API key has access to multiple teams in
   # one workspace. Sourced from .env.local; if unset, no filter is applied.
   identifier_prefix: ${SYMPHONY_TRACKER_PREFIX}
+  # Restrict the worker to a single Linear project (by project UUID — find it
+  # in the project URL or via the API). Stricter than identifier_prefix; both
+  # may be set, in which case the filters intersect. Sourced from .env.local;
+  # if unset, no project filter is applied.
+  project_id: ${SYMPHONY_TRACKER_PROJECT_ID}
   active_states:
     - todo
     - in progress

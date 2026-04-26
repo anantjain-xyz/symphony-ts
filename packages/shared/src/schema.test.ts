@@ -70,6 +70,42 @@ describe('WorkflowFrontMatter', () => {
     });
     expect(withoutPrefix.tracker.identifier_prefix).toBeUndefined();
   });
+
+  it('parses optional project_id when set, requires UUID shape, and leaves it undefined when omitted', () => {
+    const projectId = '11111111-1111-4111-8111-111111111111';
+    const withProject = WorkflowFrontMatter.parse({
+      tracker: {
+        kind: 'linear',
+        api_key: 'k',
+        active_states: ['todo'],
+        terminal_states: ['done'],
+        project_id: projectId,
+      },
+    });
+    expect(withProject.tracker.project_id).toBe(projectId);
+
+    const withoutProject = WorkflowFrontMatter.parse({
+      tracker: {
+        kind: 'linear',
+        api_key: 'k',
+        active_states: ['todo'],
+        terminal_states: ['done'],
+      },
+    });
+    expect(withoutProject.tracker.project_id).toBeUndefined();
+
+    expect(() =>
+      WorkflowFrontMatter.parse({
+        tracker: {
+          kind: 'linear',
+          api_key: 'k',
+          active_states: ['todo'],
+          terminal_states: ['done'],
+          project_id: 'not-a-uuid',
+        },
+      }),
+    ).toThrow();
+  });
 });
 
 describe('Issue', () => {

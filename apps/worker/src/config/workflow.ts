@@ -52,6 +52,7 @@ function extractHooks(data: unknown): Record<string, unknown> | null {
 const OPTIONAL_TRACKER_STRING_KEYS = [
   'workspace',
   'identifier_prefix',
+  'project_id',
   'project_slug',
   'project_url',
 ] as const;

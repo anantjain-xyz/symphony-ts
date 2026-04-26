@@ -87,7 +87,7 @@ loads it via `loadEnvConfig` in `apps/dashboard/next.config.mjs`.
 
 ### Retargeting at a different repo / Linear team
 
-Symphony is repo-agnostic. To point it at a different GitHub repo and Linear team, edit two files.
+Symphony is repo-agnostic. The common case (new repo + new Linear team in the same shape as the old one) is an `.env.local` edit only — `WORKFLOW.md` reads the values via `${VAR}` interpolation.
 
 **`.env.local`**
 
@@ -95,15 +95,16 @@ Symphony is repo-agnostic. To point it at a different GitHub repo and Linear tea
 |---|---|
 | `REPO_URL` | The new repo's git URL — `after_create` clones from this. |
 | `LINEAR_API_KEY` | Only if the new team is in a different Linear workspace than the previous one. |
+| `SYMPHONY_LINEAR_WORKSPACE` | The new Linear workspace slug (`linear.app/<slug>/...`). Used by the dashboard to render "linear ↗" links. Leave blank to hide the link. |
+| `SYMPHONY_TRACKER_PREFIX` | The new team's issue prefix (e.g. `PB-`). **Required when the API key has access to multiple teams in one workspace** — otherwise the worker picks up every team's issues. Leave blank when the workspace has only one team. |
+| `SYMPHONY_INSTALL_CMD` | Install command run by `after_create` (e.g. `npm ci`, `pnpm install --frozen-lockfile`, `yarn install --frozen-lockfile`). Leave blank to default to `npm ci`. Set to `:` (bash no-op) if the repo isn't a Node project. |
 
-**`WORKFLOW.md`** (frontmatter)
+Edit **`WORKFLOW.md`** only when the new team's shape differs from the defaults:
 
 | Field | Change to |
 |---|---|
-| `tracker.workspace` | The new Linear workspace slug (`linear.app/<slug>/...`). Used by the dashboard to render "linear ↗" links. |
-| `tracker.identifier_prefix` | The new team's issue prefix (e.g. `PB-`). **Required when the API key has access to multiple teams in one workspace** — otherwise the worker picks up every team's issues. Omit when the workspace has only one team. |
-| `tracker.active_states` / `tracker.terminal_states` | Only if the new team's Linear states differ from the previous team's. The `Status routing` table in the prompt body assumes `Todo`, `In Progress`, `Rework`, `Merging`, `In Review`, `Done` exist — if any are missing, either add them to the team in Linear or trim the routing table. |
-| `hooks.after_create` | Switch `pnpm install --frozen-lockfile` ↔ `npm ci` ↔ `yarn install --frozen-lockfile` etc. to match the target repo's package manager. Drop the install line entirely if the repo isn't a Node project. |
+| `tracker.active_states` / `tracker.terminal_states` | Only if the new team's Linear states differ. The `Status routing` table in the prompt body assumes `Todo`, `In Progress`, `Rework`, `Merging`, `In Review`, `Done` exist — if any are missing, either add them to the team in Linear or trim the routing table. |
+| `hooks.after_create` | Only if the install step needs more than swapping the command (e.g. extra setup steps); for a plain package-manager swap, set `SYMPHONY_INSTALL_CMD` instead. |
 | `claude.allowed_tools` | Match the package-manager / language tooling the agent will need (`Bash(npm *)` vs `Bash(pnpm *)`, `Bash(cargo *)`, `Bash(uv *)`, etc.). |
 
 The Mustache-templated prompt body below the frontmatter is repo-neutral and usually doesn't need editing.

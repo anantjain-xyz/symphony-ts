@@ -94,6 +94,38 @@ prompt`;
     expect(w.frontMatter.hooks.before_run).toContain('${ISSUE_IDENTIFIER}');
   });
 
+  it('treats unset ${VAR} on optional tracker strings as omitted, not as ""', () => {
+    // workspace + identifier_prefix are z.string().min(1).optional() — a
+    // literal "" would fail validation. The loader strips empty strings on
+    // these fields so an unset env var behaves like the field being omitted.
+    const orig = {
+      ws: process.env.SYMPHONY_LINEAR_WORKSPACE,
+      pre: process.env.SYMPHONY_TRACKER_PREFIX,
+    };
+    process.env.SYMPHONY_LINEAR_WORKSPACE = '';
+    delete process.env.SYMPHONY_TRACKER_PREFIX;
+    try {
+      const src = `---
+tracker:
+  kind: linear
+  api_key: \${LINEAR_API_KEY}
+  workspace: \${SYMPHONY_LINEAR_WORKSPACE}
+  identifier_prefix: \${SYMPHONY_TRACKER_PREFIX}
+  active_states: [todo]
+  terminal_states: [done]
+---
+prompt`;
+      const w = parseWorkflowSource(src);
+      expect(w.frontMatter.tracker.workspace).toBeUndefined();
+      expect(w.frontMatter.tracker.identifier_prefix).toBeUndefined();
+    } finally {
+      if (orig.ws === undefined) delete process.env.SYMPHONY_LINEAR_WORKSPACE;
+      else process.env.SYMPHONY_LINEAR_WORKSPACE = orig.ws;
+      if (orig.pre === undefined) delete process.env.SYMPHONY_TRACKER_PREFIX;
+      else process.env.SYMPHONY_TRACKER_PREFIX = orig.pre;
+    }
+  });
+
   it('preserves unknown top-level keys', () => {
     const src = MINIMAL.replace('---\n', '---\nfuture_thing:\n  enabled: true\n');
     const w = parseWorkflowSource(src);

@@ -24,6 +24,7 @@ export function parseWorkflowSource(raw: string): ParsedWorkflow {
   const rawHooks = extractHooks(data);
   const interpolated = interpolateEnv(data) as Record<string, unknown>;
   restoreHooks(interpolated, rawHooks);
+  dropEmptyOptionalTrackerStrings(interpolated);
   const frontMatter = WorkflowFrontMatter.parse(interpolated);
   // Post-parse so we also process the schema default (which contains ${TMPDIR}).
   frontMatter.workspace.root = resolveWorkspaceRoot(frontMatter.workspace.root);
@@ -39,6 +40,29 @@ function extractHooks(data: unknown): Record<string, unknown> | null {
   const hooks = (data as Record<string, unknown>).hooks;
   if (!hooks || typeof hooks !== 'object') return null;
   return { ...(hooks as Record<string, unknown>) };
+}
+
+/**
+ * Optional tracker fields that the schema declares as `z.string().min(1).optional()`
+ * (or url-typed). When an `${ENV_VAR}` reference resolves to "" because the var
+ * is unset, we want the field treated as omitted — not as a literal empty
+ * string, which would fail validation. Required fields like `api_key` are
+ * deliberately not in this list: an unset key should still error loudly.
+ */
+const OPTIONAL_TRACKER_STRING_KEYS = [
+  'workspace',
+  'identifier_prefix',
+  'project_slug',
+  'project_url',
+] as const;
+
+function dropEmptyOptionalTrackerStrings(target: Record<string, unknown>): void {
+  const tracker = target.tracker;
+  if (!tracker || typeof tracker !== 'object') return;
+  const t = tracker as Record<string, unknown>;
+  for (const key of OPTIONAL_TRACKER_STRING_KEYS) {
+    if (t[key] === '') delete t[key];
+  }
 }
 
 function restoreHooks(

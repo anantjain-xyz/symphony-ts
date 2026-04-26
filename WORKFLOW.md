@@ -4,12 +4,12 @@ tracker:
   api_key: ${LINEAR_API_KEY}
   # Linear workspace slug from the URL (linear.app/<workspace>/...). Optional;
   # when set, the dashboard renders direct "linear ↗" links on issue and
-  # session pages.
-  workspace: optimism-llc
+  # session pages. Sourced from .env.local — leave the placeholder as-is.
+  workspace: ${SYMPHONY_LINEAR_WORKSPACE}
   # Restrict the worker to one team in the workspace by issue-identifier prefix
-  # (Polyblind shares the workspace with other teams, so without this the
-  # worker would pick up SYM-* issues too).
-  identifier_prefix: PB-
+  # (e.g. "PB-"). Required when the API key has access to multiple teams in
+  # one workspace. Sourced from .env.local; if unset, no filter is applied.
+  identifier_prefix: ${SYMPHONY_TRACKER_PREFIX}
   active_states:
     - todo
     - in progress
@@ -29,7 +29,7 @@ hooks:
   after_create: |
     git clone "$REPO_URL" .
     git checkout -B "${ISSUE_BRANCH:-symphony/${ISSUE_IDENTIFIER}}"
-    npm ci
+    ${SYMPHONY_INSTALL_CMD:-npm ci}
   before_run: |
     echo "starting attempt for ${ISSUE_IDENTIFIER}"
   after_run: |
@@ -88,6 +88,7 @@ claude:
     - Bash(which *)
     - Bash(node --version)
     - Bash(npm --version)
+    - Bash(pnpm --version)
     - Bash(python3 --version)
     # Fetching canonical boilerplate docs (LICENSE, CODE_OF_CONDUCT, ...) — see Guardrails.
     - Bash(curl *)

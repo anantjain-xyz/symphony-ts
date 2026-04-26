@@ -188,7 +188,7 @@ export default async function FleetPage() {
           {runningRows.map((r) => (
             <RunRow
               key={r.id}
-              href={`/sessions/${r.id}`}
+              href={`/runs/${r.id}`}
               identifier={r.issues?.identifier ?? r.issue_id}
               title={r.issues?.title ?? '—'}
               attemptNumber={r.attempt_number}
@@ -231,7 +231,7 @@ export default async function FleetPage() {
           {failedRows.map((r) => (
             <RunRow
               key={r.id}
-              href={`/sessions/${r.id}`}
+              href={`/runs/${r.id}`}
               identifier={r.issues?.identifier ?? r.issue_id}
               title={r.issues?.title ?? '—'}
               attemptNumber={r.attempt_number}

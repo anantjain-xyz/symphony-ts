@@ -3,7 +3,7 @@ import { linearIssueUrl } from '@symphony/shared/schema';
 
 /**
  * Renders Linear + GitHub PR chips for an issue. Used on both the issue page
- * sidebar and the session page header. Returns null when no chips would render.
+ * sidebar and the run page header. Returns null when no chips would render.
  */
 export function IssueLinks({
   identifier,

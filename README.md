@@ -287,9 +287,9 @@ apps/dashboard/src/
 │   ├── KpiBlock.tsx              KPI metric card
 │   ├── LiveRuntime.tsx           worker heartbeat / uptime KPI
 │   ├── RealtimeRefresh.tsx       Supabase subscription → router.refresh
-│   ├── issues/[id]/page.tsx      one issue, all its attempts
-│   └── sessions/[id]/
-│       ├── page.tsx              attempt metadata (SSR)
+│   ├── issues/[id]/page.tsx      one issue, all its runs
+│   └── runs/[id]/
+│       ├── page.tsx              run metadata (SSR)
 │       ├── LiveStream.tsx        ⭐ client component, Supabase Realtime
 │       └── EventBlock.tsx        agent-event renderer
 │
@@ -302,8 +302,8 @@ apps/dashboard/src/
 | Route | File | What you see |
 |---|---|---|
 | `/` | `app/page.tsx` | KPI header + four sections: Active runs, Retry queue, Recent failures, Past runs |
-| `/issues/[id]` | `app/issues/[id]/page.tsx` | Issue header + attempts list w/ status colors |
-| `/sessions/[id]` | `app/sessions/[id]/page.tsx` + `LiveStream.tsx` | Live event firehose — subscribes to `agent_events` (INSERT) and `live_sessions` (*) for this attempt |
+| `/issues/[id]` | `app/issues/[id]/page.tsx` | Issue header + runs list w/ status colors |
+| `/runs/[id]` | `app/runs/[id]/page.tsx` + `LiveStream.tsx` | Live event firehose — subscribes to `agent_events` (INSERT) and `live_sessions` (*) for this run |
 
 Worker uses service-role (bypasses RLS). Dashboard uses the anon key and reads tables directly (RLS disabled).
 
@@ -392,7 +392,7 @@ To understand the system, read in this order:
 4. `apps/worker/src/orchestrator/dispatch.ts` — one attempt
 5. `apps/worker/src/agent/runner.ts` — the subprocess bridge
 6. `supabase/migrations/20260415005242_init.sql` — the data model
-7. `apps/dashboard/src/app/sessions/[id]/LiveStream.tsx` — how the UI stays live
+7. `apps/dashboard/src/app/runs/[id]/LiveStream.tsx` — how the UI stays live
 
 That's the critical path. Everything else is support.
 

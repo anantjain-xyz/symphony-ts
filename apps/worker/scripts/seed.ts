@@ -102,7 +102,7 @@ async function main() {
   console.log('Seeded. Visit http://localhost:3000');
   console.log(`  /issues/${ISSUES[0]!.id}`);
   console.log(`  /issues/${ISSUES[1]!.id}`);
-  if (attempt) console.log(`  /sessions/${attempt.id}`);
+  if (attempt) console.log(`  /runs/${attempt.id}`);
 }
 
 main().catch((e) => {

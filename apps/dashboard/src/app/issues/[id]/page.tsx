@@ -62,7 +62,7 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
       <div className="grid grid-cols-1 lg:grid-cols-[220px_minmax(0,1fr)] gap-6">
         {/* Left rail — issue telemetry */}
         <aside className="lg:sticky lg:top-4 lg:self-start space-y-5">
-          <Telemetry label="attempts" value={attemptRows.length.toString()} />
+          <Telemetry label="runs" value={attemptRows.length.toString()} />
           {counts.success > 0 && (
             <Telemetry
               label="success"
@@ -125,7 +125,7 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
           <IssueLinks identifier={issue.identifier} prUrls={issue.pr_urls} tracker={tracker} />
         </aside>
 
-        {/* Center — description + attempts */}
+        {/* Center — description + runs */}
         <section className="min-w-0 space-y-8">
           {issue.description && (
             <div>
@@ -140,19 +140,19 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
 
           <div>
             <div className="smallcaps text-[10px] text-ink-3 mb-3 flex items-center gap-2">
-              attempts
+              runs
               <span className="text-ink-4">·</span>
               <span className="font-mono normal-case tracking-normal text-ink-1">
                 {attemptRows.length}
               </span>
             </div>
             {attemptRows.length === 0 ? (
-              <EmptyAttempts />
+              <EmptyRuns />
             ) : (
               <ol className="space-y-2">
                 {attemptRows.map((a) => (
                   <li key={a.id}>
-                    <AttemptCard attempt={a} tokens={tokensByAttempt.get(a.id) ?? 0} />
+                    <RunCard attempt={a} tokens={tokensByAttempt.get(a.id) ?? 0} />
                   </li>
                 ))}
               </ol>
@@ -202,7 +202,7 @@ function Header({ issue, lastAttempt }: { issue: Issue; lastAttempt: Attempt | u
   );
 }
 
-function AttemptCard({ attempt, tokens }: { attempt: Attempt; tokens: number }) {
+function RunCard({ attempt, tokens }: { attempt: Attempt; tokens: number }) {
   const terminal = TERMINAL.has(attempt.status);
   const duration = attempt.started_at
     ? formatDuration(
@@ -213,7 +213,7 @@ function AttemptCard({ attempt, tokens }: { attempt: Attempt; tokens: number }) 
 
   return (
     <Link
-      href={`/sessions/${attempt.id}`}
+      href={`/runs/${attempt.id}`}
       className="block group rounded border border-hairline bg-surface-1 hover:border-hairline-strong hover:bg-surface-2 transition-colors"
     >
       <div className="grid grid-cols-[88px_180px_minmax(0,1fr)_auto] gap-4 px-4 py-3 items-center">
@@ -221,10 +221,10 @@ function AttemptCard({ attempt, tokens }: { attempt: Attempt; tokens: number }) 
           <span className="font-display text-[22px] tabular text-ink-0 leading-none">
             {attempt.attempt_number}
           </span>
-          <span className="smallcaps text-[9px] text-ink-3">attempt</span>
+          <span className="smallcaps text-[9px] text-ink-3">run</span>
         </div>
         <div>
-          <AttemptStatusBadge status={attempt.status} />
+          <RunStatusBadge status={attempt.status} />
           {attempt.error_class && (
             <div className="font-mono text-[10.5px] text-danger mt-1 truncate">
               {attempt.error_class}
@@ -255,9 +255,7 @@ function AttemptCard({ attempt, tokens }: { attempt: Attempt; tokens: number }) 
             )}
           </div>
         </div>
-        <span className="smallcaps text-[10px] text-ink-3 group-hover:text-signal pr-1">
-          session →
-        </span>
+        <span className="smallcaps text-[10px] text-ink-3 group-hover:text-signal pr-1">run →</span>
       </div>
     </Link>
   );
@@ -385,7 +383,7 @@ function IssueStateBadge({ state }: { state: string }) {
   );
 }
 
-function AttemptStatusBadge({ status }: { status: string }) {
+function RunStatusBadge({ status }: { status: string }) {
   const conf: Record<string, { color: string; dot: string }> = {
     running: { color: 'text-success', dot: 'bg-success dot-live' },
     pending: { color: 'text-signal', dot: 'bg-signal' },
@@ -435,10 +433,10 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function EmptyAttempts() {
+function EmptyRuns() {
   return (
     <div className="rounded border border-dashed border-hairline px-4 py-8 text-[13px] text-ink-3 italic font-display">
-      No attempts have run for this issue yet.
+      No runs for this issue yet.
     </div>
   );
 }

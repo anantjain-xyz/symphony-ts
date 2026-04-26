@@ -12,7 +12,7 @@ type AttemptWithIssue = Tables<'run_attempts'> & {
 
 const TERMINAL = new Set(['success', 'failure', 'timeout', 'cancelled']);
 
-export default async function SessionPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function RunPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = createSupabaseServerClient();
   const [{ data: rawAttempt }, { data: initialEvents }, workflowRes] = await Promise.all([
@@ -79,7 +79,7 @@ function Header({
         </Link>
         <span className="text-ink-4">/</span>
         <span className="smallcaps text-[10px] text-ink-3">
-          attempt{' '}
+          run{' '}
           <span className="font-mono normal-case tracking-normal text-ink-1">
             #{attempt.attempt_number}
           </span>

@@ -1,8 +1,8 @@
 import './globals.css';
 import type { Metadata } from 'next';
 import { Fraunces, Inter_Tight, JetBrains_Mono } from 'next/font/google';
-import Link from 'next/link';
 import type { ReactNode } from 'react';
+import { TopBar } from './TopBar';
 
 const sans = Inter_Tight({
   subsets: ['latin'],
@@ -35,18 +35,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={`${sans.variable} ${display.variable} ${mono.variable}`}>
       <body className="min-h-screen font-sans">
-        <header className="border-b border-hairline px-8 py-3 flex items-center">
-          <Link href="/" className="flex items-center gap-3 group">
-            <span
-              className="block w-2 h-2 rounded-full bg-signal"
-              aria-hidden
-              style={{ boxShadow: '0 0 12px rgba(232,163,61,0.5)' }}
-            />
-            <span className="font-display text-[17px] tracking-tight text-ink-0 group-hover:text-white">
-              Symphony
-            </span>
-          </Link>
-        </header>
+        <TopBar />
         <main className="px-8 py-6">{children}</main>
       </body>
     </html>

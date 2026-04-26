@@ -39,7 +39,7 @@ export function RunRow({
           </span>
         ) : null}
       </span>
-      <AttemptCounter n={attemptNumber} />
+      <RunCounter n={attemptNumber} />
       <StatusBadge status={status} />
       <div className="font-mono text-[11px] text-ink-3 tabular truncate">
         {errorClass ? (
@@ -60,11 +60,11 @@ export function RunRow({
   );
 }
 
-function AttemptCounter({ n }: { n: number }) {
+function RunCounter({ n }: { n: number }) {
   return (
     <span className="inline-flex items-baseline gap-1.5">
       <span className="font-display text-[18px] tabular text-ink-0 leading-none">#{n}</span>
-      <span className="smallcaps text-[9px] text-ink-3">attempt</span>
+      <span className="smallcaps text-[9px] text-ink-3">run</span>
     </span>
   );
 }

@@ -56,7 +56,7 @@ export function LiveStream({
     if (attemptIsTerminal) return;
     const supabase = getSupabaseBrowserClient();
     const channel = supabase
-      .channel(`session:${attemptId}`)
+      .channel(`run:${attemptId}`)
       .on(
         'postgres_changes',
         {

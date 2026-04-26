@@ -332,7 +332,7 @@ function formatLatestEvent(ev: AgentEventRow | undefined): string {
     case 'user_input':
       return truncate(`user_input: ${asString(payload.text)}`);
     case 'humanized':
-      return truncate(`humanized: ${asString(payload.summary)}`);
+      return truncate(asString(payload.summary));
     case 'rate_limit':
       return truncate(
         `rate_limit: ${asString(payload.source)} remaining=${payload.remaining ?? 'n/a'}`,

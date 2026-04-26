@@ -95,15 +95,18 @@ prompt`;
   });
 
   it('treats unset ${VAR} on optional tracker strings as omitted, not as ""', () => {
-    // workspace + identifier_prefix are z.string().min(1).optional() — a
-    // literal "" would fail validation. The loader strips empty strings on
-    // these fields so an unset env var behaves like the field being omitted.
+    // workspace + identifier_prefix + project_id are optional fields whose
+    // schemas reject literal "" (e.g. z.string().min(1) / .uuid()). The loader
+    // strips empty strings on these fields so an unset env var behaves like
+    // the field being omitted.
     const orig = {
       ws: process.env.SYMPHONY_LINEAR_WORKSPACE,
       pre: process.env.SYMPHONY_TRACKER_PREFIX,
+      proj: process.env.SYMPHONY_TRACKER_PROJECT_ID,
     };
     process.env.SYMPHONY_LINEAR_WORKSPACE = '';
     delete process.env.SYMPHONY_TRACKER_PREFIX;
+    delete process.env.SYMPHONY_TRACKER_PROJECT_ID;
     try {
       const src = `---
 tracker:
@@ -111,6 +114,7 @@ tracker:
   api_key: \${LINEAR_API_KEY}
   workspace: \${SYMPHONY_LINEAR_WORKSPACE}
   identifier_prefix: \${SYMPHONY_TRACKER_PREFIX}
+  project_id: \${SYMPHONY_TRACKER_PROJECT_ID}
   active_states: [todo]
   terminal_states: [done]
 ---
@@ -118,11 +122,14 @@ prompt`;
       const w = parseWorkflowSource(src);
       expect(w.frontMatter.tracker.workspace).toBeUndefined();
       expect(w.frontMatter.tracker.identifier_prefix).toBeUndefined();
+      expect(w.frontMatter.tracker.project_id).toBeUndefined();
     } finally {
       if (orig.ws === undefined) delete process.env.SYMPHONY_LINEAR_WORKSPACE;
       else process.env.SYMPHONY_LINEAR_WORKSPACE = orig.ws;
       if (orig.pre === undefined) delete process.env.SYMPHONY_TRACKER_PREFIX;
       else process.env.SYMPHONY_TRACKER_PREFIX = orig.pre;
+      if (orig.proj === undefined) delete process.env.SYMPHONY_TRACKER_PROJECT_ID;
+      else process.env.SYMPHONY_TRACKER_PROJECT_ID = orig.proj;
     }
   });
 

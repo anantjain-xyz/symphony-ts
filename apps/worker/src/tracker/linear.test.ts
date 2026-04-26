@@ -17,6 +17,7 @@ function mkConfig(
     endpoint?: string;
     apiKey?: string;
     identifierPrefix?: string;
+    projectId?: string;
   } = {},
 ) {
   return resolveConfig(makeTestWorkflow({ sourceHash: 'linear-test', ...overrides }));
@@ -265,6 +266,81 @@ describe('createLinearClient', () => {
 
     // fetchById of an off-team issue is treated as "not ours".
     expect(await client.fetchById('uuid-sym-3')).toBeNull();
+  });
+
+  it('project_id scopes the GraphQL query to the project and gates fetchById on project membership', async () => {
+    // The scope-by-project knob (SYM-34): when set, only issues belonging to
+    // that Linear project should reach the worker. Mirrors the team-prefix
+    // path: the filter has to live in the GraphQL query, not just the
+    // post-fetch normalize step, otherwise a busy workspace fills the
+    // `first: 100` page with off-project issues and starves the configured
+    // project.
+    const PROJECT_ID = '11111111-1111-4111-8111-111111111111';
+    const OTHER_PROJECT_ID = '22222222-2222-4222-8222-222222222222';
+    const PB7_INPROJECT = {
+      ...ENG42,
+      id: 'uuid-pb-7',
+      identifier: 'PB-7',
+      project: { id: PROJECT_ID },
+    };
+    const PB8_OFFPROJECT = {
+      ...ENG42,
+      id: 'uuid-pb-8',
+      identifier: 'PB-8',
+      project: { id: OTHER_PROJECT_ID },
+    };
+
+    const seenVars: Array<Record<string, unknown>> = [];
+    const stub = (op: string, vars: unknown) => {
+      seenVars.push(vars as Record<string, unknown>);
+      if (op === 'SymphonyIssueById') {
+        // Caller passes a real issue id; respond with the off-project one to
+        // exercise the defense-in-depth gate in fetchById.
+        return { issue: PB8_OFFPROJECT };
+      }
+      // Server's filter is honoured here — only the in-project issue comes
+      // back. Confirms the GraphQL filter is what's doing the work.
+      return { issues: { nodes: [PB7_INPROJECT] } };
+    };
+
+    const client = createLinearClient({
+      config: mkConfig({
+        activeStates: ['todo'],
+        terminalStates: ['done'],
+        projectId: PROJECT_ID,
+      }),
+      client: stubClient(stub),
+      sleep: async (_ms: number) => {},
+    });
+
+    const active = await client.fetchActive();
+    expect(active.map((i) => i.identifier)).toEqual(['PB-7']);
+    expect(seenVars[0]).toMatchObject({ projectId: PROJECT_ID });
+
+    const terminal = await client.fetchTerminal();
+    expect(terminal.map((i) => i.identifier)).toEqual(['PB-7']);
+    expect(seenVars[1]).toMatchObject({ projectId: PROJECT_ID });
+
+    expect(await client.fetchById('uuid-pb-8')).toBeNull();
+  });
+
+  it('project_id and identifier_prefix compose into a single GraphQL filter', async () => {
+    const PROJECT_ID = '11111111-1111-4111-8111-111111111111';
+    const seenVars: Array<Record<string, unknown>> = [];
+    const client = createLinearClient({
+      config: mkConfig({
+        activeStates: ['todo'],
+        identifierPrefix: 'PB-',
+        projectId: PROJECT_ID,
+      }),
+      client: stubClient((_op, vars) => {
+        seenVars.push(vars as Record<string, unknown>);
+        return { issues: { nodes: [] } };
+      }),
+      sleep: async (_ms: number) => {},
+    });
+    await client.fetchActive();
+    expect(seenVars[0]).toMatchObject({ teamKey: 'PB', projectId: PROJECT_ID });
   });
 
   it('omitting identifier_prefix returns every fetched issue unchanged', async () => {

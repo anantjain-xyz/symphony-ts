@@ -13,14 +13,14 @@ A long-running daemon that polls Linear for active issues, provisions isolated w
    Linear (issues)                Supabase Postgres                  Operator
         │                          ┌──────────────┐                     │
         │ GraphQL                  │  issues      │                     │ browser
-        │                          │  run_attempts│                     │
+        │                          │  runs        │                     │
         ▼                          │  agent_events│◀──── Realtime ──────┤
  ┌──────────────┐   service key    │  live_sess.  │                     ▼
  │   WORKER     │ ───────────────▶ │  retry_queue │         ┌───────────────────┐
  │   (daemon)   │ ◀─────────────── │  hook_runs   │         │  DASHBOARD        │
  │              │                  │  workflows   │◀── RLS──│  (Next.js 15)     │
  │ poll → plan  │                  └──────────────┘   anon  │                   │
- │ → dispatch   │                                           │  fleet / sessions │
+ │ → dispatch   │                                           │  fleet / runs     │
  └──────┬───────┘                                           └───────────────────┘
         │ spawn
         ▼
@@ -223,15 +223,15 @@ Plus `agents/codex-adapter.mjs` and `agents/claude-adapter.mjs` — standalone N
 ```
 1. tracker.fetchActive()      ← Linear GraphQL
 2. repo.upsertIssues()        ← refresh DB cache
-3. reconcile in-flight        ← cancel attempts for no-longer-active issues
+3. reconcile in-flight        ← cancel runs for no-longer-active issues
 4. filter eligible            ← drop blocked / already-running / pending-retry
 5. selectDispatchable()       ← apply concurrency caps
-6. dispatchAttempt() × N      ← spawn in-flight
+6. dispatchRun() × N          ← spawn in-flight
 7. fire due retries           ← from retry_queue
 8. sleep polling.interval_ms
 ```
 
-**`dispatch.ts`** — one attempt does:
+**`dispatch.ts`** — one run does:
 
 ```
   ┌─ workspace.createOrReuse()
@@ -246,7 +246,7 @@ Plus `agents/codex-adapter.mjs` and `agents/claude-adapter.mjs` — standalone N
   │     └─ after_run hook (non-fatal)
   └─ finalize:
         success → repo.clearRetry()
-        fail    → repo.scheduleRetry(backoffMs(attempt))
+        fail    → repo.scheduleRetry(backoffMs(runNumber))
         timeout → interrupt, then SIGKILL after grace
 ```
 
@@ -301,9 +301,9 @@ apps/dashboard/src/
 
 | Route | File | What you see |
 |---|---|---|
-| `/` | `app/page.tsx` | KPI header + four sections: Active runs, Retry queue, Recent failures, Past runs |
-| `/issues/[id]` | `app/issues/[id]/page.tsx` | Issue header + runs list w/ status colors |
-| `/runs/[id]` | `app/runs/[id]/page.tsx` + `LiveStream.tsx` | Live event firehose — subscribes to `agent_events` (INSERT) and `live_sessions` (*) for this run |
+| `/` | `app/page.tsx` | KPI header + three sections: Active runs, Retry queue, Recent failures |
+| `/issues` / `/issues/[id]` | `app/issues/page.tsx` + `app/issues/[id]/page.tsx` | Issue list and issue detail with the runs list w/ status colors |
+| `/runs` / `/runs/[id]` | `app/runs/page.tsx` + `app/runs/[id]/page.tsx` + `LiveStream.tsx` | All runs list, plus per-run live event firehose — subscribes to `agent_events` (INSERT) and `live_sessions` (*) for this run |
 
 Worker uses service-role (bypasses RLS). Dashboard uses the anon key and reads tables directly (RLS disabled).
 
@@ -326,17 +326,17 @@ The nine tables (+ one view):
 ```
  workflows             ← WORKFLOW.md snapshots (content-addressed)
  issues                ← normalized from Linear; upserted each tick
- run_attempts          ← one row per dispatch; status: pending/running/succeeded/failed/cancelled
+ runs                  ← one row per dispatch; status: pending/running/success/failure/timeout/cancelled
  agent_events          ← append-only event firehose (the LLM's activity)
- live_sessions         ← ephemeral in-flight state; deleted on completion
+ live_sessions         ← ephemeral in-flight Claude SDK session state; deleted on completion
  retry_queue           ← scheduled retries with due_at
  hook_runs             ← every before_/after_ hook invocation
  rate_limit_state      ← per-source rate-limit buckets
  worker_heartbeat      ← single-row liveness ping
- agent_events_latest   ← (view) latest event per run_attempt
+ agent_events_latest   ← (view) latest event per run
 ```
 
-The second migration adds a **partial unique index** on `run_attempts` where `status='running'` per `issue_id` — this is what makes `AlreadyRunningError` possible and prevents duplicate dispatch.
+The `run_attempts_running_invariant` migration adds a **partial unique index** on `runs` where `status='running'` per `issue_id` — this is what makes `AlreadyRunningError` possible and prevents duplicate dispatch.
 
 ## Tracing a full lifecycle
 
@@ -347,7 +347,7 @@ The second migration adds a **partial unique index** on `run_attempts` where `st
  ② Worker tick picks it up → upsert → eligible → within caps
            │
            ▼
- ③ dispatchAttempt():
+ ③ dispatchRun():
        workspace exists? → reuse, else create + git clone (after_create)
        markRunning (wins race)
        before_run hook
@@ -362,11 +362,11 @@ The second migration adds a **partial unique index** on `run_attempts` where `st
            │
            ▼
  ⑥ adapter returns turn/complete:
-       success → clearRetry, finalize run_attempt='succeeded'
-       failure → scheduleRetry(backoffMs), run_attempt='failed'
+       success → clearRetry, finalize runs.status='success'
+       failure → scheduleRetry(backoffMs), runs.status='failure'
            │
            ▼
- ⑦ Next tick: if due retry → dispatch again (attempt #2 with retry context)
+ ⑦ Next tick: if due retry → dispatch again (run #2 with retry context)
            │
            ▼
  ⑧ Linear issue becomes terminal → worker sweeps workspace dir

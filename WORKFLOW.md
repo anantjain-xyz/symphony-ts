@@ -147,7 +147,7 @@ If this is a retry (attempt number > 1 or the workpad already exists), do these 
 2. Run `git status && git log --oneline origin/main..HEAD` to see what prior attempts already committed. Pick up their work; do not re-do committed files.
 3. Scan the workpad `### Confusions` and `### Notes` for known failure modes (content-filter hits, tool access, flaky tests) and avoid repeating them.
 4. If the workpad's last-update timestamp is older than the prior attempt's start, prior attempts died mid-stream without persisting — rebuild your picture from repo state (committed files, open PR) rather than the workpad's plan alone.
-5. **No-op redispatch short-circuit.** If the workpad shows every Plan / Acceptance / Validation checkbox already ticked AND a PR is linked AND `gh pr view --json state,statusCheckRollup` shows the PR `OPEN`/`MERGED` with green checks AND `git log --oneline origin/main..HEAD` matches the workpad's recorded commits, the work is already complete. Append a one-line `### Notes` entry (`no-op redispatch — work already complete on <short-sha> / PR #<n>`) and shut down without re-running validation. Only re-engage if the on-disk state contradicts the workpad.
+5. **No-op redispatch short-circuit.** Only applies when the issue state is `Todo` or `In Progress` (NOT `Rework` — that always requires the full reset of Step 3, and NOT `Merging` — that always runs the Land procedure). Within those two states, if the workpad shows every Plan / Acceptance / Validation checkbox already ticked AND a PR is linked AND `gh pr view --json state,statusCheckRollup` shows the PR `OPEN`/`MERGED` with green checks AND `git log --oneline origin/main..HEAD` matches the workpad's recorded commits, the work is already complete. Append a one-line `### Notes` entry (`no-op redispatch — work already complete on <short-sha> / PR #<n>`) and shut down without re-running validation. Only re-engage if the on-disk state contradicts the workpad.
 
 ## Status routing
 
@@ -229,7 +229,7 @@ Use only for genuine external blockers after fallbacks exhausted.
 
 1. Re-read the full issue body and all human comments. Identify what to do differently.
 2. Close the existing PR tied to this issue.
-3. Delete the existing `## Symphony Workpad` comment.
+3. Reset the existing `## Symphony Workpad` comment in place — keep the same comment ID (one workpad per issue, ever) and overwrite its body with a fresh workpad scaffold via the GraphQL `commentUpdate` workaround in Environment. Do not delete the comment.
 4. Fresh branch from `origin/main`.
 5. Start over from Step 1.
 

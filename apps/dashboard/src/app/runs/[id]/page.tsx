@@ -6,7 +6,7 @@ import { LiveStream } from './LiveStream';
 
 export const dynamic = 'force-dynamic';
 
-type AttemptWithIssue = Tables<'run_attempts'> & {
+type RunWithIssue = Tables<'runs'> & {
   issues: Pick<Tables<'issues'>, 'identifier' | 'title' | 'state' | 'pr_urls'> | null;
 };
 
@@ -15,16 +15,16 @@ const TERMINAL = new Set(['success', 'failure', 'timeout', 'cancelled']);
 export default async function RunPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = createSupabaseServerClient();
-  const [{ data: rawAttempt }, { data: initialEvents }, workflowRes] = await Promise.all([
+  const [{ data: rawRun }, { data: initialEvents }, workflowRes] = await Promise.all([
     supabase
-      .from('run_attempts')
+      .from('runs')
       .select('*, issues(identifier, title, state, pr_urls)')
       .eq('id', id)
       .maybeSingle(),
     supabase
       .from('agent_events')
       .select('*')
-      .eq('run_attempt_id', id)
+      .eq('run_id', id)
       .order('id', { ascending: true })
       .limit(10000),
     supabase
@@ -34,22 +34,22 @@ export default async function RunPage({ params }: { params: Promise<{ id: string
       .limit(1)
       .maybeSingle(),
   ]);
-  if (!rawAttempt) notFound();
-  const attempt = rawAttempt as unknown as AttemptWithIssue;
+  if (!rawRun) notFound();
+  const run = rawRun as unknown as RunWithIssue;
 
-  const issue = attempt.issues;
-  const terminal = TERMINAL.has(attempt.status);
+  const issue = run.issues;
+  const terminal = TERMINAL.has(run.status);
   const tracker =
     (workflowRes.data?.parsed as Partial<WorkflowFrontMatter> | null)?.tracker ?? null;
 
   return (
     <>
-      <Header attempt={attempt} issue={issue} terminal={terminal} />
+      <Header run={run} issue={issue} terminal={terminal} />
       <LiveStream
-        attemptId={id}
-        attempt={attempt}
+        runId={id}
+        run={run}
         initialEvents={initialEvents ?? []}
-        attemptIsTerminal={terminal}
+        runIsTerminal={terminal}
         issueIdentifier={issue?.identifier ?? null}
         prUrls={issue?.pr_urls ?? []}
         tracker={tracker}
@@ -59,39 +59,39 @@ export default async function RunPage({ params }: { params: Promise<{ id: string
 }
 
 function Header({
-  attempt,
+  run,
   issue,
   terminal,
 }: {
-  attempt: AttemptWithIssue;
-  issue: AttemptWithIssue['issues'];
+  run: RunWithIssue;
+  issue: RunWithIssue['issues'];
   terminal: boolean;
 }) {
-  const status = attempt.status;
+  const status = run.status;
   return (
     <header className="mb-8">
       <div className="flex items-baseline gap-3 mb-2">
         <Link
-          href={`/issues/${attempt.issue_id}`}
+          href={`/issues/${run.issue_id}`}
           className="font-mono text-[12px] text-ink-2 link-hover tracking-wide"
         >
-          {issue?.identifier ?? attempt.issue_id}
+          {issue?.identifier ?? run.issue_id}
         </Link>
         <span className="text-ink-4">/</span>
         <span className="smallcaps text-[10px] text-ink-3">
           run{' '}
           <span className="font-mono normal-case tracking-normal text-ink-1">
-            #{attempt.attempt_number}
+            #{run.run_number}
           </span>
         </span>
         <span className="text-ink-4">/</span>
         <StatusBadge status={status} />
-        {attempt.error_class && (
+        {run.error_class && (
           <span
             className="font-mono text-[11px] text-danger"
-            title={attempt.error_message ?? undefined}
+            title={run.error_message ?? undefined}
           >
-            {attempt.error_class}
+            {run.error_class}
           </span>
         )}
       </div>
@@ -99,9 +99,9 @@ function Header({
         {issue?.title ?? '—'}
       </h1>
       <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 smallcaps text-[10px] text-ink-3">
-        <Stat label="started" value={formatRelative(attempt.started_at)} />
-        {attempt.ended_at && <Stat label="ended" value={formatRelative(attempt.ended_at)} />}
-        <Stat label="duration" value={formatDuration(attempt.started_at, attempt.ended_at)} />
+        <Stat label="started" value={formatRelative(run.started_at)} />
+        {run.ended_at && <Stat label="ended" value={formatRelative(run.ended_at)} />}
+        <Stat label="duration" value={formatDuration(run.started_at, run.ended_at)} />
         {terminal && <Stat label="state" value="terminal" valueClass="text-ink-2" />}
       </div>
     </header>

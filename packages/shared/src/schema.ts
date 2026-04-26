@@ -202,10 +202,10 @@ export const Issue = z
 export type Issue = z.infer<typeof Issue>;
 
 // =========================================================================
-// Run attempt + sessions + events (mirrors Supabase enums)
+// Run + live sessions + events (mirrors Supabase enums)
 // =========================================================================
 
-export const RunAttemptStatus = z.enum([
+export const RunStatus = z.enum([
   'pending',
   'running',
   'success',
@@ -213,7 +213,7 @@ export const RunAttemptStatus = z.enum([
   'timeout',
   'cancelled',
 ]);
-export type RunAttemptStatus = z.infer<typeof RunAttemptStatus>;
+export type RunStatus = z.infer<typeof RunStatus>;
 
 export const AgentEventKind = z.enum([
   'status',
@@ -274,7 +274,7 @@ export const RateLimitPayload = z.object({
 export const RetryEntry = z
   .object({
     issue_id: z.string(),
-    attempt_number: z.number().int().positive(),
+    run_number: z.number().int().positive(),
     due_at_ms: z.number().int().nonnegative(),
     error_class: z.string().nullable(),
     error_message: z.string().nullable(),
@@ -283,12 +283,12 @@ export const RetryEntry = z
 export type RetryEntry = z.infer<typeof RetryEntry>;
 
 // =========================================================================
-// Live session (orchestrator runtime view of an in-flight session)
+// Live session (orchestrator runtime view of an in-flight Claude SDK session)
 // =========================================================================
 
 export const LiveSession = z
   .object({
-    run_attempt_id: z.string().uuid(),
+    run_id: z.string().uuid(),
     session_id: z.string(),
     thread_id: z.string(),
     turn_id: z.string(),

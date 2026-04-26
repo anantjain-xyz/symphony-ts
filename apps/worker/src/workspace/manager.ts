@@ -96,11 +96,11 @@ export class WorkspaceManager {
   /**
    * Remove a workspace directory iff it exists but is missing the ready
    * sentinel — i.e. a partial after_create. Used by boot-time recovery so
-   * orphan run_attempts don't leave half-clones for the retry to inherit.
-   * Returns true when a directory was removed.
+   * orphan runs don't leave half-clones for the retry to inherit. Returns
+   * true when a directory was removed.
    *
    * The path is rejected if it doesn't resolve under this manager's root, so
-   * a corrupted run_attempts.workspace_path can never delete arbitrary files.
+   * a corrupted runs.workspace_path can never delete arbitrary files.
    */
   async removeIfStale(absPath: string): Promise<boolean> {
     const rootResolved = path.resolve(this.root);

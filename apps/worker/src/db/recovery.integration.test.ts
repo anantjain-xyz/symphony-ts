@@ -52,7 +52,7 @@ d('recover', () => {
     await rm(wsRoot, { recursive: true, force: true });
   });
 
-  it('marks orphan running attempts as failure and schedules retry', async () => {
+  it('marks orphan running runs as failure and schedules retry', async () => {
     const active = makeTestIssue({
       id: scope.newIssueId(),
       identifier: scope.newIdentifier(),
@@ -60,9 +60,9 @@ d('recover', () => {
     });
     await repo.upsertIssues([active]);
 
-    const reserved = await repo.tryReserveAttempt({
+    const reserved = await repo.tryReserveRun({
       issueId: active.id,
-      attemptNumber: 1,
+      runNumber: 1,
       workspacePath: '/tmp/orphan',
     });
     await repo.markRunning(reserved!.id);
@@ -78,15 +78,15 @@ d('recover', () => {
     });
 
     expect(out.orphansAdopted).toBe(1);
-    const { data: row } = await db.from('run_attempts').select('*').eq('id', reserved!.id).single();
+    const { data: row } = await db.from('runs').select('*').eq('id', reserved!.id).single();
     expect(row!.status).toBe('failure');
     expect(row!.error_class).toBe('process_crashed');
     const { data: q } = await db.from('retry_queue').select('*').eq('issue_id', active.id);
     expect(q!.length).toBe(1);
-    expect(q![0]!.attempt_number).toBe(2);
+    expect(q![0]!.run_number).toBe(2);
   });
 
-  it('removes workspaces of terminal-state issues with no active attempts', async () => {
+  it('removes workspaces of terminal-state issues with no active runs', async () => {
     const active = makeTestIssue({
       id: scope.newIssueId(),
       identifier: scope.newIdentifier(),
@@ -144,9 +144,9 @@ d('recover', () => {
     await mkdir(wsPath, { recursive: true });
     await writeFile(path.join(wsPath, 'half-clone'), 'partial');
 
-    const reserved = await repo.tryReserveAttempt({
+    const reserved = await repo.tryReserveRun({
       issueId: issue.id,
-      attemptNumber: 1,
+      runNumber: 1,
       workspacePath: wsPath,
     });
     await repo.markRunning(reserved!.id);
@@ -177,9 +177,9 @@ d('recover', () => {
     await writeFile(path.join(wsPath, 'state.txt'), 'preserved');
     await writeFile(path.join(wsPath, WORKSPACE_READY_SENTINEL), '');
 
-    const reserved = await repo.tryReserveAttempt({
+    const reserved = await repo.tryReserveRun({
       issueId: issue.id,
-      attemptNumber: 1,
+      runNumber: 1,
       workspacePath: wsPath,
     });
     await repo.markRunning(reserved!.id);
@@ -198,7 +198,7 @@ d('recover', () => {
     await expect(stat(path.join(wsPath, 'state.txt'))).resolves.toBeDefined();
   });
 
-  it('cleans placeholder live_sessions whose attempt is in a terminal state', async () => {
+  it('cleans placeholder live_sessions whose run is in a terminal state', async () => {
     const issue = makeTestIssue({
       id: scope.newIssueId(),
       identifier: scope.newIdentifier(),
@@ -206,14 +206,14 @@ d('recover', () => {
     });
     await repo.upsertIssues([issue]);
 
-    const reserved = await repo.tryReserveAttempt({
+    const reserved = await repo.tryReserveRun({
       issueId: issue.id,
-      attemptNumber: 1,
+      runNumber: 1,
       workspacePath: path.join(wsRoot, sanitizeKey(issue.identifier)),
     });
     await repo.markRunning(reserved!.id);
     await repo.upsertLiveSession({
-      run_attempt_id: reserved!.id,
+      run_id: reserved!.id,
       session_id: `pending-${reserved!.id}`,
       thread_id: '',
       turn_id: '',
@@ -224,8 +224,8 @@ d('recover', () => {
     // Move to terminal *without* deleting the live_session — simulates a
     // dispatch that crashed between upsertLiveSession and the cleanup at the
     // end of the run.
-    await repo.finishAttempt({
-      attemptId: reserved!.id,
+    await repo.finishRun({
+      runId: reserved!.id,
       status: 'failure',
       errorClass: 'dispatch_error',
       errorMessage: 'simulated crash',
@@ -244,11 +244,11 @@ d('recover', () => {
     const { data: rows } = await db
       .from('live_sessions')
       .select('*')
-      .eq('run_attempt_id', reserved!.id);
+      .eq('run_id', reserved!.id);
     expect(rows ?? []).toHaveLength(0);
   });
 
-  it('does not touch placeholder live_sessions whose attempt is still running', async () => {
+  it('does not touch placeholder live_sessions whose run is still running', async () => {
     const issue = makeTestIssue({
       id: scope.newIssueId(),
       identifier: scope.newIdentifier(),
@@ -257,15 +257,15 @@ d('recover', () => {
     await repo.upsertIssues([issue]);
 
     // The orphan-handling branch deletes its own live_session (regardless of
-    // session_id), so to isolate the placeholder sweep we keep this attempt in
+    // session_id), so to isolate the placeholder sweep we keep this run in
     // 'pending' — it isn't a recovery orphan, but it has the placeholder row.
-    const reserved = await repo.tryReserveAttempt({
+    const reserved = await repo.tryReserveRun({
       issueId: issue.id,
-      attemptNumber: 1,
+      runNumber: 1,
       workspacePath: path.join(wsRoot, sanitizeKey(issue.identifier)),
     });
     await repo.upsertLiveSession({
-      run_attempt_id: reserved!.id,
+      run_id: reserved!.id,
       session_id: `pending-${reserved!.id}`,
       thread_id: '',
       turn_id: '',
@@ -287,7 +287,7 @@ d('recover', () => {
     const { data: rows } = await db
       .from('live_sessions')
       .select('*')
-      .eq('run_attempt_id', reserved!.id);
+      .eq('run_id', reserved!.id);
     expect(rows ?? []).toHaveLength(1);
   });
 });

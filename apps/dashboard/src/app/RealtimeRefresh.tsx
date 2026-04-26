@@ -27,7 +27,7 @@ export function RealtimeRefresh() {
       .channel('fleet-dashboard')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'run_attempts' },
+        { event: '*', schema: 'public', table: 'runs' },
         scheduleRefresh,
       )
       .on(

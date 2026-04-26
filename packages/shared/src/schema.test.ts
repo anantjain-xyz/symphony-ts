@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   AgentEventKind,
   Issue,
-  RunAttemptStatus,
+  RunStatus,
   TokenCountPayload,
   WorkflowFrontMatter,
 } from './schema.js';
@@ -127,8 +127,8 @@ describe('Issue', () => {
 });
 
 describe('Enums match Postgres', () => {
-  it('RunAttemptStatus has the seven expected values', () => {
-    expect(RunAttemptStatus.options).toEqual([
+  it('RunStatus has the seven expected values', () => {
+    expect(RunStatus.options).toEqual([
       'pending',
       'running',
       'success',

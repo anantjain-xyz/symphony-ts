@@ -3,20 +3,20 @@ import {
   type HookName,
   type Issue,
   type ParsedWorkflow,
-  type RunAttemptStatus,
+  type RunStatus,
   type SymphonyClient,
   type Tables,
   type TablesInsert,
 } from '@symphony/shared';
 
 export class AlreadyRunningError extends Error {
-  constructor(public readonly attemptId: string) {
-    super(`another attempt for the same issue is already running (lost race for ${attemptId})`);
+  constructor(public readonly runId: string) {
+    super(`another run for the same issue is already running (lost race for ${runId})`);
     this.name = 'AlreadyRunningError';
   }
 }
 
-export type RunAttemptRow = Tables<'run_attempts'>;
+export type RunRow = Tables<'runs'>;
 export type IssueRow = Tables<'issues'>;
 export type WorkflowRow = Tables<'workflows'>;
 export type LiveSessionRow = Tables<'live_sessions'>;
@@ -87,21 +87,21 @@ export class Repo {
     if (error) throw error;
   }
 
-  // ---- run_attempts ----
+  // ---- runs ----
   /**
-   * Insert a `pending` attempt for an issue. Returns the inserted row, or
-   * `null` if another tick already inserted one for `(issue_id, attempt_number)`.
+   * Insert a `pending` run for an issue. Returns the inserted row, or
+   * `null` if another tick already inserted one for `(issue_id, run_number)`.
    */
-  async tryReserveAttempt(input: {
+  async tryReserveRun(input: {
     issueId: string;
-    attemptNumber: number;
+    runNumber: number;
     workspacePath: string;
-  }): Promise<RunAttemptRow | null> {
+  }): Promise<RunRow | null> {
     const { data, error } = await this.db
-      .from('run_attempts')
+      .from('runs')
       .insert({
         issue_id: input.issueId,
-        attempt_number: input.attemptNumber,
+        run_number: input.runNumber,
         workspace_path: input.workspacePath,
         status: 'pending',
       })
@@ -115,43 +115,43 @@ export class Repo {
   }
 
   /**
-   * Transition an attempt from `pending` to `running`. Throws
-   * {@link AlreadyRunningError} if another attempt for the same issue is
-   * already `running` (enforced by the `run_attempts_one_running_per_issue`
+   * Transition a run from `pending` to `running`. Throws
+   * {@link AlreadyRunningError} if another run for the same issue is
+   * already `running` (enforced by the `runs_one_running_per_issue`
    * partial unique index). Callers should treat that as "lost the race; this
-   * attempt should be cancelled" rather than a fatal error.
+   * run should be cancelled" rather than a fatal error.
    */
-  async markRunning(attemptId: string): Promise<void> {
+  async markRunning(runId: string): Promise<void> {
     const { error } = await this.db
-      .from('run_attempts')
+      .from('runs')
       .update({ status: 'running', started_at: new Date().toISOString() })
-      .eq('id', attemptId);
+      .eq('id', runId);
     if (error) {
-      if (error.code === '23505') throw new AlreadyRunningError(attemptId);
+      if (error.code === '23505') throw new AlreadyRunningError(runId);
       throw error;
     }
   }
 
-  async finishAttempt(input: {
-    attemptId: string;
-    status: Exclude<RunAttemptStatus, 'pending' | 'running'>;
+  async finishRun(input: {
+    runId: string;
+    status: Exclude<RunStatus, 'pending' | 'running'>;
     errorClass?: string;
     errorMessage?: string;
   }): Promise<void> {
     const { error } = await this.db
-      .from('run_attempts')
+      .from('runs')
       .update({
         status: input.status,
         ended_at: new Date().toISOString(),
         error_class: input.errorClass ?? null,
         error_message: input.errorMessage ?? null,
       })
-      .eq('id', input.attemptId);
+      .eq('id', input.runId);
     if (error) throw error;
   }
 
-  async listRunning(opts?: { issueIds?: string[] }): Promise<RunAttemptRow[]> {
-    let q = this.db.from('run_attempts').select('*').eq('status', 'running');
+  async listRunning(opts?: { issueIds?: string[] }): Promise<RunRow[]> {
+    let q = this.db.from('runs').select('*').eq('status', 'running');
     if (opts?.issueIds) q = q.in('issue_id', opts.issueIds);
     const { data, error } = await q;
     if (error) throw error;
@@ -160,7 +160,7 @@ export class Repo {
 
   async countRunning(opts?: { issueIds?: string[] }): Promise<number> {
     let q = this.db
-      .from('run_attempts')
+      .from('runs')
       .select('id', { count: 'exact', head: true })
       .eq('status', 'running');
     if (opts?.issueIds) q = q.in('issue_id', opts.issueIds);
@@ -169,21 +169,21 @@ export class Repo {
     return count ?? 0;
   }
 
-  async lastAttemptNumber(issueId: string): Promise<number> {
+  async lastRunNumber(issueId: string): Promise<number> {
     const { data, error } = await this.db
-      .from('run_attempts')
-      .select('attempt_number')
+      .from('runs')
+      .select('run_number')
       .eq('issue_id', issueId)
-      .order('attempt_number', { ascending: false })
+      .order('run_number', { ascending: false })
       .limit(1)
       .maybeSingle();
     if (error) throw error;
-    return data?.attempt_number ?? 0;
+    return data?.run_number ?? 0;
   }
 
-  async hasActiveAttempt(issueId: string): Promise<boolean> {
+  async hasActiveRun(issueId: string): Promise<boolean> {
     const { count, error } = await this.db
-      .from('run_attempts')
+      .from('runs')
       .select('id', { count: 'exact', head: true })
       .eq('issue_id', issueId)
       .in('status', ['pending', 'running']);
@@ -191,11 +191,8 @@ export class Repo {
     return (count ?? 0) > 0;
   }
 
-  async setWorkerPid(attemptId: string, pid: number): Promise<void> {
-    const { error } = await this.db
-      .from('run_attempts')
-      .update({ worker_pid: pid })
-      .eq('id', attemptId);
+  async setWorkerPid(runId: string, pid: number): Promise<void> {
+    const { error } = await this.db.from('runs').update({ worker_pid: pid }).eq('id', runId);
     if (error) throw error;
   }
 
@@ -263,71 +260,68 @@ export class Repo {
   }
 
   async updateTokens(
-    runAttemptId: string,
+    runId: string,
     counts: { input_tokens: number; output_tokens: number; total_tokens: number },
   ): Promise<void> {
     const { error } = await this.db
       .from('live_sessions')
       .update({ ...counts, last_event_at: new Date().toISOString() })
-      .eq('run_attempt_id', runAttemptId);
+      .eq('run_id', runId);
     if (error) throw error;
   }
 
-  async deleteLiveSession(runAttemptId: string): Promise<void> {
-    const { error } = await this.db
-      .from('live_sessions')
-      .delete()
-      .eq('run_attempt_id', runAttemptId);
+  async deleteLiveSession(runId: string): Promise<void> {
+    const { error } = await this.db.from('live_sessions').delete().eq('run_id', runId);
     if (error) throw error;
   }
 
   /**
    * Sweep `live_sessions` rows whose `session_id` still has the placeholder
-   * shape (`pending-<attempt-id>`) and whose `run_attempt` has reached a
-   * terminal state. Codex inserts these placeholder rows on its first token
-   * event before the real `<thread_id>-<turn_id>` is known; if the dispatch
-   * crashes between that insert and the cleanup at the end of the run,
-   * the row outlives its attempt. Used by boot-time recovery.
+   * shape (`pending-<run-id>`) and whose `run` has reached a terminal state.
+   * Codex inserts these placeholder rows on its first token event before the
+   * real `<thread_id>-<turn_id>` is known; if the dispatch crashes between
+   * that insert and the cleanup at the end of the run, the row outlives its
+   * run. Used by boot-time recovery.
    *
    * `issueIds` scopes the sweep so integration tests against a shared
    * Supabase don't touch live worker data. Returns the number of rows deleted.
    */
   async deleteOrphanedPendingSessions(opts?: { issueIds?: string[] }): Promise<number> {
-    let attemptQ = this.db
-      .from('run_attempts')
+    let runQ = this.db
+      .from('runs')
       .select('id')
       .in('status', ['success', 'failure', 'timeout', 'cancelled']);
-    if (opts?.issueIds) attemptQ = attemptQ.in('issue_id', opts.issueIds);
-    const { data: terminalAttempts, error: e1 } = await attemptQ;
+    if (opts?.issueIds) runQ = runQ.in('issue_id', opts.issueIds);
+    const { data: terminalRuns, error: e1 } = await runQ;
     if (e1) throw e1;
-    if (!terminalAttempts || terminalAttempts.length === 0) return 0;
+    if (!terminalRuns || terminalRuns.length === 0) return 0;
 
-    const ids = terminalAttempts.map((r) => r.id);
+    const ids = terminalRuns.map((r) => r.id);
     const { data: deleted, error: e2 } = await this.db
       .from('live_sessions')
       .delete()
-      .in('run_attempt_id', ids)
+      .in('run_id', ids)
       .like('session_id', 'pending-%')
-      .select('run_attempt_id');
+      .select('run_id');
     if (e2) throw e2;
     return deleted?.length ?? 0;
   }
 
   // ---- agent_events ----
-  async appendEvent(runAttemptId: string, kind: AgentEventKind, payload: unknown): Promise<void> {
+  async appendEvent(runId: string, kind: AgentEventKind, payload: unknown): Promise<void> {
     const { error } = await this.db.from('agent_events').insert({
-      run_attempt_id: runAttemptId,
+      run_id: runId,
       kind,
       payload: payload as TablesInsert<'agent_events'>['payload'],
     });
     if (error) throw error;
   }
 
-  async recentEvents(runAttemptId: string, limit = 50): Promise<AgentEventRow[]> {
+  async recentEvents(runId: string, limit = 50): Promise<AgentEventRow[]> {
     const { data, error } = await this.db
       .from('agent_events')
       .select('*')
-      .eq('run_attempt_id', runAttemptId)
+      .eq('run_id', runId)
       .order('id', { ascending: false })
       .limit(limit);
     if (error) throw error;
@@ -335,26 +329,26 @@ export class Repo {
   }
 
   /**
-   * Most recent attempt for `issueId` whose `attempt_number` is strictly less
-   * than `beforeAttemptId`'s. Returns `null` if `beforeAttemptId` is the first
-   * attempt (or doesn't exist). Used by the retry-context trailer so it reads
-   * the *prior* attempt's `error_class`/`error_message` rather than the
-   * not-yet-failed current attempt's null fields.
+   * Most recent run for `issueId` whose `run_number` is strictly less than
+   * `beforeRunId`'s. Returns `null` if `beforeRunId` is the first run (or
+   * doesn't exist). Used by the retry-context trailer so it reads the *prior*
+   * run's `error_class`/`error_message` rather than the not-yet-failed current
+   * run's null fields.
    */
-  async priorAttempt(issueId: string, beforeAttemptId: string): Promise<RunAttemptRow | null> {
+  async priorRun(issueId: string, beforeRunId: string): Promise<RunRow | null> {
     const { data: cur, error: curErr } = await this.db
-      .from('run_attempts')
-      .select('attempt_number')
-      .eq('id', beforeAttemptId)
+      .from('runs')
+      .select('run_number')
+      .eq('id', beforeRunId)
       .maybeSingle();
     if (curErr) throw curErr;
     if (!cur) return null;
     const { data, error } = await this.db
-      .from('run_attempts')
+      .from('runs')
       .select('*')
       .eq('issue_id', issueId)
-      .lt('attempt_number', cur.attempt_number)
-      .order('attempt_number', { ascending: false })
+      .lt('run_number', cur.run_number)
+      .order('run_number', { ascending: false })
       .limit(1)
       .maybeSingle();
     if (error) throw error;
@@ -362,42 +356,40 @@ export class Repo {
   }
 
   /**
-   * Recent agent events from attempts *prior* to `beforeAttemptId` for the
-   * same issue, in chronological order, capped at `limit`. Used by the
-   * retry-context trailer — calling `recentEvents(beforeAttemptId, ...)` would
-   * return zero rows because the new attempt hasn't emitted any events yet.
+   * Recent agent events from runs *prior* to `beforeRunId` for the same
+   * issue, in chronological order, capped at `limit`. Used by the
+   * retry-context trailer — calling `recentEvents(beforeRunId, ...)` would
+   * return zero rows because the new run hasn't emitted any events yet.
    */
   async recentEventsForIssue(
     issueId: string,
-    beforeAttemptId: string,
+    beforeRunId: string,
     limit = 10,
   ): Promise<AgentEventRow[]> {
     const { data: cur, error: curErr } = await this.db
-      .from('run_attempts')
-      .select('attempt_number')
-      .eq('id', beforeAttemptId)
+      .from('runs')
+      .select('run_number')
+      .eq('id', beforeRunId)
       .maybeSingle();
     if (curErr) throw curErr;
     if (!cur) return [];
     const { data, error } = await this.db
       .from('agent_events')
-      .select(
-        'id, run_attempt_id, kind, payload, created_at, run_attempts!inner(attempt_number, issue_id)',
-      )
-      .eq('run_attempts.issue_id', issueId)
-      .lt('run_attempts.attempt_number', cur.attempt_number)
+      .select('id, run_id, kind, payload, created_at, runs!inner(run_number, issue_id)')
+      .eq('runs.issue_id', issueId)
+      .lt('runs.run_number', cur.run_number)
       .order('id', { ascending: false })
       .limit(limit);
     if (error) throw error;
     return (data ?? [])
-      .map(({ run_attempts: _ignored, ...event }) => event as AgentEventRow)
+      .map(({ runs: _ignored, ...event }) => event as AgentEventRow)
       .reverse();
   }
 
   // ---- retry_queue ----
   async scheduleRetry(input: {
     issueId: string;
-    attemptNumber: number;
+    runNumber: number;
     dueAt: Date;
     errorClass: string | null;
     errorMessage: string | null;
@@ -405,7 +397,7 @@ export class Repo {
     const { error } = await this.db.from('retry_queue').upsert(
       {
         issue_id: input.issueId,
-        attempt_number: input.attemptNumber,
+        run_number: input.runNumber,
         due_at: input.dueAt.toISOString(),
         error_class: input.errorClass,
         error_message: input.errorMessage,
@@ -454,14 +446,14 @@ export class Repo {
 
   // ---- hook_runs ----
   async recordHook(input: {
-    runAttemptId: string | null;
+    runId: string | null;
     hook: HookName;
     exitCode: number;
     durationMs: number;
     stderrTail: string | null;
   }): Promise<void> {
     const { error } = await this.db.from('hook_runs').insert({
-      run_attempt_id: input.runAttemptId,
+      run_id: input.runId,
       hook: input.hook,
       exit_code: input.exitCode,
       duration_ms: input.durationMs,

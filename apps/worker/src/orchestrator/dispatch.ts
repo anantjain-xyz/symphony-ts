@@ -4,7 +4,7 @@ import type { Logger } from 'pino';
 import { mapTurnEvent } from '../agent/events.js';
 import { AgentRunner, TurnTimeoutError } from '../agent/runner.js';
 import type { ResolvedConfig } from '../config/resolve.js';
-import { AlreadyRunningError, type Repo, type RunAttemptRow } from '../db/repo.js';
+import { AlreadyRunningError, type Repo, type RunRow } from '../db/repo.js';
 import { appendRetryContext, buildRetryContext, renderPrompt } from '../prompt/render.js';
 import { type HookResult, runHook } from '../workspace/hooks.js';
 import { WorkspaceManager } from '../workspace/manager.js';
@@ -12,7 +12,7 @@ import { WorkspaceManager } from '../workspace/manager.js';
 export interface DispatchHandle {
   /** Issue this dispatch is for (so the loop can match it during reconciliation). */
   issueId: string;
-  attemptId: string;
+  runId: string;
   /**
    * Cooperative cancellation. Sends turn/interrupt to codex, waits a bounded
    * grace for clean shutdown, then force-kills the process group. Resolves
@@ -39,25 +39,21 @@ export interface DispatchDeps {
 }
 
 /**
- * Run one attempt end-to-end:
+ * Execute a single Run end-to-end:
  *   1. ensure workspace
  *   2. after_create hook (fatal if first creation)
  *   3. mark running
  *   4. before_run hook
- *   5. build prompt (with retry context if attempt > 1)
+ *   5. build prompt (with retry context if run > 1)
  *   6. spawn AgentRunner against the selected backend (codex or claude);
  *      stream events to agent_events + live_sessions
  *   7. after_run hook (warning only)
- *   8. finalize attempt status; on failure, schedule retry
+ *   8. finalize run status; on failure, schedule retry
  *
  * Returns a handle so the orchestrator can cancel mid-flight if the underlying
  * issue's state changes.
  */
-export function dispatchAttempt(
-  deps: DispatchDeps,
-  issue: Issue,
-  attempt: RunAttemptRow,
-): DispatchHandle {
+export function dispatchRun(deps: DispatchDeps, issue: Issue, run: RunRow): DispatchHandle {
   const { repo, workspaces, config, log } = deps;
   let runner: AgentRunner | null = null;
   let cancelled = false;
@@ -67,7 +63,7 @@ export function dispatchAttempt(
     try {
       const ws = await workspaces.createOrReuse(issue.identifier);
       log.info(
-        { attemptId: attempt.id, ws: ws.path, createdNow: ws.createdNow, needsInit: ws.needsInit },
+        { runId: run.id, ws: ws.path, createdNow: ws.createdNow, needsInit: ws.needsInit },
         'workspace ready',
       );
 
@@ -77,16 +73,16 @@ export function dispatchAttempt(
           const r = await runHook(
             'after_create',
             hookScript,
-            { issue, workspacePath: ws.path, attemptNumber: attempt.attempt_number },
+            { issue, workspacePath: ws.path, runNumber: run.run_number },
             { timeoutMs: config.hookTimeoutMs() },
           );
-          await recordHook(deps, attempt.id, 'after_create', r);
+          await recordHook(deps, run.id, 'after_create', r);
           if (r.exitCode !== 0) {
             await fail(
               deps,
-              attempt.id,
+              run.id,
               issue,
-              attempt.attempt_number,
+              run.run_number,
               'after_create_failed',
               r.stderrTail ?? 'after_create non-zero',
             );
@@ -97,18 +93,18 @@ export function dispatchAttempt(
       }
 
       try {
-        await repo.markRunning(attempt.id);
+        await repo.markRunning(run.id);
       } catch (err) {
         if (err instanceof AlreadyRunningError) {
           log.warn(
-            { attemptId: attempt.id, issueId: issue.id },
-            'another attempt for this issue is already running; cancelling this one',
+            { runId: run.id, issueId: issue.id },
+            'another run for this issue is already running; cancelling this one',
           );
-          await repo.finishAttempt({
-            attemptId: attempt.id,
+          await repo.finishRun({
+            runId: run.id,
             status: 'cancelled',
             errorClass: 'reconciled',
-            errorMessage: 'lost race to another running attempt for the same issue',
+            errorMessage: 'lost race to a concurrent run for the same issue',
           });
           return;
         }
@@ -120,20 +116,20 @@ export function dispatchAttempt(
         const r = await runHook(
           'before_run',
           beforeRun,
-          { issue, workspacePath: ws.path, attemptNumber: attempt.attempt_number },
+          { issue, workspacePath: ws.path, runNumber: run.run_number },
           { timeoutMs: config.hookTimeoutMs() },
         );
-        await recordHook(deps, attempt.id, 'before_run', r);
+        await recordHook(deps, run.id, 'before_run', r);
         if (r.exitCode !== 0) {
           log.warn(
-            { attemptId: attempt.id, stderr: r.stderrTail },
+            { runId: run.id, stderr: r.stderrTail },
             'before_run hook failed (non-fatal)',
           );
         }
       }
 
       let prompt = renderPrompt(config.promptTemplate(), issue);
-      const retryCtx = await buildRetryContext(repo, issue.id, attempt);
+      const retryCtx = await buildRetryContext(repo, issue.id, run);
       if (retryCtx) prompt = appendRetryContext(prompt, retryCtx);
 
       const backend = config.agentBackend();
@@ -152,11 +148,11 @@ export function dispatchAttempt(
         turnTimeoutMs: config.turnTimeoutMs(),
         sessionId: preSessionId,
         adapterEnv: backend === 'claude' ? buildClaudeEnv(config) : undefined,
-        log: (msg, ctx) => log.debug({ ...ctx, attemptId: attempt.id }, msg),
-        onSpawn: (pid) => repo.setWorkerPid(attempt.id, pid),
+        log: (msg, ctx) => log.debug({ ...ctx, runId: run.id }, msg),
+        onSpawn: (pid) => repo.setWorkerPid(run.id, pid),
         onEvent: async (ev) => {
           const mapped = mapTurnEvent(ev);
-          await repo.appendEvent(attempt.id, mapped.kind, mapped.payload);
+          await repo.appendEvent(run.id, mapped.kind, mapped.payload);
           if (mapped.tokens) {
             // Codex doesn't know thread/turn ids until turn/start returns, so
             // it inserts a placeholder row on first token event. Claude
@@ -164,20 +160,20 @@ export function dispatchAttempt(
             // the counters.
             if (!preSessionId) {
               await repo.upsertLiveSession({
-                run_attempt_id: attempt.id,
-                session_id: `pending-${attempt.id}`,
+                run_id: run.id,
+                session_id: `pending-${run.id}`,
                 thread_id: '',
                 turn_id: '',
                 ...mapped.tokens,
               });
             }
-            await repo.updateTokens(attempt.id, mapped.tokens);
+            await repo.updateTokens(run.id, mapped.tokens);
           }
           if (mapped.rateLimit) {
             await repo.upsertRateLimit(mapped.rateLimit);
           }
           if (mapped.humanized) {
-            await repo.appendEvent(attempt.id, 'humanized', { summary: mapped.humanized });
+            await repo.appendEvent(run.id, 'humanized', { summary: mapped.humanized });
           }
         },
       });
@@ -188,7 +184,7 @@ export function dispatchAttempt(
       // pinned (we generated it above) — well before run() resolves.
       if (preSessionId) {
         await repo.upsertLiveSession({
-          run_attempt_id: attempt.id,
+          run_id: run.id,
           session_id: `${preSessionId}-${preSessionId}`,
           thread_id: preSessionId,
           turn_id: preSessionId,
@@ -201,7 +197,7 @@ export function dispatchAttempt(
       const result = await runner.run(prompt);
 
       await repo.upsertLiveSession({
-        run_attempt_id: attempt.id,
+        run_id: run.id,
         session_id: `${result.threadId}-${result.turnId}`,
         thread_id: result.threadId,
         turn_id: result.turnId,
@@ -215,48 +211,48 @@ export function dispatchAttempt(
         const r = await runHook(
           'after_run',
           afterRun,
-          { issue, workspacePath: ws.path, attemptNumber: attempt.attempt_number },
+          { issue, workspacePath: ws.path, runNumber: run.run_number },
           { timeoutMs: config.hookTimeoutMs() },
         );
-        await recordHook(deps, attempt.id, 'after_run', r);
+        await recordHook(deps, run.id, 'after_run', r);
         if (r.exitCode !== 0) {
           log.warn(
-            { attemptId: attempt.id, stderr: r.stderrTail },
+            { runId: run.id, stderr: r.stderrTail },
             'after_run hook failed (non-fatal)',
           );
         }
       }
 
       if (cancelled) {
-        await repo.finishAttempt({
-          attemptId: attempt.id,
+        await repo.finishRun({
+          runId: run.id,
           status: 'cancelled',
           errorClass: 'reconciled',
           errorMessage: cancelReason ?? 'cancelled',
         });
-        // A prior attempt may have scheduled a retry that cancellation just
+        // A prior run may have scheduled a retry that cancellation just
         // superseded — the issue has moved on (state change), so its next
         // action comes from the tracker, not the retry queue.
         await repo.clearRetry(issue.id);
       } else if (result.outcome === 'success') {
-        await repo.finishAttempt({ attemptId: attempt.id, status: 'success' });
+        await repo.finishRun({ runId: run.id, status: 'success' });
         await repo.clearRetry(issue.id);
       } else {
         await fail(
           deps,
-          attempt.id,
+          run.id,
           issue,
-          attempt.attempt_number,
+          run.run_number,
           result.errorClass ?? 'unknown',
           result.errorMessage ?? 'agent reported failure',
         );
       }
-      await repo.deleteLiveSession(attempt.id);
+      await repo.deleteLiveSession(run.id);
     } catch (err) {
       const isTimeout = err instanceof TurnTimeoutError;
       const formatted = formatError(err);
       log.error(
-        { attemptId: attempt.id, err: formatted },
+        { runId: run.id, err: formatted },
         isTimeout ? 'turn timed out' : 'dispatch failed',
       );
       try {
@@ -264,24 +260,24 @@ export function dispatchAttempt(
       } catch {
         /* ignore */
       }
-      await repo.deleteLiveSession(attempt.id).catch(() => {});
+      await repo.deleteLiveSession(run.id).catch(() => {});
       if (isTimeout) {
-        await repo.finishAttempt({
-          attemptId: attempt.id,
+        await repo.finishRun({
+          runId: run.id,
           status: 'timeout',
           errorClass: 'turn_timeout',
           errorMessage: formatted,
         });
-        await scheduleRetry(deps, issue.id, attempt.attempt_number, 'turn_timeout', formatted);
+        await scheduleRetry(deps, issue.id, run.run_number, 'turn_timeout', formatted);
       } else {
-        await fail(deps, attempt.id, issue, attempt.attempt_number, 'dispatch_error', formatted);
+        await fail(deps, run.id, issue, run.run_number, 'dispatch_error', formatted);
       }
     }
   })();
 
   return {
     issueId: issue.id,
-    attemptId: attempt.id,
+    runId: run.id,
     async cancel(reason) {
       cancelled = true;
       cancelReason = reason;
@@ -305,7 +301,7 @@ export function dispatchAttempt(
         const winner = await Promise.race([doneSettled, timeout]);
         if (winner === 'timeout') {
           log.warn(
-            { attemptId: attempt.id, reason },
+            { runId: run.id, reason },
             'cancel: interrupt grace expired; force-killing runner',
           );
           await r.kill();
@@ -323,12 +319,12 @@ export function dispatchAttempt(
 
 async function recordHook(
   deps: DispatchDeps,
-  attemptId: string,
+  runId: string,
   hook: 'after_create' | 'before_run' | 'after_run' | 'before_remove',
   r: HookResult,
 ): Promise<void> {
   await deps.repo.recordHook({
-    runAttemptId: attemptId,
+    runId,
     hook,
     exitCode: r.exitCode,
     durationMs: r.durationMs,
@@ -338,33 +334,33 @@ async function recordHook(
 
 async function fail(
   deps: DispatchDeps,
-  attemptId: string,
+  runId: string,
   issue: Issue,
-  attemptNumber: number,
+  runNumber: number,
   errorClass: string,
   errorMessage: string,
 ): Promise<void> {
-  await deps.repo.finishAttempt({
-    attemptId,
+  await deps.repo.finishRun({
+    runId,
     status: 'failure',
     errorClass,
     errorMessage,
   });
-  await scheduleRetry(deps, issue.id, attemptNumber, errorClass, errorMessage);
+  await scheduleRetry(deps, issue.id, runNumber, errorClass, errorMessage);
 }
 
 async function scheduleRetry(
   deps: DispatchDeps,
   issueId: string,
-  attemptNumber: number,
+  runNumber: number,
   errorClass: string,
   errorMessage: string,
 ): Promise<void> {
   const { backoffMs } = await import('./backoff.js');
-  const ms = backoffMs(attemptNumber, deps.config.maxRetryBackoffMs());
+  const ms = backoffMs(runNumber, deps.config.maxRetryBackoffMs());
   await deps.repo.scheduleRetry({
     issueId,
-    attemptNumber: attemptNumber + 1,
+    runNumber: runNumber + 1,
     dueAt: new Date(Date.now() + ms),
     errorClass,
     errorMessage,
@@ -394,7 +390,7 @@ function buildClaudeEnv(config: ResolvedConfig): Record<string, string> {
 
 // Prior implementation fell through to `String(err)` for non-Error throws,
 // which renders plain objects as the useless literal "[object Object]" in
-// run_attempts.error_message. Handle the common non-Error shapes explicitly.
+// runs.error_message. Handle the common non-Error shapes explicitly.
 function formatError(err: unknown): string {
   if (err instanceof Error) return err.message;
   if (typeof err === 'string') return err;

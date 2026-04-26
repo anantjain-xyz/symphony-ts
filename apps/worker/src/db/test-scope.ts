@@ -4,7 +4,7 @@ import type { SymphonyClient } from '@symphony/shared';
 /**
  * Per-test id tracker for integration tests. Every row a test creates is
  * allocated through the scope, and `cleanup()` deletes exactly those rows —
- * `issues` CASCADE handles `run_attempts`, `retry_queue`, and their children.
+ * `issues` CASCADE handles `runs`, `retry_queue`, and their children.
  *
  * Tests MUST NOT issue unscoped `.delete().neq(...)` statements — running
  * against a shared Supabase instance, those wipe live worker data.

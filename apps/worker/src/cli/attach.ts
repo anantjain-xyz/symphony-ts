@@ -1,10 +1,10 @@
 /**
  * `pnpm --filter @symphony/worker attach <issue-identifier>`
  *
- * Look up the Claude session id tied to the most recent attempt on <issue>,
- * then `claude --resume <session-id>` in the issue's workspace with stdio
- * inherited. Use when an agent gets stuck and an operator wants to drive the
- * same session from their own terminal.
+ * Look up the Claude session id tied to the most recent run on <issue>, then
+ * `claude --resume <session-id>` in the issue's workspace with stdio inherited.
+ * Use when an agent gets stuck and an operator wants to drive the same session
+ * from their own terminal.
  */
 
 import { readdir, readFile, stat } from 'node:fs/promises';
@@ -58,7 +58,7 @@ async function main(): Promise<number> {
 
   if (!sessionId) {
     process.stderr.write(
-      `no Claude session found for ${identifier}. Has the worker started an attempt yet?\n`,
+      `no Claude session found for ${identifier}. Has the worker started a run yet?\n`,
     );
     return 1;
   }
@@ -87,20 +87,20 @@ async function lookupSessionIdFromDb(identifier: string): Promise<string | null>
   if (issueErr) throw issueErr;
   if (!issue) return null;
 
-  const { data: attempt, error: attErr } = await db
-    .from('run_attempts')
+  const { data: run, error: runErr } = await db
+    .from('runs')
     .select('id, status')
     .eq('issue_id', issue.id)
-    .order('attempt_number', { ascending: false })
+    .order('run_number', { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (attErr) throw attErr;
-  if (!attempt) return null;
+  if (runErr) throw runErr;
+  if (!run) return null;
 
   const { data: session, error: sessErr } = await db
     .from('live_sessions')
     .select('thread_id')
-    .eq('run_attempt_id', attempt.id)
+    .eq('run_id', run.id)
     .maybeSingle();
   if (sessErr) throw sessErr;
   if (session?.thread_id) return session.thread_id;
@@ -109,7 +109,7 @@ async function lookupSessionIdFromDb(identifier: string): Promise<string | null>
 }
 
 /**
- * Fallback when `live_sessions` has been cleared on attempt completion. Claude
+ * Fallback when `live_sessions` has been cleared on run completion. Claude
  * Code persists each session as `~/.claude/projects/<hashed-cwd>/<uuid>.jsonl`
  * (the hash maps cwd -> a stable directory). Pick the newest `.jsonl` under
  * any project dir that references our workspace path.

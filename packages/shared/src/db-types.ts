@@ -7,6 +7,31 @@ export type Json =
   | Json[]
 
 export type Database = {
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       agent_events: {
@@ -15,28 +40,28 @@ export type Database = {
           id: number
           kind: Database["public"]["Enums"]["agent_event_kind"]
           payload: Json
-          run_attempt_id: string
+          run_id: string
         }
         Insert: {
           created_at?: string
           id?: number
           kind: Database["public"]["Enums"]["agent_event_kind"]
           payload: Json
-          run_attempt_id: string
+          run_id: string
         }
         Update: {
           created_at?: string
           id?: number
           kind?: Database["public"]["Enums"]["agent_event_kind"]
           payload?: Json
-          run_attempt_id?: string
+          run_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "agent_events_run_attempt_id_fkey"
-            columns: ["run_attempt_id"]
+            foreignKeyName: "agent_events_run_id_fkey"
+            columns: ["run_id"]
             isOneToOne: false
-            referencedRelation: "run_attempts"
+            referencedRelation: "runs"
             referencedColumns: ["id"]
           },
         ]
@@ -48,7 +73,7 @@ export type Database = {
           exit_code: number
           hook: Database["public"]["Enums"]["hook_name"]
           id: number
-          run_attempt_id: string | null
+          run_id: string | null
           stderr_tail: string | null
         }
         Insert: {
@@ -57,7 +82,7 @@ export type Database = {
           exit_code: number
           hook: Database["public"]["Enums"]["hook_name"]
           id?: number
-          run_attempt_id?: string | null
+          run_id?: string | null
           stderr_tail?: string | null
         }
         Update: {
@@ -66,15 +91,15 @@ export type Database = {
           exit_code?: number
           hook?: Database["public"]["Enums"]["hook_name"]
           id?: number
-          run_attempt_id?: string | null
+          run_id?: string | null
           stderr_tail?: string | null
         }
         Relationships: [
           {
-            foreignKeyName: "hook_runs_run_attempt_id_fkey"
-            columns: ["run_attempt_id"]
+            foreignKeyName: "hook_runs_run_id_fkey"
+            columns: ["run_id"]
             isOneToOne: false
-            referencedRelation: "run_attempts"
+            referencedRelation: "runs"
             referencedColumns: ["id"]
           },
         ]
@@ -129,7 +154,7 @@ export type Database = {
           input_tokens: number
           last_event_at: string
           output_tokens: number
-          run_attempt_id: string
+          run_id: string
           session_id: string
           started_at: string
           thread_id: string
@@ -140,7 +165,7 @@ export type Database = {
           input_tokens?: number
           last_event_at?: string
           output_tokens?: number
-          run_attempt_id: string
+          run_id: string
           session_id: string
           started_at?: string
           thread_id: string
@@ -151,7 +176,7 @@ export type Database = {
           input_tokens?: number
           last_event_at?: string
           output_tokens?: number
-          run_attempt_id?: string
+          run_id?: string
           session_id?: string
           started_at?: string
           thread_id?: string
@@ -160,45 +185,10 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "live_sessions_run_attempt_id_fkey"
-            columns: ["run_attempt_id"]
+            foreignKeyName: "live_sessions_run_id_fkey"
+            columns: ["run_id"]
             isOneToOne: true
-            referencedRelation: "run_attempts"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      retry_queue: {
-        Row: {
-          attempt_number: number
-          created_at: string
-          due_at: string
-          error_class: string | null
-          error_message: string | null
-          issue_id: string
-        }
-        Insert: {
-          attempt_number: number
-          created_at?: string
-          due_at: string
-          error_class?: string | null
-          error_message?: string | null
-          issue_id: string
-        }
-        Update: {
-          attempt_number?: number
-          created_at?: string
-          due_at?: string
-          error_class?: string | null
-          error_message?: string | null
-          issue_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "retry_queue_issue_id_fkey"
-            columns: ["issue_id"]
-            isOneToOne: true
-            referencedRelation: "issues"
+            referencedRelation: "runs"
             referencedColumns: ["id"]
           },
         ]
@@ -224,49 +214,84 @@ export type Database = {
         }
         Relationships: []
       }
-      run_attempts: {
+      retry_queue: {
         Row: {
-          attempt_number: number
+          created_at: string
+          due_at: string
+          error_class: string | null
+          error_message: string | null
+          issue_id: string
+          run_number: number
+        }
+        Insert: {
+          created_at?: string
+          due_at: string
+          error_class?: string | null
+          error_message?: string | null
+          issue_id: string
+          run_number: number
+        }
+        Update: {
+          created_at?: string
+          due_at?: string
+          error_class?: string | null
+          error_message?: string | null
+          issue_id?: string
+          run_number?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "retry_queue_issue_id_fkey"
+            columns: ["issue_id"]
+            isOneToOne: true
+            referencedRelation: "issues"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      runs: {
+        Row: {
           created_at: string
           ended_at: string | null
           error_class: string | null
           error_message: string | null
           id: string
           issue_id: string
+          run_number: number
           started_at: string | null
-          status: Database["public"]["Enums"]["run_attempt_status"]
+          status: Database["public"]["Enums"]["run_status"]
           worker_pid: number | null
           workspace_path: string
         }
         Insert: {
-          attempt_number: number
           created_at?: string
           ended_at?: string | null
           error_class?: string | null
           error_message?: string | null
           id?: string
           issue_id: string
+          run_number: number
           started_at?: string | null
-          status?: Database["public"]["Enums"]["run_attempt_status"]
+          status?: Database["public"]["Enums"]["run_status"]
           worker_pid?: number | null
           workspace_path: string
         }
         Update: {
-          attempt_number?: number
           created_at?: string
           ended_at?: string | null
           error_class?: string | null
           error_message?: string | null
           id?: string
           issue_id?: string
+          run_number?: number
           started_at?: string | null
-          status?: Database["public"]["Enums"]["run_attempt_status"]
+          status?: Database["public"]["Enums"]["run_status"]
           worker_pid?: number | null
           workspace_path?: string
         }
         Relationships: [
           {
-            foreignKeyName: "run_attempts_issue_id_fkey"
+            foreignKeyName: "runs_issue_id_fkey"
             columns: ["issue_id"]
             isOneToOne: false
             referencedRelation: "issues"
@@ -327,14 +352,14 @@ export type Database = {
           id: number | null
           kind: Database["public"]["Enums"]["agent_event_kind"] | null
           payload: Json | null
-          run_attempt_id: string | null
+          run_id: string | null
         }
         Relationships: [
           {
-            foreignKeyName: "agent_events_run_attempt_id_fkey"
-            columns: ["run_attempt_id"]
+            foreignKeyName: "agent_events_run_id_fkey"
+            columns: ["run_id"]
             isOneToOne: false
-            referencedRelation: "run_attempts"
+            referencedRelation: "runs"
             referencedColumns: ["id"]
           },
         ]
@@ -354,7 +379,7 @@ export type Database = {
         | "humanized"
         | "rate_limit"
       hook_name: "after_create" | "before_run" | "after_run" | "before_remove"
-      run_attempt_status:
+      run_status:
         | "pending"
         | "running"
         | "success"
@@ -486,6 +511,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       agent_event_kind: [
@@ -499,7 +527,7 @@ export const Constants = {
         "rate_limit",
       ],
       hook_name: ["after_create", "before_run", "after_run", "before_remove"],
-      run_attempt_status: [
+      run_status: [
         "pending",
         "running",
         "success",
@@ -510,3 +538,4 @@ export const Constants = {
     },
   },
 } as const
+

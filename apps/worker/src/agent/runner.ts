@@ -40,9 +40,9 @@ export interface AgentRunnerOptions {
   onEvent: (ev: TurnEventParams) => void | Promise<void>;
   /**
    * Fires once with the child's PID immediately after spawn. Used by the
-   * orchestrator to persist run_attempts.worker_pid for the dashboard's
-   * terminal-style status view. Errors are swallowed so a failing callback
-   * never breaks dispatch.
+   * orchestrator to persist runs.worker_pid for the dashboard's terminal-style
+   * status view. Errors are swallowed so a failing callback never breaks
+   * dispatch.
    */
   onSpawn?: (pid: number) => void | Promise<void>;
   /** Optional logger; defaults to no-op. */

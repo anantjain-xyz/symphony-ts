@@ -25,6 +25,7 @@ export function ListFilters({
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
+  const paramsString = params?.toString() ?? '';
   const [pending, startTransition] = useTransition();
   const [query, setQuery] = useState(searchValue);
 
@@ -32,7 +33,7 @@ export function ListFilters({
   useEffect(() => setQuery(searchValue), [searchValue]);
 
   const apply = (patch: Record<string, string | null>) => {
-    const next = new URLSearchParams(params?.toString() ?? '');
+    const next = new URLSearchParams(paramsString);
     for (const [k, v] of Object.entries(patch)) {
       if (v === null || v === '') next.delete(k);
       else next.set(k, v);
@@ -42,11 +43,15 @@ export function ListFilters({
   };
 
   // Debounce search input so we're not pushing a new URL on every keystroke.
+  // paramsString is in deps so a chip toggle while typing cancels the pending
+  // timer and re-schedules it against the latest URL state — otherwise the
+  // captured `apply` closure would overwrite the chip's just-applied filter.
   useEffect(() => {
     if (query === searchValue) return;
     const t = setTimeout(() => apply({ [searchParam]: query || null }), 250);
     return () => clearTimeout(t);
-  }, [query, searchValue, searchParam]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, searchValue, searchParam, paramsString]);
 
   const toggle = (value: string) => {
     const set = new Set(selected);

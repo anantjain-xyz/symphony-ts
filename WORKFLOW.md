@@ -148,7 +148,15 @@ If this is a retry (attempt number > 1 or the workpad already exists), do these 
 2. Run `git status && git log --oneline origin/main..HEAD` to see what prior attempts already committed. Pick up their work; do not re-do committed files.
 3. Scan the workpad `### Confusions` and `### Notes` for known failure modes (content-filter hits, tool access, flaky tests) and avoid repeating them.
 4. If the workpad's last-update timestamp is older than the prior attempt's start, prior attempts died mid-stream without persisting — rebuild your picture from repo state (committed files, open PR) rather than the workpad's plan alone.
-5. **No-op redispatch short-circuit.** Only applies when the issue state is `Todo` or `In Progress` (NOT `Rework` — that always requires the full reset of Step 3, and NOT `Merging` — that always runs the Land procedure). Within those two states, if the workpad shows every Plan / Acceptance / Validation checkbox already ticked AND a PR is linked AND `gh pr view --json state,statusCheckRollup` shows the PR `OPEN`/`MERGED` with green checks AND `git log --oneline origin/main..HEAD` matches the workpad's recorded commits, the work is already complete. Append a one-line `### Notes` entry (`no-op redispatch — work already complete on <short-sha> / PR #<n>`) and shut down without re-running validation. Only re-engage if the on-disk state contradicts the workpad.
+5. **No-op redispatch short-circuit.** Only applies when the issue state is `Todo` or `In Progress` (NOT `Rework` — that always requires the full reset of Step 3, and NOT `Merging` — that always runs the Land procedure). Within those two states, the short-circuit fires only if **all** of the following hold:
+   - Every Plan / Acceptance / Validation checkbox in the workpad is already ticked.
+   - A PR is linked.
+   - `gh pr view --json state,mergeable,mergeStateStatus,statusCheckRollup` shows the PR `OPEN`/`MERGED`, `mergeable` is `MERGEABLE` (NOT `CONFLICTING` or `UNKNOWN`), `mergeStateStatus` is `CLEAN`/`HAS_HOOKS`/`UNSTABLE` (NOT `DIRTY`/`BLOCKED` due to conflicts), and required checks are green.
+   - `git log --oneline origin/main..HEAD` matches the workpad's recorded commits.
+
+   If any of those fail — especially a `CONFLICTING` / `DIRTY` PR — do NOT short-circuit. Drop into Step 1 and run the full sync (item 6) to merge `origin/main` and resolve conflicts. If the only failing check is mergeability, the redispatch is specifically a "fix the conflicts" signal — treat it that way.
+
+   When the short-circuit does apply, append a one-line `### Notes` entry (`no-op redispatch — work already complete on <short-sha> / PR #<n>`) and shut down without re-running validation. Only re-engage if the on-disk state contradicts the workpad.
 
 ## Status routing
 
@@ -157,7 +165,7 @@ Route on the issue's current state. Before routing, check whether the branch PR 
 | State | Action |
 |---|---|
 | `Backlog` | Do not modify. Shut down. |
-| `Todo` | Move to `In Progress`, bootstrap workpad, run Step 1. If a PR is already attached, run PR feedback sweep before new work. |
+| `Todo` | Move to `In Progress`, bootstrap workpad, run Step 1. If a PR is already attached: check `gh pr view --json mergeable,mergeStateStatus` first — a `CONFLICTING`/`DIRTY` PR is the most common reason for a Todo redispatch and the conflicts MUST be resolved (Step 1 item 6) before anything else. Then run the PR feedback sweep before new work. |
 | `In Progress` | Continue Step 1 from existing workpad. |
 | `In Review` | Do not change code or content. Wait/poll for review decision. |
 | `Merging` (PR already `MERGED`) | Skip land procedure; record merge SHA in workpad; move to `Done`. |
@@ -176,7 +184,7 @@ Route on the issue's current state. Before routing, check whether the branch PR 
    - User-facing changes → include a UI walkthrough (launch path → interaction → expected result) as a required criterion.
    - If the ticket body has `Validation`, `Test Plan`, or `Testing` sections, copy them verbatim into Acceptance Criteria / Validation as required checkboxes. No optional downgrade.
 5. **Reproduction signal**: capture the current behavior before changing code — command output, screenshot, or deterministic UI state — in `### Notes`.
-6. **Sync**: merge `origin/main` into the branch. Record result (`clean` / `conflicts resolved`) and the new short SHA in `### Notes`.
+6. **Sync**: merge `origin/main` into the branch and resolve any conflicts in code before continuing — never leave a `CONFLICTING`/`DIRTY` PR in place. If a PR is already attached, also confirm `gh pr view --json mergeable,mergeStateStatus` reports `MERGEABLE` after pushing. Record result (`clean` / `conflicts resolved`) and the new short SHA in `### Notes`.
 7. Proceed to Step 2.
 
 ## Step 2: Execute and publish

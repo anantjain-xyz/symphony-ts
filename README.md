@@ -6,6 +6,8 @@ TypeScript port of [Symphony](https://github.com/openai/symphony), backed by a l
 
 A long-running daemon that polls Linear for active issues, provisions isolated workspaces per issue, and runs Claude Code (or Codex) coding-agent sessions against them with retries, concurrency caps, and live operator observability.
 
+<img width="1512" height="801" alt="Screenshot 2026-04-27 at 12 19 02 PM" src="https://github.com/user-attachments/assets/7c193679-edaf-4056-b6a4-f3ae6f311cde" />
+
 ## The big picture
 
 ```

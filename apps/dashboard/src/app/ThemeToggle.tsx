@@ -1,10 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { forwardRef, type KeyboardEvent, useEffect, useRef, useState } from 'react';
 
 type ThemePref = 'light' | 'dark' | 'system';
 
 const STORAGE_KEY = 'symphony-theme';
+const ORDER: ThemePref[] = ['light', 'system', 'dark'];
+const LABELS: Record<ThemePref, string> = { light: 'Light', system: 'System', dark: 'Dark' };
 
 function resolveTheme(pref: ThemePref): 'light' | 'dark' {
   if (pref === 'system') {
@@ -25,6 +27,11 @@ function applyTheme(pref: ThemePref) {
 export function ThemeToggle() {
   const [pref, setPref] = useState<ThemePref>('system');
   const [mounted, setMounted] = useState(false);
+  const buttonRefs = useRef<Record<ThemePref, HTMLButtonElement | null>>({
+    light: null,
+    system: null,
+    dark: null,
+  });
 
   useEffect(() => {
     const initial = (document.documentElement.dataset.themePref as ThemePref) || 'system';
@@ -50,51 +57,72 @@ export function ThemeToggle() {
     applyTheme(next);
   };
 
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    const idx = ORDER.indexOf(pref);
+    let nextIdx: number | null = null;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      nextIdx = (idx + 1) % ORDER.length;
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      nextIdx = (idx - 1 + ORDER.length) % ORDER.length;
+    } else if (e.key === 'Home') {
+      nextIdx = 0;
+    } else if (e.key === 'End') {
+      nextIdx = ORDER.length - 1;
+    }
+    if (nextIdx === null) return;
+    const next = ORDER[nextIdx] as ThemePref;
+    e.preventDefault();
+    choose(next);
+    buttonRefs.current[next]?.focus();
+  };
+
   return (
     <div
       role="radiogroup"
       aria-label="Theme"
+      onKeyDown={onKeyDown}
       className="flex items-center gap-0.5 rounded border border-hairline bg-surface-1 p-0.5"
     >
-      <ToggleButton
-        label="Light"
-        active={mounted && pref === 'light'}
-        onClick={() => choose('light')}
-      >
-        <SunIcon />
-      </ToggleButton>
-      <ToggleButton
-        label="System"
-        active={mounted && pref === 'system'}
-        onClick={() => choose('system')}
-      >
-        <MonitorIcon />
-      </ToggleButton>
-      <ToggleButton label="Dark" active={mounted && pref === 'dark'} onClick={() => choose('dark')}>
-        <MoonIcon />
-      </ToggleButton>
+      {ORDER.map((value) => {
+        const Icon = value === 'light' ? SunIcon : value === 'system' ? MonitorIcon : MoonIcon;
+        return (
+          <ToggleButton
+            key={value}
+            ref={(el) => {
+              buttonRefs.current[value] = el;
+            }}
+            label={LABELS[value]}
+            active={mounted && pref === value}
+            tabIndex={pref === value ? 0 : -1}
+            onClick={() => choose(value)}
+          >
+            <Icon />
+          </ToggleButton>
+        );
+      })}
     </div>
   );
 }
 
-function ToggleButton({
-  label,
-  active,
-  onClick,
-  children,
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
+const ToggleButton = forwardRef<
+  HTMLButtonElement,
+  {
+    label: string;
+    active: boolean;
+    tabIndex: number;
+    onClick: () => void;
+    children: React.ReactNode;
+  }
+>(function ToggleButton({ label, active, tabIndex, onClick, children }, ref) {
   return (
     <button
+      ref={ref}
       type="button"
       role="radio"
       aria-checked={active}
       aria-label={label}
       title={label}
+      tabIndex={tabIndex}
       onClick={onClick}
       className={`flex h-6 w-6 items-center justify-center rounded transition-colors ${
         active ? 'bg-surface-3 text-ink-0' : 'text-ink-3 hover:text-ink-1 hover:bg-surface-2'
@@ -103,7 +131,7 @@ function ToggleButton({
       {children}
     </button>
   );
-}
+});
 
 const ICON_PROPS = {
   width: 14,

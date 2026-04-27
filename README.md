@@ -317,13 +317,7 @@ db/
 ├── docker-compose.yml      postgres:16-alpine on :54422
 ├── migrate.ts              tiny migration runner: advisory lock + _migrations table
 └── migrations/
-    ├── 20260415005242_init.sql                            ⭐ 7 tables, 3 enums
-    ├── 20260420220000_run_attempts_running_invariant.sql  partial unique index
-    ├── 20260423120000_dashboard_terminal_status.sql       rate_limit_state, worker_heartbeat, agent_events_latest view
-    ├── 20260423120001_agent_event_kind_rate_limit.sql     adds 'rate_limit' enum value (@notxn)
-    ├── 20260425120000_issues_pr_urls.sql                  pr_urls text[] column
-    ├── 20260426141056_rename_run_attempts_to_runs.sql     terminology unification
-    └── 20260427000000_notify_triggers.sql                 ⭐ pg_notify triggers for SSE fanout
+    └── 20260415005242_init.sql  complete fresh-start schema
 ```
 
 The nine tables (+ one view):
@@ -341,9 +335,9 @@ The nine tables (+ one view):
  agent_events_latest   ← (view) latest event per run
 ```
 
-The `run_attempts_running_invariant` migration adds a **partial unique index** on `runs` where `status='running'` per `issue_id` — this is what makes `AlreadyRunningError` possible and prevents duplicate dispatch.
+The init migration adds a **partial unique index** on `runs` where `status='running'` per `issue_id` — this is what makes `AlreadyRunningError` possible and prevents duplicate dispatch.
 
-The `notify_triggers` migration installs two trigger functions:
+The init migration also installs two trigger functions:
 - `notify_table_change()` fires on every INSERT/UPDATE/DELETE of `runs`, `retry_queue`, `live_sessions`, `rate_limit_state` and emits `pg_notify('symphony_changes', '{"table":"…","op":"…"}')`. The dashboard's `/api/stream` SSE route forwards each NOTIFY to the browser, where `RealtimeRefresh.tsx` calls `router.refresh()` (debounced 600 ms).
 - `notify_agent_event()` fires on `agent_events` INSERT, emitting the full row JSON on `agent_events:<run_id>` (or a slim `{id, run_id, kind, created_at, truncated: true}` payload when the row exceeds pg_notify's 8 KB ceiling). The per-run `/api/runs/[id]/stream` route forwards these; `LiveStream.tsx` appends each payload to its event list.
 
@@ -404,7 +398,7 @@ To understand the system, read in this order:
 3. `apps/worker/src/orchestrator/loop.ts` — the tick
 4. `apps/worker/src/orchestrator/dispatch.ts` — one attempt
 5. `apps/worker/src/agent/runner.ts` — the subprocess bridge
-6. `db/migrations/20260415005242_init.sql` + `db/migrations/20260427000000_notify_triggers.sql` — the data model + the realtime fanout
+6. `db/migrations/20260415005242_init.sql` — the data model + the realtime fanout
 7. `apps/dashboard/src/app/runs/[id]/LiveStream.tsx` + `apps/dashboard/src/app/api/runs/[id]/stream/route.ts` — how the UI stays live
 
 That's the critical path. Everything else is support.

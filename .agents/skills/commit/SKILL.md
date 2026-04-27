@@ -26,15 +26,8 @@ description: Create a well-formed git commit from the current changes. Use when 
 5. Write the body via heredoc so newlines are literal:
    - One short paragraph (the *why*, plus tradeoffs if non-obvious).
    - Optional bullets summarizing what changed across multiple files.
-   - End with the `Co-Authored-By` trailer below.
 6. Verify the message describes only what's staged. If the message and the diff disagree, fix the index — not the message.
 7. Run `git commit -F <file>` (or the heredoc form) so newlines are real, not literal `\n`.
-
-## Trailer
-
-```
-Co-Authored-By: Claude <noreply@anthropic.com>
-```
 
 ## Template
 
@@ -45,8 +38,6 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 
 - <key change 1>
 - <key change 2>
-
-Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
 ## Don't

@@ -133,15 +133,28 @@ You are working on issue **{{identifier}}: {{title}}**.
 3. Final message reports completed actions and blockers only — no "next steps for the user".
 4. Work only in the provided repository copy.
 
+## Skills (progressive disclosure)
+
+Repeatable mechanics live under `.agents/skills/<name>/SKILL.md` (the canonical, runner-agnostic location; `.claude/skills/<name>` are symlinks Claude Code uses for auto-discovery). Reach for them by name — your runner will surface the right one on demand:
+
+| Skill | Use when |
+|---|---|
+| `workpad` | finding, bootstrapping, updating, or resetting the Symphony Workpad on a Linear issue |
+| `pull` | syncing the branch with `origin/main` and resolving conflicts |
+| `commit` | creating a well-formed git commit from staged changes |
+| `push` | pushing the branch and ensuring a PR exists with the `symphony` label |
+| `pr-feedback` | sweeping the PR for actionable reviewer feedback before `In Review` |
+| `land` | squash-merging the PR once approved and green (entered via `Merging`) |
+
+This workflow tells you *which* skill applies at each step; the skill body has the exact commands and gotchas. Don't re-derive what's already in a skill.
+
 ## Environment
 
 Facts about this run — do not waste turns rediscovering them.
 
 - **Linear**: the Linear MCP server is the primary path — use its tools (`mcp__linear-server__*`) directly. If — and only if — no Linear MCP tools appear in your environment, fall back to the HTTP API: `curl -fsS -H "Authorization: $LINEAR_API_KEY" -H "Content-Type: application/json" https://api.linear.app/graphql -d '{"query":"..."}'`. `$LINEAR_API_KEY` is always present. Do not spend turns probing — one of these two paths is configured.
-- **Linear MCP gotchas** (known broken; use the workaround the first time, do not rediscover):
-  - `mcp__linear-server__save_comment` with a `commentId` creates a NEW comment instead of updating in place — this is what causes duplicate workpads. To update the canonical workpad, use raw GraphQL: `curl -fsS -H "Authorization: $LINEAR_API_KEY" -H "Content-Type: application/json" https://api.linear.app/graphql -d '{"query":"mutation($id:String!,$body:String!){commentUpdate(id:$id,input:{body:$body}){success}}","variables":{"id":"<comment-id>","body":"<new body>"}}'`.
-  - `mcp__linear-server__create_attachment` only accepts file uploads (base64). For URL attachments (e.g., a PR link), the auto-link from `git push` usually suffices; if you need an explicit one, use `attachmentLinkCreate` via GraphQL.
-- **GitHub**: `gh` CLI is authenticated. `gh pr edit --add-label` currently 500s with a Projects-classic GraphQL deprecation — add labels via REST instead: `gh api -X POST repos/{owner}/{repo}/issues/{n}/labels -f 'labels[]=symphony'`.
+- **Linear MCP gotchas**: `mcp__linear-server__save_comment` with a `commentId` creates a NEW comment instead of updating in place — see the `workpad` skill for the GraphQL `commentUpdate` workaround. `mcp__linear-server__create_attachment` only accepts file uploads (base64); for URL attachments (e.g., a PR link), the auto-link from `git push` usually suffices, otherwise use `attachmentLinkCreate` / `attachmentLinkGitHubPR` via GraphQL.
+- **GitHub**: `gh` CLI is authenticated. `gh pr edit --add-label` currently 500s with a Projects-classic GraphQL deprecation — the `push` skill applies the `symphony` label via REST.
 - **Workspace**: already `cd`'d into `$TMPDIR/symphony-workspaces/<IDENTIFIER>/`; branch is checked out; `npm ci` already ran via `after_create`. The `.symphony-workspace-ready` file at the workspace root is the init sentinel — ignore it in `git status` and never `git add` it.
 - **Deferred tools you will likely need**: load in a single call — `ToolSearch("select:TodoWrite,WebFetch")`. Do not make multiple discovery queries.
 
@@ -159,7 +172,7 @@ If this is a retry (attempt number > 1 or the workpad already exists), do these 
    - `gh pr view --json state,mergeable,mergeStateStatus,statusCheckRollup` shows the PR `OPEN`/`MERGED`, `mergeable` is `MERGEABLE` (NOT `CONFLICTING` or `UNKNOWN`), `mergeStateStatus` is `CLEAN`/`HAS_HOOKS`/`UNSTABLE` (NOT `DIRTY`/`BLOCKED` due to conflicts), and required checks are green.
    - `git log --oneline origin/main..HEAD` matches the workpad's recorded commits.
 
-   If any of those fail — especially a `CONFLICTING` / `DIRTY` PR — do NOT short-circuit. Drop into Step 1 and run the full sync (item 6) to merge `origin/main` and resolve conflicts. If the only failing check is mergeability, the redispatch is specifically a "fix the conflicts" signal — treat it that way.
+   If any of those fail — especially a `CONFLICTING` / `DIRTY` PR — do NOT short-circuit. Drop into Step 1 and run the `pull` skill. If the only failing check is mergeability, the redispatch is specifically a "fix the conflicts" signal — treat it that way.
 
    When the short-circuit does apply, append a one-line `### Notes` entry (`no-op redispatch — work already complete on <short-sha> / PR #<n>`) and shut down without re-running validation. Only re-engage if the on-disk state contradicts the workpad.
 
@@ -170,11 +183,11 @@ Route on the issue's current state. Before routing, check whether the branch PR 
 | State | Action |
 |---|---|
 | `Backlog` | Do not modify. Shut down. |
-| `Todo` | Move to `In Progress`, bootstrap workpad, run Step 1. If a PR is already attached: check `gh pr view --json mergeable,mergeStateStatus` first — a `CONFLICTING`/`DIRTY` PR is the most common reason for a Todo redispatch and the conflicts MUST be resolved (Step 1 item 6) before anything else. Then run the PR feedback sweep before new work. |
+| `Todo` | Move to `In Progress`, bootstrap workpad (`workpad` skill), run Step 1. If a PR is already attached: check `gh pr view --json mergeable,mergeStateStatus` first — a `CONFLICTING`/`DIRTY` PR is the most common reason for a Todo redispatch and the conflicts MUST be resolved (`pull` skill) before anything else. Then run the `pr-feedback` sweep before new work. |
 | `In Progress` | Continue Step 1 from existing workpad. |
 | `In Review` | Do not change code or content. Wait/poll for review decision. |
 | `Merging` (PR already `MERGED`) | Skip land procedure; record merge SHA in workpad; move to `Done`. |
-| `Merging` (any other PR state) | Run Land procedure. |
+| `Merging` (any other PR state) | Run the `land` skill. |
 | `Rework` | Run Step 3 (full reset). |
 | `Done` | Shut down. |
 
@@ -182,14 +195,14 @@ Route on the issue's current state. Before routing, check whether the branch PR 
 
 ## Step 1: Setup and plan (Todo / In Progress)
 
-1. **Workpad**: search active (non-resolved) comments on the issue for the header `## Symphony Workpad`. If found, reuse it — one workpad per issue, ever. If not, create one and persist its comment ID. Never open a second workpad.
+1. **Workpad**: use the `workpad` skill to find or bootstrap the single `## Symphony Workpad` comment for this issue. Persist its comment ID. Never open a second workpad.
 2. **Reconcile**: check off items already done; refresh Plan, Acceptance Criteria, and Validation to match current scope.
 3. **Env stamp**: include a code-fence line at the top of the workpad: `<host>:<abs-workdir>@<short-sha>`. Example: `devbox-01:/tmp/symphony-workspaces/ENG-42@7bdde33bc`.
 4. **Acceptance Criteria**: checklist form.
    - User-facing changes → include a UI walkthrough (launch path → interaction → expected result) as a required criterion.
    - If the ticket body has `Validation`, `Test Plan`, or `Testing` sections, copy them verbatim into Acceptance Criteria / Validation as required checkboxes. No optional downgrade.
 5. **Reproduction signal**: capture the current behavior before changing code — command output, screenshot, or deterministic UI state — in `### Notes`.
-6. **Sync**: merge `origin/main` into the branch and resolve any conflicts in code before continuing — never leave a `CONFLICTING`/`DIRTY` PR in place. If a PR is already attached, also confirm `gh pr view --json mergeable,mergeStateStatus` reports `MERGEABLE` after pushing. Record result (`clean` / `conflicts resolved`) and the new short SHA in `### Notes`.
+6. **Sync**: run the `pull` skill to merge `origin/main` and resolve any conflicts before continuing. If a PR is already attached, also confirm `gh pr view --json mergeable,mergeStateStatus` reports `MERGEABLE` after pushing. Record result (`clean` / `conflicts resolved`) and the new short SHA in `### Notes`.
 7. Proceed to Step 2.
 
 ## Step 2: Execute and publish
@@ -201,9 +214,9 @@ Route on the issue's current state. Before routing, check whether the branch PR 
    - Temporary local proof edits allowed; revert before commit; document in `### Validation`/`### Notes`.
    - User-facing → exercise the path locally (dashboard/worker) and capture evidence in the workpad. Screenshots **must** be Playwright-captured (`mcp__plugin_playwright_playwright__browser_navigate` + `..._take_screenshot`); logs/CLI output supplement screenshots, they do not replace them. Save screenshots to a workspace-relative path (e.g., `./<name>.png` or `.playwright-mcp/<name>.png`) — the Playwright sandbox blocks `/tmp/...` and any path outside the workspace + `.playwright-mcp/` roots. Embed the screenshot inline in the workpad.
 3. **Cleanup test data.** Anything you created in external systems for testing — Linear issues, comments, attachments; non-issue GitHub branches, draft PRs, gists; database rows in shared instances; etc. — must be deleted before moving the issue to `In Review`. Do not delete the active issue branch, its PR, or issue-owned evidence/attachments needed for review. The end state must match the start state plus only the artifacts that belong to this issue. Test-data cleanup is mandatory; record the cleanup actions in `### Notes`.
-4. **Before every `git push`**: run required validation; rerun until green; commit; push.
-5. Attach the PR URL to the issue (Linear attachment preferred; workpad only if attachment isn't possible). Add the `symphony` label on the GitHub PR via `gh api -X POST repos/{owner}/{repo}/issues/{n}/labels -f 'labels[]=symphony'` (`gh pr edit --add-label` is currently broken — see Environment). For user-facing changes, keep Playwright screenshots in the Linear workpad only; do not require or manually upload screenshots in the GitHub PR description. Do not commit proof screenshots to the repository.
-6. Merge `origin/main` into the branch; resolve conflicts; rerun checks.
+4. **Before every push**: run required validation; rerun until green; use the `commit` skill to commit; use the `push` skill to publish.
+5. The `push` skill handles attaching the PR URL to the issue and applying the `symphony` label. For user-facing changes, keep Playwright screenshots in the Linear workpad only; do not require or manually upload screenshots in the GitHub PR description. Do not commit proof screenshots to the repository.
+6. After review feedback or check failures: run the `pull` skill again to merge `origin/main`, then re-run validation.
 7. Final workpad pass before `In Review`:
    - All plan / acceptance / validation checkboxes reflect reality.
    - Add `### Confusions` section only if something during execution was unclear.
@@ -211,26 +224,14 @@ Route on the issue's current state. Before routing, check whether the branch PR 
    - Do not post any additional "done"/summary comment.
 8. **Gate before `In Review`**:
    - Read the PR's `Manual QA Plan` comment if present; sharpen UI/runtime coverage accordingly.
-   - Run the PR feedback sweep (below).
+   - Run the `pr-feedback` skill.
    - PR checks must be green on the latest commit.
    - All ticket-mandated validation items must be checked in the workpad.
    - For user-facing changes: confirm Playwright screenshots are embedded in the Linear workpad.
    - Confirm test data created during validation has been cleaned up.
    - Loop until no actionable comments remain and checks are fully green.
 9. Move to `In Review`. Exception: if blocked per the escape hatch below, move to `In Review` with the blocker brief.
-10. If the ticket started as `Todo` with a PR already attached, ensure all existing PR feedback (including inline review comments) is resolved — code update OR explicit justified pushback reply — before moving.
-
-### PR feedback sweep
-
-Run before transitioning to `In Review`, and after every change prompted by review.
-
-1. Gather from all channels: top-level PR comments, inline review comments on specific lines, review states (approved / changes requested / commented).
-2. Treat every actionable reviewer comment (human or bot, top-level or inline) as blocking until one of these is true:
-   - Code/tests/docs updated to address it, OR
-   - An explicit, justified pushback reply is posted on that thread.
-3. Mirror each item and its resolution in the workpad plan.
-4. Push updates and rerun validation.
-5. Repeat until zero outstanding actionable comments.
+10. If the ticket started as `Todo` with a PR already attached, ensure all existing PR feedback is resolved (run the `pr-feedback` skill) — code update OR explicit justified pushback reply — before moving.
 
 ### Escape hatch (blocked access)
 
@@ -243,18 +244,13 @@ Use only for genuine external blockers after fallbacks exhausted.
 
 1. Re-read the full issue body and all human comments. Identify what to do differently.
 2. Close the existing PR tied to this issue.
-3. Reset the existing `## Symphony Workpad` comment in place — keep the same comment ID (one workpad per issue, ever) and overwrite its body with a fresh workpad scaffold via the GraphQL `commentUpdate` workaround in Environment. Do not delete the comment.
+3. Run the `workpad` skill to **reset** the existing comment in place via the GraphQL `commentUpdate` workaround (one workpad per issue, ever — never delete it).
 4. Fresh branch from `origin/main`.
 5. Start over from Step 1.
 
 ## Land procedure (entered via `Merging`)
 
-1. Confirm PR is approved and all required checks are green.
-2. Sync `origin/main`; resolve any conflicts; rerun required validation.
-3. Merge (squash unless repo convention differs). Prefer auto-merge: `gh pr merge --squash --auto` so the merge completes only when checks pass.
-4. Wait for merge; delete the remote branch.
-5. Record the merge commit SHA in the workpad; move issue to `Done`.
-6. Any failure (checks red, conflicts, auto-merge disabled) → record in workpad, move issue to `Rework` with a brief blocker note.
+Run the `land` skill — it handles the approve/sync/squash-merge loop, the `Done` transition, and the `Rework` fallback when checks/conflicts can't be resolved.
 
 ## Guardrails
 
@@ -262,8 +258,7 @@ Use only for genuine external blockers after fallbacks exhausted.
   - Apache-2.0 LICENSE: `https://www.apache.org/licenses/LICENSE-2.0.txt`
   - MIT LICENSE (template): `https://opensource.org/license/mit/`
   - Contributor Covenant 2.1: `https://www.contributor-covenant.org/version/2/1/code_of_conduct/code_of_conduct.md`
-- Workpad is the single source of truth. One `## Symphony Workpad` comment per issue, ever. Do not edit the issue body/description for planning or progress.
-- **The Symphony Workpad comment is never test data and must not be deleted** — not at end-of-task, not for cleanup, not even to consolidate accidental duplicates. If `save_comment` created a duplicate (a known MCP bug — see Environment), edit the canonical comment in place via the GraphQL `commentUpdate` workaround and replace the duplicate's body with `Superseded — see canonical Symphony Workpad above.` rather than deleting it.
+- Workpad is the single source of truth. One `## Symphony Workpad` comment per issue, ever. Do not edit the issue body/description for planning or progress. **The workpad comment is never test data and must not be deleted** — see the `workpad` skill for handling accidental duplicates.
 - Do not post additional "done"/summary comments outside the workpad.
 - Temporary proof edits must be reverted before commit.
 - **Test data cleanup is mandatory.** Any artifacts created in external systems during testing (Linear issues/comments/attachments, non-issue GitHub branches/draft PRs/gists, rows in shared databases, etc.) must be deleted before transitioning to `In Review`. Do not delete the active issue branch, its PR, or issue-owned evidence/attachments needed for review. Leaving test residue is treated the same as leaving a temporary code edit unrevert.
@@ -279,39 +274,7 @@ Use only for genuine external blockers after fallbacks exhausted.
 - Step 1/2 checklist fully reflected in the single workpad comment.
 - Acceptance criteria and ticket-mandated validation items all checked.
 - Validation/tests green for the latest commit.
-- PR feedback sweep clean (no actionable comments remain).
+- `pr-feedback` sweep clean (no actionable comments remain).
 - PR checks green, branch pushed, PR linked on the issue, `symphony` label present.
 - User-facing changes: Playwright-captured screenshots embedded in the Linear workpad.
 - All test data created during validation has been cleaned up; no residue left in Linear, GitHub, or shared backends.
-
-## Appendix: Workpad template
-
-````md
-## Symphony Workpad
-
-```text
-<hostname>:<abs-path>@<short-sha>
-```
-
-### Plan
-
-- [ ] 1\. Parent task
-  - [ ] 1.1 Child task
-- [ ] 2\. Parent task
-
-### Acceptance Criteria
-
-- [ ] Criterion 1
-
-### Validation
-
-- [ ] targeted tests: `<command>`
-
-### Notes
-
-- <short progress note with timestamp>
-
-### Confusions
-
-- <only include when something was confusing during execution>
-````

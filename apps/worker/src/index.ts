@@ -18,7 +18,7 @@ process.env.SYMPHONY_CLAUDE_ADAPTER ??= resolve(
   '../agents/claude-adapter.mjs',
 );
 
-import { createServiceClient } from '@symphony/shared';
+import { createDb } from '@symphony/shared';
 import { reloadWorkflowConfig } from './config/reload.js';
 import { liveConfig, resolveConfig } from './config/resolve.js';
 import { loadWorkflowFile } from './config/workflow.js';
@@ -34,7 +34,7 @@ async function main(): Promise<void> {
   const log = createLogger();
   log.info({ pid: process.pid, node: process.version }, 'symphony-worker starting');
 
-  const env = requireEnv(['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY']);
+  const env = requireEnv(['DATABASE_URL']);
   const workflowPath = resolve(repoRoot, process.env.WORKFLOW_PATH ?? 'WORKFLOW.md');
 
   const workflow = await loadWorkflowFile(workflowPath);
@@ -48,10 +48,7 @@ async function main(): Promise<void> {
     );
   }
 
-  const db = createServiceClient({
-    url: env.SUPABASE_URL,
-    serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
-  });
+  const db = createDb(env.DATABASE_URL);
   const repo = new Repo(db);
 
   const tracker = createLinearClient({ config });

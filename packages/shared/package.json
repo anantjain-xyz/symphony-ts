@@ -2,12 +2,12 @@
   "name": "@symphony/shared",
   "version": "0.1.0",
   "private": true,
-  "description": "Shared types, Zod schemas, and Supabase client helpers used by the Symphony worker and dashboard.",
+  "description": "Shared types, Zod schemas, and Drizzle database client used by the Symphony worker and dashboard.",
   "keywords": [
     "symphony",
     "shared",
     "zod",
-    "supabase",
+    "drizzle",
     "schema"
   ],
   "homepage": "https://github.com/anantjain-xyz/symphony-ts/tree/main/packages/shared#readme",
@@ -26,9 +26,7 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./db-types": "./src/db-types.ts",
-    "./schema": "./src/schema.ts",
-    "./supabase": "./src/supabase.ts"
+    "./schema": "./src/schema.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -36,7 +34,8 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@supabase/supabase-js": "2.47.10",
+    "drizzle-orm": "^0.45.2",
+    "postgres": "^3.4.9",
     "zod": "^3.24.1"
   },
   "devDependencies": {

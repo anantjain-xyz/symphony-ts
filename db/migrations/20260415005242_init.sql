@@ -1,5 +1,4 @@
 -- symphony-ts initial schema
--- See https://github.com/openai/symphony/blob/main/SPEC.md for the source spec.
 
 create extension if not exists "pgcrypto";
 
@@ -112,7 +111,7 @@ create table live_sessions (
 );
 
 -- =========================================================================
--- agent_events: append-only firehose; Realtime fans out to dashboard
+-- agent_events: append-only firehose; LISTEN/NOTIFY fans out to dashboard
 -- =========================================================================
 
 create table agent_events (
@@ -156,37 +155,3 @@ create table hook_runs (
 );
 
 create index hook_runs_attempt_idx on hook_runs (run_attempt_id, created_at desc);
-
--- =========================================================================
--- Realtime publication
--- =========================================================================
-
-drop publication if exists symphony_live;
-create publication symphony_live for table
-  agent_events,
-  live_sessions,
-  run_attempts,
-  retry_queue;
-
--- =========================================================================
--- Row Level Security: read-only operator console
--- =========================================================================
--- Worker uses the service-role key (bypasses RLS).
--- Dashboard uses the anon key + an authenticated session; we grant SELECT
--- on every table to authenticated users. No insert/update/delete from browser.
-
-alter table workflows      enable row level security;
-alter table issues         enable row level security;
-alter table run_attempts   enable row level security;
-alter table live_sessions  enable row level security;
-alter table agent_events   enable row level security;
-alter table retry_queue    enable row level security;
-alter table hook_runs      enable row level security;
-
-create policy "operators read workflows"     on workflows     for select to authenticated using (true);
-create policy "operators read issues"        on issues        for select to authenticated using (true);
-create policy "operators read run_attempts"  on run_attempts  for select to authenticated using (true);
-create policy "operators read live_sessions" on live_sessions for select to authenticated using (true);
-create policy "operators read agent_events"  on agent_events  for select to authenticated using (true);
-create policy "operators read retry_queue"   on retry_queue   for select to authenticated using (true);
-create policy "operators read hook_runs"     on hook_runs     for select to authenticated using (true);

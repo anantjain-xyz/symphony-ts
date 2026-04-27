@@ -5,6 +5,5 @@ function required(name: string): string {
 }
 
 export const env = {
-  SUPABASE_URL: required('NEXT_PUBLIC_SUPABASE_URL'),
-  SUPABASE_ANON_KEY: required('NEXT_PUBLIC_SUPABASE_ANON_KEY'),
+  DATABASE_URL: required('DATABASE_URL'),
 };

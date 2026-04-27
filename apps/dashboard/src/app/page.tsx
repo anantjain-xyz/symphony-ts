@@ -1,6 +1,18 @@
-import { createSupabaseServerClient } from '@/lib/supabase-server';
-import type { Tables, WorkflowFrontMatter } from '@symphony/shared';
+import {
+  agentEventsLatest,
+  issues as issuesT,
+  liveSessions,
+  rateLimitState,
+  retryQueue,
+  runs,
+  type Tables,
+  type WorkflowFrontMatter,
+  workerHeartbeat,
+  workflows,
+} from '@symphony/shared';
 import { trackerProjectUrl } from '@symphony/shared/schema';
+import { and, desc, eq, getTableColumns, gt, inArray, like, sql } from 'drizzle-orm';
+import { db } from '@/lib/db';
 import { KpiBlock } from './KpiBlock';
 import { LiveRuntime } from './LiveRuntime';
 import { RateLimitPauseKpi } from './RateLimitPauseKpi';
@@ -18,74 +30,106 @@ type AgentEventRow = Tables<'agent_events'>;
 type LatestEventRow = Tables<'agent_events_latest'>;
 
 export default async function FleetPage() {
-  const supabase = createSupabaseServerClient();
-
-  const [running, retries, recentFails, liveTokens, issuesCount, heartbeatRes, workflowRes] =
+  const [running, retries, recentFails, liveTokens, issuesCountRow, heartbeat, workflowRow] =
     await Promise.all([
-      supabase
-        .from('runs')
-        .select('*, issues(identifier, title, state)')
-        .eq('status', 'running')
-        .order('started_at', { ascending: false }),
-      supabase
-        .from('retry_queue')
-        .select('*, issues(identifier, title)')
-        .order('due_at', { ascending: true })
-        .limit(20),
-      supabase
-        .from('runs')
-        .select('*, issues(identifier, title)')
-        .in('status', ['failure', 'timeout'])
-        .order('ended_at', { ascending: false })
-        .limit(10),
-      supabase.from('live_sessions').select('*'),
-      supabase.from('issues').select('id', { count: 'exact', head: true }),
-      supabase.from('worker_heartbeat').select('*').eq('id', 'worker').maybeSingle(),
-      supabase
-        .from('workflows')
-        .select('parsed')
-        .order('loaded_at', { ascending: false })
+      db
+        .select({
+          ...getTableColumns(runs),
+          issues: {
+            identifier: issuesT.identifier,
+            title: issuesT.title,
+            state: issuesT.state,
+          },
+        })
+        .from(runs)
+        .leftJoin(issuesT, eq(runs.issue_id, issuesT.id))
+        .where(eq(runs.status, 'running'))
+        .orderBy(desc(runs.started_at)) as Promise<RunWithIssue[]>,
+      db
+        .select({
+          ...getTableColumns(retryQueue),
+          issues: {
+            identifier: issuesT.identifier,
+            title: issuesT.title,
+          },
+        })
+        .from(retryQueue)
+        .leftJoin(issuesT, eq(retryQueue.issue_id, issuesT.id))
+        .orderBy(retryQueue.due_at)
+        .limit(20) as Promise<RetryWithIssue[]>,
+      db
+        .select({
+          ...getTableColumns(runs),
+          issues: {
+            identifier: issuesT.identifier,
+            title: issuesT.title,
+            state: issuesT.state,
+          },
+        })
+        .from(runs)
+        .leftJoin(issuesT, eq(runs.issue_id, issuesT.id))
+        .where(inArray(runs.status, ['failure', 'timeout']))
+        .orderBy(desc(runs.ended_at))
+        .limit(10) as Promise<RunWithIssue[]>,
+      db.select().from(liveSessions),
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(issuesT)
+        .then((r) => r[0]),
+      db
+        .select()
+        .from(workerHeartbeat)
+        .where(eq(workerHeartbeat.id, 'worker'))
         .limit(1)
-        .maybeSingle(),
+        .then((r) => r[0] ?? null),
+      db
+        .select({ parsed: workflows.parsed })
+        .from(workflows)
+        .orderBy(desc(workflows.loaded_at))
+        .limit(1)
+        .then((r) => r[0] ?? null),
     ]);
 
-  const runningRows = (running.data ?? []) as unknown as RunWithIssue[];
-  const retryRows = (retries.data ?? []) as unknown as RetryWithIssue[];
-  const failedRows = (recentFails.data ?? []) as unknown as RunWithIssue[];
-  const liveTokenRows = liveTokens.data ?? [];
+  const runningRows = running;
+  const retryRows = retries;
+  const failedRows = recentFails;
+  const liveTokenRows = liveTokens;
 
-  // Second-pass fetch: only look up latest-event-per-run when we have running
-  // runs. agent_events_latest is a DISTINCT ON view, still cheap, but skipping
-  // it keeps the empty-fleet page round-trip minimal.
   const runningIds = runningRows.map((r) => r.id);
-  const latestEventsRes =
+  const latestEvents: LatestEventRow[] =
     runningIds.length > 0
-      ? await supabase.from('agent_events_latest').select('*').in('run_id', runningIds)
-      : { data: [] as LatestEventRow[] };
+      ? await db
+          .select()
+          .from(agentEventsLatest)
+          .where(inArray(agentEventsLatest.run_id, runningIds))
+      : [];
 
   const liveTokenTotal = liveTokenRows.reduce((sum, s) => sum + s.total_tokens, 0);
-  const trackedIssues = issuesCount.count ?? 0;
+  const trackedIssues = issuesCountRow?.count ?? 0;
   const allQuiet = runningRows.length === 0 && retryRows.length === 0;
 
-  const frontMatter = extractFrontMatter(workflowRes.data?.parsed);
+  const frontMatter = extractFrontMatter(workflowRow?.parsed);
   const configuredBackend = frontMatter?.agent?.backend ?? 'codex';
   const maxConcurrent = frontMatter?.agent?.max_concurrent_agents ?? null;
   const projectUrl = frontMatter?.tracker ? trackerProjectUrl(frontMatter.tracker) : null;
   const rateLimitNowIso = new Date().toISOString();
-  const rateLimitRes = await supabase
-    .from('rate_limit_state')
-    .select('*')
-    .gt('reset_at', rateLimitNowIso)
-    .like('source', `${configuredBackend}_%`)
-    .order('reset_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  const heartbeat = heartbeatRes.data ?? null;
-  const ratePause = rateLimitRes.data ?? null;
+  const ratePause =
+    (
+      await db
+        .select()
+        .from(rateLimitState)
+        .where(
+          and(
+            gt(rateLimitState.reset_at, rateLimitNowIso),
+            like(rateLimitState.source, `${configuredBackend}_%`),
+          ),
+        )
+        .orderBy(desc(rateLimitState.reset_at))
+        .limit(1)
+    )[0] ?? null;
 
   const latestEventByRun = new Map<string, AgentEventRow>();
-  for (const row of (latestEventsRes.data ?? []) as LatestEventRow[]) {
+  for (const row of latestEvents) {
     if (!row.run_id || row.id === null || row.kind === null) continue;
     latestEventByRun.set(row.run_id, {
       id: row.id,

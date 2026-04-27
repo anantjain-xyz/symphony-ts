@@ -14,7 +14,7 @@ export interface RecoveryDeps {
   /**
    * Integration-test only. When set, orphan adoption is restricted to
    * `runs` whose `issue_id` is in this list — so tests running against a
-   * shared Supabase don't mark the live worker's in-flight runs as crashed.
+   * shared database don't mark the live worker's in-flight runs as crashed.
    */
   scopedIssueIds?: string[];
 }

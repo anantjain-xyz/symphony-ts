@@ -86,10 +86,9 @@ jobs:
     name: dashboard build
     runs-on: ubuntu-latest
     env:
-      # Build-time placeholders so Next.js page-data collection can resolve
-      # the Supabase client. Real values are injected at runtime in deploys.
-      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54421
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: build-placeholder-anon-key
+      # Build-time placeholder so Next.js page-data collection can resolve the
+      # DB client. Real value is injected at runtime in deploys.
+      DATABASE_URL: postgres://symphony:symphony@127.0.0.1:54422/symphony
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup

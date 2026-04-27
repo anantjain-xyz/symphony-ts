@@ -1,18 +1,17 @@
 #!/usr/bin/env tsx
 /**
- * Seed the local Supabase with a small fixture so the dashboard has something
+ * Seed the local Postgres with a small fixture so the dashboard has something
  * to render. Useful for manual smoke testing.
  *
- *   SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... pnpm --filter @symphony/worker exec tsx scripts/seed.ts
+ *   DATABASE_URL=... pnpm --filter @symphony/worker exec tsx scripts/seed.ts
  */
 
-import { createServiceClient, type Issue } from '@symphony/shared';
+import { createDb, type Issue } from '@symphony/shared';
 import { Repo } from '../src/db/repo.js';
 
-const URL = process.env.SUPABASE_URL ?? 'http://127.0.0.1:54421';
-const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-if (!KEY) {
-  console.error('SUPABASE_SERVICE_ROLE_KEY required');
+const URL = process.env.DATABASE_URL;
+if (!URL) {
+  console.error('DATABASE_URL required');
   process.exit(1);
 }
 
@@ -44,7 +43,7 @@ const ISSUES: Issue[] = [
 ];
 
 async function main() {
-  const db = createServiceClient({ url: URL, serviceRoleKey: KEY! });
+  const db = createDb(URL!, { max: 1 });
   const repo = new Repo(db);
   await repo.upsertIssues(ISSUES);
 

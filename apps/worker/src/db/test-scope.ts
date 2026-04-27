@@ -1,13 +1,14 @@
 import { randomUUID } from 'node:crypto';
-import type { SymphonyClient } from '@symphony/shared';
+import { type Db, issues, rateLimitState, workflows } from '@symphony/shared';
+import { inArray } from 'drizzle-orm';
 
 /**
  * Per-test id tracker for integration tests. Every row a test creates is
  * allocated through the scope, and `cleanup()` deletes exactly those rows —
  * `issues` CASCADE handles `runs`, `retry_queue`, and their children.
  *
- * Tests MUST NOT issue unscoped `.delete().neq(...)` statements — running
- * against a shared Supabase instance, those wipe live worker data.
+ * Tests MUST NOT issue unscoped delete statements — running against a shared
+ * database, those wipe live worker data.
  */
 export class TestScope {
   private readonly _issueIds = new Set<string>();
@@ -38,7 +39,7 @@ export class TestScope {
    * Allocate a `rate_limit_state.source` value scoped to this test. Tests use
    * the returned string as the `source` column when seeding pause rows; the
    * scope tracks them so `cleanup()` removes only its own rows — never the
-   * live worker's `codex_*` / `claude_*` entries on a shared Supabase.
+   * live worker's `codex_*` / `claude_*` entries on a shared database.
    */
   newRateLimitSource(prefix: string): string {
     const source = `${prefix}__test-${randomUUID().slice(0, 8)}`;
@@ -46,27 +47,17 @@ export class TestScope {
     return source;
   }
 
-  async cleanup(db: SymphonyClient): Promise<void> {
+  async cleanup(db: Db): Promise<void> {
     if (this._issueIds.size > 0) {
-      const { error } = await db
-        .from('issues')
-        .delete()
-        .in('id', [...this._issueIds]);
-      if (error) throw error;
+      await db.delete(issues).where(inArray(issues.id, [...this._issueIds]));
     }
     if (this._workflowHashes.size > 0) {
-      const { error } = await db
-        .from('workflows')
-        .delete()
-        .in('source_hash', [...this._workflowHashes]);
-      if (error) throw error;
+      await db.delete(workflows).where(inArray(workflows.source_hash, [...this._workflowHashes]));
     }
     if (this._rateLimitSources.size > 0) {
-      const { error } = await db
-        .from('rate_limit_state')
-        .delete()
-        .in('source', [...this._rateLimitSources]);
-      if (error) throw error;
+      await db
+        .delete(rateLimitState)
+        .where(inArray(rateLimitState.source, [...this._rateLimitSources]));
     }
   }
 }

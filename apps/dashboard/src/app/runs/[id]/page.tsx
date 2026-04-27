@@ -1,7 +1,15 @@
-import { notFound } from 'next/navigation';
+import {
+  agentEvents,
+  issues as issuesT,
+  runs as runsT,
+  type Tables,
+  type WorkflowFrontMatter,
+  workflows,
+} from '@symphony/shared';
+import { asc, desc, eq, getTableColumns } from 'drizzle-orm';
 import Link from 'next/link';
-import { createSupabaseServerClient } from '@/lib/supabase-server';
-import type { Tables, WorkflowFrontMatter } from '@symphony/shared';
+import { notFound } from 'next/navigation';
+import { db } from '@/lib/db';
 import { LiveStream } from './LiveStream';
 
 export const dynamic = 'force-dynamic';
@@ -14,33 +22,43 @@ const TERMINAL = new Set(['success', 'failure', 'timeout', 'cancelled']);
 
 export default async function RunPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const supabase = createSupabaseServerClient();
-  const [{ data: rawRun }, { data: initialEvents }, workflowRes] = await Promise.all([
-    supabase
-      .from('runs')
-      .select('*, issues(identifier, title, state, pr_urls)')
-      .eq('id', id)
-      .maybeSingle(),
-    supabase
-      .from('agent_events')
-      .select('*')
-      .eq('run_id', id)
-      .order('id', { ascending: true })
-      .limit(10000),
-    supabase
-      .from('workflows')
-      .select('parsed')
-      .order('loaded_at', { ascending: false })
+
+  const [rawRun, initialEvents, workflowRow] = await Promise.all([
+    db
+      .select({
+        ...getTableColumns(runsT),
+        issues: {
+          identifier: issuesT.identifier,
+          title: issuesT.title,
+          state: issuesT.state,
+          pr_urls: issuesT.pr_urls,
+        },
+      })
+      .from(runsT)
+      .leftJoin(issuesT, eq(runsT.issue_id, issuesT.id))
+      .where(eq(runsT.id, id))
       .limit(1)
-      .maybeSingle(),
+      .then((r) => r[0] ?? null) as Promise<RunWithIssue | null>,
+    db
+      .select()
+      .from(agentEvents)
+      .where(eq(agentEvents.run_id, id))
+      .orderBy(asc(agentEvents.id))
+      .limit(10000),
+    db
+      .select({ parsed: workflows.parsed })
+      .from(workflows)
+      .orderBy(desc(workflows.loaded_at))
+      .limit(1)
+      .then((r) => r[0] ?? null),
   ]);
+
   if (!rawRun) notFound();
-  const run = rawRun as unknown as RunWithIssue;
+  const run = rawRun;
 
   const issue = run.issues;
   const terminal = TERMINAL.has(run.status);
-  const tracker =
-    (workflowRes.data?.parsed as Partial<WorkflowFrontMatter> | null)?.tracker ?? null;
+  const tracker = (workflowRow?.parsed as Partial<WorkflowFrontMatter> | null)?.tracker ?? null;
 
   return (
     <>
@@ -48,7 +66,7 @@ export default async function RunPage({ params }: { params: Promise<{ id: string
       <LiveStream
         runId={id}
         run={run}
-        initialEvents={initialEvents ?? []}
+        initialEvents={initialEvents}
         runIsTerminal={terminal}
         issueIdentifier={issue?.identifier ?? null}
         prUrls={issue?.pr_urls ?? []}

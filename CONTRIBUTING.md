@@ -2,7 +2,7 @@
 
 Thanks for helping improve `symphony-ts`. This repository is a TypeScript port of
 Symphony with a worker daemon, a Next.js dashboard, shared schema code, and
-Supabase-backed persistence.
+Postgres-backed persistence.
 
 ## Development Setup
 
@@ -10,7 +10,7 @@ Requirements:
 
 - Node.js 22 or newer
 - pnpm 10.15.0 or newer
-- Supabase CLI
+- Docker (for local Postgres)
 
 Install dependencies:
 
@@ -18,17 +18,14 @@ Install dependencies:
 pnpm install
 ```
 
-Start local Supabase:
+Start local Postgres and apply migrations:
 
 ```sh
-supabase start
+pnpm db:up
+pnpm db:migrate
 ```
 
-Generate database types after schema changes:
-
-```sh
-pnpm db:types
-```
+`pnpm db:reset` wipes the volume and re-applies migrations from scratch.
 
 Create a local environment file:
 
@@ -36,8 +33,8 @@ Create a local environment file:
 cp .env.example .env.local
 ```
 
-Fill in the keys from `supabase status` and add `LINEAR_API_KEY` if you are
-running the worker against Linear.
+The default `DATABASE_URL` already matches `db/docker-compose.yml`. Add
+`LINEAR_API_KEY` if you are running the worker against Linear.
 
 Run the worker:
 
@@ -62,13 +59,12 @@ pnpm typecheck
 pnpm test
 ```
 
-Integration tests that touch Supabase are skipped unless
-`TEST_SUPABASE_SERVICE_ROLE_KEY` is set. To run them locally, start Supabase and
-provide the test URL and service role key:
+Integration tests that touch the database are skipped unless
+`TEST_DATABASE_URL` is set. To run them locally, point at the running
+container:
 
 ```sh
-TEST_SUPABASE_URL=http://127.0.0.1:54421 \
-TEST_SUPABASE_SERVICE_ROLE_KEY=... \
+TEST_DATABASE_URL=postgres://symphony:symphony@127.0.0.1:54422/symphony \
 pnpm test
 ```
 
@@ -87,14 +83,15 @@ pnpm format
   exists, for example `SYM-11: Add OSS governance files`.
 - Include a short summary, test evidence, and the related issue in every pull
   request.
-- Keep generated database types in `packages/shared/src/db-types.ts` in sync
-  with migration changes.
+- When the schema changes, add a new SQL file under `db/migrations/` and update
+  the matching Drizzle table in `packages/shared/src/db/schema.ts`. The two
+  must stay in sync — there is no codegen step.
 
 ## Project Conventions
 
 - Shared runtime contracts live in `packages/shared/src/schema.ts`.
-- Generated database types live in `packages/shared/src/db-types.ts` and should
-  not be edited by hand.
+- Drizzle schema definitions live in `packages/shared/src/db/schema.ts`.
+- SQL migrations live in `db/migrations/` and are applied by `db/migrate.ts`.
 - Worker orchestration code lives under `apps/worker/src`.
 - Dashboard code lives under `apps/dashboard/src`.
 - Local workflow configuration and prompt behavior are documented in

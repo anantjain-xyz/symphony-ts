@@ -2,11 +2,11 @@
   "name": "symphony-ts",
   "private": true,
   "version": "0.1.0",
-  "description": "TypeScript port of Symphony — a long-running daemon and dashboard that polls Linear, provisions per-issue workspaces, and runs Claude Code / Codex coding agents with retries and live observability, backed by Supabase.",
+  "description": "TypeScript port of Symphony — a long-running daemon and dashboard that polls Linear, provisions per-issue workspaces, and runs Claude Code / Codex coding agents with retries and live observability, backed by Postgres.",
   "keywords": [
     "symphony",
     "linear",
-    "supabase",
+    "postgres",
     "claude-code",
     "codex",
     "coding-agent",
@@ -35,7 +35,10 @@
     "test:coverage": "pnpm -r --if-present test:coverage",
     "lint": "biome lint",
     "typecheck": "pnpm -r typecheck",
-    "db:types": "supabase gen types typescript --local > packages/shared/src/db-types.ts",
+    "db:up": "docker compose -f db/docker-compose.yml up -d",
+    "db:down": "docker compose -f db/docker-compose.yml down",
+    "db:migrate": "tsx db/migrate.ts",
+    "db:reset": "docker compose -f db/docker-compose.yml down -v && pnpm db:up && until docker exec symphony-postgres pg_isready -U symphony -d symphony >/dev/null 2>&1; do sleep 1; done && pnpm db:migrate",
     "changeset": "changeset",
     "version": "changeset version",
     "release": "changeset tag"
@@ -45,6 +48,8 @@
     "@changesets/changelog-github": "^0.5.0",
     "@changesets/cli": "^2.27.10",
     "@types/node": "^22.10.2",
+    "postgres": "^3.4.9",
+    "tsx": "^4.21.0",
     "typescript": "^5.6.3"
   }
 }

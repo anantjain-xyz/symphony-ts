@@ -13,11 +13,7 @@
 --   4. agent_events_latest          - view: latest agent_events row per
 --                                     run_attempt_id. Backed by the existing
 --                                     (run_attempt_id, id) index so DISTINCT
---                                     ON is cheap. The dashboard joins this
---                                     into the running-attempts table.
---
--- Publication `supabase_realtime` is extended to include the new mutable
--- tables so the dashboard can rerender in response to Realtime events.
+--                                     ON is cheap.
 
 alter table run_attempts
   add column worker_pid integer;
@@ -29,20 +25,12 @@ create table rate_limit_state (
   updated_at timestamptz not null default now()
 );
 
-alter table rate_limit_state enable row level security;
-create policy "operators read rate_limit_state"
-  on rate_limit_state for select to authenticated using (true);
-
 create table worker_heartbeat (
   id text primary key default 'worker' check (id = 'worker'),
   started_at timestamptz not null,
   last_beat_at timestamptz not null default now(),
   worker_pid integer
 );
-
-alter table worker_heartbeat enable row level security;
-create policy "operators read worker_heartbeat"
-  on worker_heartbeat for select to authenticated using (true);
 
 create view agent_events_latest as
 select distinct on (run_attempt_id)
@@ -53,23 +41,3 @@ select distinct on (run_attempt_id)
   created_at
 from agent_events
 order by run_attempt_id, id desc;
-
-grant select on agent_events_latest to authenticated;
-
-do $$
-declare
-  t text;
-begin
-  foreach t in array array['rate_limit_state', 'worker_heartbeat']
-  loop
-    if not exists (
-      select 1
-      from pg_publication_tables
-      where pubname = 'supabase_realtime'
-        and schemaname = 'public'
-        and tablename = t
-    ) then
-      execute format('alter publication supabase_realtime add table public.%I', t);
-    end if;
-  end loop;
-end$$;

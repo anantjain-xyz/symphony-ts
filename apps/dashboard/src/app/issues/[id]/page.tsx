@@ -1,10 +1,18 @@
-import type { Tables, WorkflowFrontMatter } from '@symphony/shared';
+import {
+  issues as issuesT,
+  liveSessions,
+  runs as runsT,
+  type Tables,
+  type WorkflowFrontMatter,
+  workflows,
+} from '@symphony/shared';
+import { desc, eq, inArray } from 'drizzle-orm';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { IssueLinks } from '@/components/IssueLinks';
-import { createSupabaseServerClient } from '@/lib/supabase-server';
+import { db } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,35 +23,35 @@ const TERMINAL = new Set(['success', 'failure', 'timeout', 'cancelled']);
 
 export default async function IssuePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const supabase = createSupabaseServerClient();
-  const { data: issueRaw } = await supabase.from('issues').select('*').eq('id', id).maybeSingle();
+  const [issueRaw] = await db.select().from(issuesT).where(eq(issuesT.id, id)).limit(1);
   if (!issueRaw) notFound();
   const issue = issueRaw as Issue;
 
-  const [{ data: runs }, { data: sessions }, workflowRes] = await Promise.all([
-    supabase.from('runs').select('*').eq('issue_id', id).order('run_number', { ascending: false }),
-    supabase
-      .from('live_sessions')
-      .select('run_id, total_tokens')
-      .in(
-        'run_id',
-        ((await supabase.from('runs').select('id').eq('issue_id', id)).data ?? []).map((r) => r.id),
-      ),
-    supabase
-      .from('workflows')
-      .select('parsed')
-      .order('loaded_at', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-  ]);
+  const runRows = (await db
+    .select()
+    .from(runsT)
+    .where(eq(runsT.issue_id, id))
+    .orderBy(desc(runsT.run_number))) as Run[];
 
-  const tracker =
-    (workflowRes.data?.parsed as Partial<WorkflowFrontMatter> | null)?.tracker ?? null;
+  const runIds = runRows.map((r) => r.id);
+  const sessions =
+    runIds.length > 0
+      ? await db
+          .select({ run_id: liveSessions.run_id, total_tokens: liveSessions.total_tokens })
+          .from(liveSessions)
+          .where(inArray(liveSessions.run_id, runIds))
+      : [];
 
-  const runRows = (runs ?? []) as Run[];
-  const tokensByRun = new Map<string, number>(
-    (sessions ?? []).map((s) => [s.run_id, s.total_tokens]),
-  );
+  const workflowRow = await db
+    .select({ parsed: workflows.parsed })
+    .from(workflows)
+    .orderBy(desc(workflows.loaded_at))
+    .limit(1)
+    .then((r) => r[0] ?? null);
+
+  const tracker = (workflowRow?.parsed as Partial<WorkflowFrontMatter> | null)?.tracker ?? null;
+
+  const tokensByRun = new Map<string, number>(sessions.map((s) => [s.run_id, s.total_tokens]));
 
   const counts = countByStatus(runRows);
   const lastRun = runRows[0];
@@ -353,7 +361,6 @@ const descriptionMarkdown: Components = {
 /* ---------- atoms ---------- */
 
 function IssueStateBadge({ state }: { state: string }) {
-  // Linear states are free-form strings; map common ones.
   const norm = state.toLowerCase();
   const conf = norm.includes('progress')
     ? { color: 'text-info', dot: 'bg-info dot-live' }

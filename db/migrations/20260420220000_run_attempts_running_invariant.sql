@@ -7,8 +7,6 @@
 -- causing concurrent Codex processes to fight over the same workspace.
 
 -- Step 1: clean up any existing offenders so the unique index can be created.
--- These were already in a bad state (multiple concurrent runners for the same
--- issue); mark them cancelled so retry bookkeeping stays consistent.
 update run_attempts
 set status = 'cancelled',
     error_class = 'manual',

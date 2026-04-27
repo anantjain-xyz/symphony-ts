@@ -2,9 +2,8 @@
 -- across the schema. The `live_sessions` table itself stays — its `session_id` is
 -- the Claude SDK session token, not a Run. Only its FK column gets renamed.
 --
--- Grants and publication memberships track relation OID, so they survive table
--- renames untouched. The single exception is `agent_events_latest`, which we
--- must drop and recreate because the view body references the old column name.
+-- The `agent_events_latest` view hard-references the old column name, so it
+-- has to be dropped and recreated.
 
 -- 1. drop the view that hard-references the old column name
 drop view if exists agent_events_latest;
@@ -49,6 +48,3 @@ select distinct on (run_id)
   created_at
 from agent_events
 order by run_id, id desc;
-
-grant select on agent_events_latest to authenticated;
-grant select on agent_events_latest to anon;

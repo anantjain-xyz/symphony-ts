@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { getSupabaseBrowserClient } from '@/lib/supabase-browser';
 import { IssueLinks } from '@/components/IssueLinks';
 import type { Tables, TrackerConfig } from '@symphony/shared';
 import { EventBlock, ToolRunGroup, previewArgs, type EventRow } from './EventBlock';
@@ -54,27 +53,26 @@ export function LiveStream({
   /* Realtime subscription */
   useEffect(() => {
     if (runIsTerminal) return;
-    const supabase = getSupabaseBrowserClient();
-    const channel = supabase
-      .channel(`run:${runId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'agent_events',
-          filter: `run_id=eq.${runId}`,
-        },
-        (payload) => {
-          setEvents((prev) => [...prev, payload.new as EventRow]);
-        },
-      )
-      .subscribe((status) => {
-        setConnected(status === 'SUBSCRIBED');
-      });
+    const es = new EventSource(`/api/runs/${runId}/stream`);
+    es.onopen = () => setConnected(true);
+    es.onerror = () => setConnected(false);
+    es.onmessage = (e) => {
+      try {
+        const row = JSON.parse(e.data) as EventRow & { truncated?: boolean };
+        // The server sends a slim {id, run_id, kind, created_at, truncated}
+        // payload when a single event row exceeds pg_notify's 8 KB ceiling.
+        // The page already loaded the full row server-side at request time;
+        // for now we drop the slim notify rather than render half a row, and
+        // a subsequent normal-sized event will reflow the timeline.
+        if (row.truncated) return;
+        setEvents((prev) => [...prev, row]);
+      } catch {
+        // ignore malformed payloads
+      }
+    };
 
     return () => {
-      void supabase.removeChannel(channel);
+      es.close();
     };
   }, [runId, runIsTerminal]);
 

@@ -32,7 +32,9 @@ async function main() {
     .where(eq(rateLimitState.source, 'claude_primary'))
     .returning({ source: rateLimitState.source });
 
-  console.log(`Removed ${removedIssues.length} mock issues (cascade clears runs, events, sessions, retries).`);
+  console.log(
+    `Removed ${removedIssues.length} mock issues (cascade clears runs, events, sessions, retries).`,
+  );
   for (const i of removedIssues) console.log(`  - ${i.identifier}`);
   console.log(`Removed ${removedRateLimits.length} mock rate_limit_state rows.`);
 

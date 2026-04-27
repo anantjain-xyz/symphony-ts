@@ -187,130 +187,308 @@ async function main() {
 
   // ---- 4 active running runs with diverse latest events ----
 
-  const r1 = await reserveAndStart(db, repo, ISSUES[0]!.id, 1, '/tmp/symphony-mock/MOCK-101', 24611, 6);
+  const r1 = await reserveAndStart(
+    db,
+    repo,
+    ISSUES[0]!.id,
+    1,
+    '/tmp/symphony-mock/MOCK-101',
+    24611,
+    6,
+  );
   if (r1) {
     await emit(db, r1, 'status', { message: 'Reading repository' }, 5.5);
     await emit(db, r1, 'humanized', { summary: 'Reading repository' }, 5.4);
     await emit(db, r1, 'tool_call', { tool: 'grep', args: { pattern: 'stripe' } }, 5.0);
     await emit(db, r1, 'humanized', { summary: 'grep: 14 matches across 8 files' }, 4.9);
-    await emit(db, r1, 'tool_call', {
-      tool: 'bash',
-      args: { cmd: 'pnpm vitest run billing/' },
-      result_summary: '12 tests passed in 2.3s',
-    }, 1.2);
+    await emit(
+      db,
+      r1,
+      'tool_call',
+      {
+        tool: 'bash',
+        args: { cmd: 'pnpm vitest run billing/' },
+        result_summary: '12 tests passed in 2.3s',
+      },
+      1.2,
+    );
     await emit(db, r1, 'humanized', { summary: 'bash: 12 tests passed in 2.3s' }, 1.1);
-    await emit(db, r1, 'token_count', {
-      input_tokens: 18420,
-      output_tokens: 3210,
-      total_tokens: 21630,
-    }, 0.4);
+    await emit(
+      db,
+      r1,
+      'token_count',
+      {
+        input_tokens: 18420,
+        output_tokens: 3210,
+        total_tokens: 21630,
+      },
+      0.4,
+    );
     await upsertLive(db, r1, 18420, 3210, 21630);
   }
 
-  const r2 = await reserveAndStart(db, repo, ISSUES[1]!.id, 1, '/tmp/symphony-mock/MOCK-102', 24612, 12);
+  const r2 = await reserveAndStart(
+    db,
+    repo,
+    ISSUES[1]!.id,
+    1,
+    '/tmp/symphony-mock/MOCK-102',
+    24612,
+    12,
+  );
   if (r2) {
     await emit(db, r2, 'status', { message: 'Reproducing on Safari 17' }, 11);
     await emit(db, r2, 'humanized', { summary: 'Reproducing on Safari 17' }, 10.9);
-    await emit(db, r2, 'tool_call', {
-      tool: 'edit',
-      args: { path: 'apps/web/src/pricing/format.ts' },
-      result_summary: 'patched 2 lines',
-    }, 0.8);
-    await emit(db, r2, 'humanized', { summary: 'edit: patched apps/web/src/pricing/format.ts' }, 0.75);
-    await emit(db, r2, 'token_count', {
-      input_tokens: 9120,
-      output_tokens: 1840,
-      total_tokens: 10960,
-    }, 0.2);
+    await emit(
+      db,
+      r2,
+      'tool_call',
+      {
+        tool: 'edit',
+        args: { path: 'apps/web/src/pricing/format.ts' },
+        result_summary: 'patched 2 lines',
+      },
+      0.8,
+    );
+    await emit(
+      db,
+      r2,
+      'humanized',
+      { summary: 'edit: patched apps/web/src/pricing/format.ts' },
+      0.75,
+    );
+    await emit(
+      db,
+      r2,
+      'token_count',
+      {
+        input_tokens: 9120,
+        output_tokens: 1840,
+        total_tokens: 10960,
+      },
+      0.2,
+    );
     await upsertLive(db, r2, 9120, 1840, 10960);
   }
 
-  const r3 = await reserveAndStart(db, repo, ISSUES[2]!.id, 1, '/tmp/symphony-mock/MOCK-103', 24613, 28);
+  const r3 = await reserveAndStart(
+    db,
+    repo,
+    ISSUES[2]!.id,
+    1,
+    '/tmp/symphony-mock/MOCK-103',
+    24613,
+    28,
+  );
   if (r3) {
     await emit(db, r3, 'status', { message: 'Drafting migration' }, 27);
     await emit(db, r3, 'humanized', { summary: 'Drafting migration' }, 26.9);
-    await emit(db, r3, 'approval', {
-      reason: 'Approve CREATE INDEX CONCURRENTLY on embeddings (≈40M rows)?',
-    }, 0.5);
-    await emit(db, r3, 'token_count', {
-      input_tokens: 24100,
-      output_tokens: 5430,
-      total_tokens: 29530,
-    }, 0.4);
+    await emit(
+      db,
+      r3,
+      'approval',
+      {
+        reason: 'Approve CREATE INDEX CONCURRENTLY on embeddings (≈40M rows)?',
+      },
+      0.5,
+    );
+    await emit(
+      db,
+      r3,
+      'token_count',
+      {
+        input_tokens: 24100,
+        output_tokens: 5430,
+        total_tokens: 29530,
+      },
+      0.4,
+    );
     await upsertLive(db, r3, 24100, 5430, 29530);
   }
 
-  const r4 = await reserveAndStart(db, repo, ISSUES[4]!.id, 2, '/tmp/symphony-mock/MOCK-105', 24614, 2);
+  const r4 = await reserveAndStart(
+    db,
+    repo,
+    ISSUES[4]!.id,
+    2,
+    '/tmp/symphony-mock/MOCK-105',
+    24614,
+    2,
+  );
   if (r4) {
     await emit(db, r4, 'status', { message: 'Bisecting against 4.2 release' }, 1.8);
     await emit(db, r4, 'humanized', { summary: 'Bisecting against 4.2 release' }, 1.75);
-    await emit(db, r4, 'rate_limit', {
-      source: 'claude_primary',
-      remaining: 0,
-      reset_at: minutesFromNow(7).toISOString(),
-    }, 0.1);
-    await emit(db, r4, 'token_count', {
-      input_tokens: 4210,
-      output_tokens: 612,
-      total_tokens: 4822,
-    }, 0.05);
+    await emit(
+      db,
+      r4,
+      'rate_limit',
+      {
+        source: 'claude_primary',
+        remaining: 0,
+        reset_at: minutesFromNow(7).toISOString(),
+      },
+      0.1,
+    );
+    await emit(
+      db,
+      r4,
+      'token_count',
+      {
+        input_tokens: 4210,
+        output_tokens: 612,
+        total_tokens: 4822,
+      },
+      0.05,
+    );
     await upsertLive(db, r4, 4210, 612, 4822);
   }
 
   // ---- recent failures (terminal) ----
 
-  const r5 = await reserveAndStart(db, repo, ISSUES[3]!.id, 1, '/tmp/symphony-mock/MOCK-104', 24501, 35);
+  const r5 = await reserveAndStart(
+    db,
+    repo,
+    ISSUES[3]!.id,
+    1,
+    '/tmp/symphony-mock/MOCK-104',
+    24501,
+    35,
+  );
   if (r5) {
     await emit(db, r5, 'status', { message: 'Running e2e suite' }, 34);
-    await emit(db, r5, 'tool_call', {
-      tool: 'bash',
-      args: { cmd: 'pnpm playwright test checkout' },
-      result_summary: '1 test failed (timeout)',
-    }, 19);
-    await emit(db, r5, 'error', {
-      class: 'tool_failure',
-      message: 'playwright: checkout-cart-abandonment timed out after 30000ms',
-    }, 18.2);
-    await finish(db, r5, 'failure', minutesAgo(18), 'tool_failure',
-      'playwright: checkout-cart-abandonment timed out after 30000ms');
+    await emit(
+      db,
+      r5,
+      'tool_call',
+      {
+        tool: 'bash',
+        args: { cmd: 'pnpm playwright test checkout' },
+        result_summary: '1 test failed (timeout)',
+      },
+      19,
+    );
+    await emit(
+      db,
+      r5,
+      'error',
+      {
+        class: 'tool_failure',
+        message: 'playwright: checkout-cart-abandonment timed out after 30000ms',
+      },
+      18.2,
+    );
+    await finish(
+      db,
+      r5,
+      'failure',
+      minutesAgo(18),
+      'tool_failure',
+      'playwright: checkout-cart-abandonment timed out after 30000ms',
+    );
   }
 
-  const r6 = await reserveAndStart(db, repo, ISSUES[5]!.id, 1, '/tmp/symphony-mock/MOCK-106', 24502, 75);
+  const r6 = await reserveAndStart(
+    db,
+    repo,
+    ISSUES[5]!.id,
+    1,
+    '/tmp/symphony-mock/MOCK-106',
+    24502,
+    75,
+  );
   if (r6) {
     await emit(db, r6, 'status', { message: 'Searching for callers' }, 74);
     await emit(db, r6, 'tool_call', { tool: 'bash', args: { cmd: 'rg "/v1/users" -n' } }, 73);
-    await emit(db, r6, 'error', {
-      class: 'agent_timeout',
-      message: 'agent exceeded 1800s wall-clock budget',
-    }, 43);
-    await finish(db, r6, 'timeout', minutesAgo(42), 'agent_timeout',
-      'agent exceeded 1800s wall-clock budget');
+    await emit(
+      db,
+      r6,
+      'error',
+      {
+        class: 'agent_timeout',
+        message: 'agent exceeded 1800s wall-clock budget',
+      },
+      43,
+    );
+    await finish(
+      db,
+      r6,
+      'timeout',
+      minutesAgo(42),
+      'agent_timeout',
+      'agent exceeded 1800s wall-clock budget',
+    );
   }
 
-  const r7 = await reserveAndStart(db, repo, ISSUES[8]!.id, 1, '/tmp/symphony-mock/MOCK-109', 24503, 130);
+  const r7 = await reserveAndStart(
+    db,
+    repo,
+    ISSUES[8]!.id,
+    1,
+    '/tmp/symphony-mock/MOCK-109',
+    24503,
+    130,
+  );
   if (r7) {
     await emit(db, r7, 'status', { message: 'Updating lockfile' }, 129);
-    await emit(db, r7, 'error', {
-      class: 'lockfile_conflict',
-      message: 'pnpm-lock.yaml has merge markers; aborting',
-    }, 122);
-    await finish(db, r7, 'failure', minutesAgo(121), 'lockfile_conflict',
-      'pnpm-lock.yaml has merge markers; aborting');
+    await emit(
+      db,
+      r7,
+      'error',
+      {
+        class: 'lockfile_conflict',
+        message: 'pnpm-lock.yaml has merge markers; aborting',
+      },
+      122,
+    );
+    await finish(
+      db,
+      r7,
+      'failure',
+      minutesAgo(121),
+      'lockfile_conflict',
+      'pnpm-lock.yaml has merge markers; aborting',
+    );
   }
 
-  const r8 = await reserveAndStart(db, repo, ISSUES[9]!.id, 1, '/tmp/symphony-mock/MOCK-110', 24504, 245);
+  const r8 = await reserveAndStart(
+    db,
+    repo,
+    ISSUES[9]!.id,
+    1,
+    '/tmp/symphony-mock/MOCK-110',
+    24504,
+    245,
+  );
   if (r8) {
-    await emit(db, r8, 'tool_call', {
-      tool: 'bash',
-      args: { cmd: 'psql -c "create index ..."' },
-      result_summary: 'ERROR: lock timeout',
-    }, 241);
-    await emit(db, r8, 'error', {
-      class: 'tool_failure',
-      message: 'psql: ERROR canceling statement due to lock timeout',
-    }, 240.5);
-    await finish(db, r8, 'failure', minutesAgo(240), 'tool_failure',
-      'psql: ERROR canceling statement due to lock timeout');
+    await emit(
+      db,
+      r8,
+      'tool_call',
+      {
+        tool: 'bash',
+        args: { cmd: 'psql -c "create index ..."' },
+        result_summary: 'ERROR: lock timeout',
+      },
+      241,
+    );
+    await emit(
+      db,
+      r8,
+      'error',
+      {
+        class: 'tool_failure',
+        message: 'psql: ERROR canceling statement due to lock timeout',
+      },
+      240.5,
+    );
+    await finish(
+      db,
+      r8,
+      'failure',
+      minutesAgo(240),
+      'tool_failure',
+      'psql: ERROR canceling statement due to lock timeout',
+    );
   }
 
   // ---- retry queue ----
@@ -406,13 +584,7 @@ async function finish(
     .where(eq(runs.id, runId));
 }
 
-async function upsertLive(
-  db: Db,
-  runId: string,
-  inTok: number,
-  outTok: number,
-  totTok: number,
-) {
+async function upsertLive(db: Db, runId: string, inTok: number, outTok: number, totTok: number) {
   await db
     .insert(liveSessions)
     .values({

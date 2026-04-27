@@ -33,8 +33,7 @@ export function ThemeToggle() {
 
     const media = window.matchMedia('(prefers-color-scheme: light)');
     const onChange = () => {
-      const current =
-        (document.documentElement.dataset.themePref as ThemePref) || 'system';
+      const current = (document.documentElement.dataset.themePref as ThemePref) || 'system';
       if (current === 'system') applyTheme('system');
     };
     media.addEventListener('change', onChange);
@@ -71,11 +70,7 @@ export function ThemeToggle() {
       >
         <MonitorIcon />
       </ToggleButton>
-      <ToggleButton
-        label="Dark"
-        active={mounted && pref === 'dark'}
-        onClick={() => choose('dark')}
-      >
+      <ToggleButton label="Dark" active={mounted && pref === 'dark'} onClick={() => choose('dark')}>
         <MoonIcon />
       </ToggleButton>
     </div>
@@ -102,9 +97,7 @@ function ToggleButton({
       title={label}
       onClick={onClick}
       className={`flex h-6 w-6 items-center justify-center rounded transition-colors ${
-        active
-          ? 'bg-surface-3 text-ink-0'
-          : 'text-ink-3 hover:text-ink-1 hover:bg-surface-2'
+        active ? 'bg-surface-3 text-ink-0' : 'text-ink-3 hover:text-ink-1 hover:bg-surface-2'
       }`}
     >
       {children}

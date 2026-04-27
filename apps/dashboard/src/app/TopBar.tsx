@@ -24,7 +24,7 @@ export function TopBar() {
           aria-hidden
           style={{ boxShadow: '0 0 12px rgba(232,163,61,0.5)' }}
         />
-        <span className="font-display text-[17px] tracking-tight text-ink-0 group-hover:text-white">
+        <span className="font-display text-[17px] tracking-tight text-ink-0 group-hover:text-signal transition-colors">
           Symphony
         </span>
       </Link>

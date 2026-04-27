@@ -190,6 +190,7 @@ export class Repo {
   }
 
   async listRunning(opts?: { issueIds?: string[] }): Promise<RunRow[]> {
+    if (opts?.issueIds?.length === 0) return [];
     const where =
       opts?.issueIds && opts.issueIds.length > 0
         ? and(eq(runs.status, 'running'), inArray(runs.issue_id, opts.issueIds))
@@ -198,6 +199,7 @@ export class Repo {
   }
 
   async countRunning(opts?: { issueIds?: string[] }): Promise<number> {
+    if (opts?.issueIds?.length === 0) return 0;
     const where =
       opts?.issueIds && opts.issueIds.length > 0
         ? and(eq(runs.status, 'running'), inArray(runs.issue_id, opts.issueIds))
@@ -346,6 +348,7 @@ export class Repo {
    * database don't touch live worker data. Returns the number of rows deleted.
    */
   async deleteOrphanedPendingSessions(opts?: { issueIds?: string[] }): Promise<number> {
+    if (opts?.issueIds?.length === 0) return 0;
     const issueScope = opts?.issueIds && opts.issueIds.length > 0;
     const terminalRunsSubquery = this.db
       .select({ id: runs.id })
@@ -475,6 +478,7 @@ export class Repo {
   }
 
   async dueRetries(opts?: { issueIds?: string[] }): Promise<RetryQueueRow[]> {
+    if (opts?.issueIds?.length === 0) return [];
     const now = new Date().toISOString();
     const where =
       opts?.issueIds && opts.issueIds.length > 0
@@ -499,6 +503,7 @@ export class Repo {
 
   /** Issue ids of every row in `retry_queue`, regardless of `due_at`. */
   async allRetryIssueIds(opts?: { issueIds?: string[] }): Promise<string[]> {
+    if (opts?.issueIds?.length === 0) return [];
     const where =
       opts?.issueIds && opts.issueIds.length > 0
         ? inArray(retryQueue.issue_id, opts.issueIds)

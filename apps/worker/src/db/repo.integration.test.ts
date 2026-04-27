@@ -1,4 +1,5 @@
-import { createDb } from '@symphony/shared';
+import { createDb, liveSessions } from '@symphony/shared';
+import { eq } from 'drizzle-orm';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Repo } from './repo.js';
 import { makeTestIssue, makeTestWorkflow } from './test-helpers.js';
@@ -73,6 +74,21 @@ d('Repo integration', () => {
     await repo.finishRun({ runId: reserved!.id, status: 'success' });
     expect(await repo.countRunning({ issueIds: [issueId] })).toBe(0);
     expect(await repo.lastRunNumber(issueId)).toBe(1);
+  });
+
+  it('returns no running runs for an explicitly empty issue scope', async () => {
+    const issueId = scope.newIssueId();
+    await repo.upsertIssues([makeTestIssue({ id: issueId, identifier: scope.newIdentifier() })]);
+
+    const reserved = await repo.tryReserveRun({
+      issueId,
+      runNumber: 1,
+      workspacePath: '/tmp/symphony-tests/empty-running-scope',
+    });
+    await repo.markRunning(reserved!.id);
+
+    expect(await repo.listRunning({ issueIds: [] })).toEqual([]);
+    expect(await repo.countRunning({ issueIds: [] })).toBe(0);
   });
 
   it('agent_events append and recentEvents in chronological order', async () => {
@@ -282,5 +298,36 @@ d('Repo integration', () => {
       total_tokens: 150,
     });
     await repo.deleteLiveSession(reserved!.id);
+  });
+
+  it('does not delete placeholder live_sessions for an explicitly empty issue scope', async () => {
+    const issueId = scope.newIssueId();
+    await repo.upsertIssues([makeTestIssue({ id: issueId, identifier: scope.newIdentifier() })]);
+
+    const reserved = await repo.tryReserveRun({
+      issueId,
+      runNumber: 1,
+      workspacePath: '/tmp/symphony-tests/empty-placeholder-scope',
+    });
+    await repo.markRunning(reserved!.id);
+    await repo.upsertLiveSession({
+      run_id: reserved!.id,
+      session_id: `pending-${reserved!.id}`,
+      thread_id: '',
+      turn_id: '',
+      input_tokens: 0,
+      output_tokens: 0,
+      total_tokens: 0,
+    });
+    await repo.finishRun({
+      runId: reserved!.id,
+      status: 'failure',
+      errorClass: 'dispatch_error',
+      errorMessage: 'simulated crash',
+    });
+
+    expect(await repo.deleteOrphanedPendingSessions({ issueIds: [] })).toBe(0);
+    const rows = await db.select().from(liveSessions).where(eq(liveSessions.run_id, reserved!.id));
+    expect(rows).toHaveLength(1);
   });
 });

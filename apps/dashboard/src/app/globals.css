@@ -2,7 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
+:root,
+:root[data-theme="dark"] {
   color-scheme: dark;
 
   /* Surfaces */
@@ -31,6 +32,44 @@
   --info-soft: rgba(122, 162, 247, 0.14);
   --think: #c39ad6;
   --think-soft: rgba(195, 154, 214, 0.14);
+
+  /* Background tint behind the page (paper grain) */
+  --tint-warm: rgba(232, 163, 61, 0.06);
+  --tint-cool: rgba(122, 162, 247, 0.05);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  /* Surfaces — warm paper progression from light to slightly deeper */
+  --surface-0: #faf8f3;
+  --surface-1: #f2efe6;
+  --surface-2: #e8e4d6;
+  --surface-3: #ddd8c6;
+  --hairline: #d6d0bd;
+  --hairline-strong: #b6ad96;
+
+  /* Text — near-black primary, warm grays */
+  --ink-0: #1a1a1a;
+  --ink-1: #2d2c28;
+  --ink-2: #5b5851;
+  --ink-3: #84807a;
+  --ink-4: #a8a49b;
+
+  /* Signals — slightly deepened so they read on light surfaces */
+  --signal: #b87411;
+  --signal-soft: rgba(184, 116, 17, 0.14);
+  --success: #3f8a3b;
+  --success-soft: rgba(63, 138, 59, 0.14);
+  --error: #c43838;
+  --error-soft: rgba(196, 56, 56, 0.14);
+  --info: #3a6dcc;
+  --info-soft: rgba(58, 109, 204, 0.14);
+  --think: #8a5fa6;
+  --think-soft: rgba(138, 95, 166, 0.14);
+
+  --tint-warm: rgba(184, 116, 17, 0.05);
+  --tint-cool: rgba(58, 109, 204, 0.04);
 }
 
 html,
@@ -40,6 +79,9 @@ body {
   font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
   font-feature-settings: "ss01", "ss02", "cv11";
   -webkit-font-smoothing: antialiased;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
 }
 
 /* The faint paper grain that sits behind everything. Very subtle. */
@@ -50,8 +92,8 @@ body::before {
   pointer-events: none;
   z-index: 0;
   background-image:
-    radial-gradient(1200px 600px at 80% -10%, rgba(232, 163, 61, 0.06), transparent 60%),
-    radial-gradient(900px 500px at -10% 110%, rgba(122, 162, 247, 0.05), transparent 60%);
+    radial-gradient(1200px 600px at 80% -10%, var(--tint-warm), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, var(--tint-cool), transparent 60%);
 }
 
 body > * {

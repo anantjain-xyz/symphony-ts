@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { ThemeToggle } from './ThemeToggle';
 
 const NAV: Array<{ href: string; label: string; match: (pathname: string) => boolean }> = [
   { href: '/', label: 'Dashboard', match: (p) => p === '/' },
@@ -46,6 +47,9 @@ export function TopBar() {
           );
         })}
       </nav>
+      <div className="ml-auto">
+        <ThemeToggle />
+      </div>
     </header>
   );
 }

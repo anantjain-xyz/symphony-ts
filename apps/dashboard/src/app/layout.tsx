@@ -31,7 +31,9 @@ export const metadata: Metadata = {
   description: 'Symphony orchestrator dashboard',
 };
 
-const themeInitScript = `(function(){try{var s=localStorage.getItem('symphony-theme');var p=(s==='light'||s==='dark'||s==='system')?s:'system';var t=p==='system'?(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark'):p;var d=document.documentElement;d.dataset.theme=t;d.dataset.themePref=p;}catch(e){}})();`;
+// Isolate storage read so a SecurityError in strict-privacy browsers
+// doesn't skip the theme resolution and leave us stuck on the default.
+const themeInitScript = `(function(){var p='system';try{var s=localStorage.getItem('symphony-theme');if(s==='light'||s==='dark'||s==='system')p=s;}catch(e){}try{var t=p==='system'?(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark'):p;var d=document.documentElement;d.dataset.theme=t;d.dataset.themePref=p;}catch(e){}})();`;
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (

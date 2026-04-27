@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: symphony-postgres
+    restart: unless-stopped
+    ports:
+      - "54422:5432"
+    environment:
+      POSTGRES_USER: symphony
+      POSTGRES_PASSWORD: symphony
+      POSTGRES_DB: symphony
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U symphony -d symphony"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  pgdata:
+    name: symphony_pgdata

@@ -18,7 +18,8 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..')
 loadDotenv({ path: resolve(repoRoot, '.env.local') });
 loadDotenv({ path: resolve(repoRoot, '.env') });
 
-import { createServiceClient } from '@symphony/shared';
+import { createDb, issues as issuesT, liveSessions, runs as runsT } from '@symphony/shared';
+import { desc, eq } from 'drizzle-orm';
 import { resolveConfig } from '../config/resolve.js';
 import { loadWorkflowFile } from '../config/workflow.js';
 import { WorkspaceManager } from '../workspace/manager.js';
@@ -73,39 +74,32 @@ async function main(): Promise<number> {
 }
 
 async function lookupSessionIdFromDb(identifier: string): Promise<string | null> {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return null;
+  const url = process.env.DATABASE_URL;
+  if (!url) return null;
 
-  const db = createServiceClient({ url, serviceRoleKey: key });
+  const db = createDb(url, { max: 1 });
 
-  const { data: issue, error: issueErr } = await db
-    .from('issues')
-    .select('id')
-    .eq('identifier', identifier)
-    .maybeSingle();
-  if (issueErr) throw issueErr;
+  const [issue] = await db
+    .select({ id: issuesT.id })
+    .from(issuesT)
+    .where(eq(issuesT.identifier, identifier))
+    .limit(1);
   if (!issue) return null;
 
-  const { data: run, error: runErr } = await db
-    .from('runs')
-    .select('id, status')
-    .eq('issue_id', issue.id)
-    .order('run_number', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (runErr) throw runErr;
+  const [run] = await db
+    .select({ id: runsT.id })
+    .from(runsT)
+    .where(eq(runsT.issue_id, issue.id))
+    .orderBy(desc(runsT.run_number))
+    .limit(1);
   if (!run) return null;
 
-  const { data: session, error: sessErr } = await db
-    .from('live_sessions')
-    .select('thread_id')
-    .eq('run_id', run.id)
-    .maybeSingle();
-  if (sessErr) throw sessErr;
-  if (session?.thread_id) return session.thread_id;
-
-  return null;
+  const [session] = await db
+    .select({ thread_id: liveSessions.thread_id })
+    .from(liveSessions)
+    .where(eq(liveSessions.run_id, run.id))
+    .limit(1);
+  return session?.thread_id ?? null;
 }
 
 /**

@@ -1,3 +1,5 @@
-export type { Database, Enums, Json, Tables, TablesInsert, TablesUpdate } from './db-types.js';
-export * from './schema.js';
-export * from './supabase.js';
+export type { Json } from './db/schema';
+export * from './db/schema';
+export * from './db/client';
+export type { Tables, TablesInsert, TablesUpdate } from './db/types';
+export * from './schema';

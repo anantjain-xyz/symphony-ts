@@ -1,5 +1,6 @@
-import type { Tables } from '@symphony/shared';
-import { createSupabaseServerClient } from '@/lib/supabase-server';
+import { issues as issuesT, runs, type Tables } from '@symphony/shared';
+import { and, desc, eq, getTableColumns, ilike, inArray, or, sql } from 'drizzle-orm';
+import { db } from '@/lib/db';
 import { ListFilters } from '../_filters/ListFilters';
 import { asString, parseCsv } from '../_filters/params';
 import { RunRow, relativeTime } from '../RunRow';
@@ -32,33 +33,38 @@ export default async function RunsListPage({
   );
   const search = (asString(sp.q) ?? '').trim();
 
-  const supabase = createSupabaseServerClient();
-
-  // PostgREST can't `.or` across joined tables, so when the user searches
-  // we first resolve matching issue IDs and then constrain runs.
+  // First resolve matching issue IDs when searching, then constrain runs.
   let issueIdFilter: string[] | null = null;
   if (search) {
     const escaped = search.replace(/[%,]/g, '');
-    const { data: matching } = await supabase
-      .from('issues')
-      .select('id')
-      .or(`identifier.ilike.%${escaped}%,title.ilike.%${escaped}%`);
-    issueIdFilter = (matching ?? []).map((r) => r.id);
+    const matching = await db
+      .select({ id: issuesT.id })
+      .from(issuesT)
+      .where(or(ilike(issuesT.identifier, `%${escaped}%`), ilike(issuesT.title, `%${escaped}%`)));
+    issueIdFilter = matching.map((r) => r.id);
   }
 
   let rows: RunWithIssue[] = [];
   if (!issueIdFilter || issueIdFilter.length > 0) {
-    let query = supabase
-      .from('runs')
-      .select('*, issues(identifier, title, state)')
-      .order('started_at', { ascending: false, nullsFirst: false })
-      .limit(PAGE_SIZE);
+    const conds = [
+      statusFilter.length > 0 ? inArray(runs.status, statusFilter) : undefined,
+      issueIdFilter ? inArray(runs.issue_id, issueIdFilter) : undefined,
+    ].filter((c): c is NonNullable<typeof c> => c !== undefined);
 
-    if (statusFilter.length > 0) query = query.in('status', statusFilter);
-    if (issueIdFilter) query = query.in('issue_id', issueIdFilter);
-
-    const { data } = await query;
-    rows = (data ?? []) as unknown as RunWithIssue[];
+    rows = (await db
+      .select({
+        ...getTableColumns(runs),
+        issues: {
+          identifier: issuesT.identifier,
+          title: issuesT.title,
+          state: issuesT.state,
+        },
+      })
+      .from(runs)
+      .leftJoin(issuesT, eq(runs.issue_id, issuesT.id))
+      .where(conds.length > 0 ? and(...conds) : undefined)
+      .orderBy(sql`${runs.started_at} desc nulls last`)
+      .limit(PAGE_SIZE)) as RunWithIssue[];
   }
 
   return (

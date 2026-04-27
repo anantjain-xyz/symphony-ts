@@ -62,19 +62,19 @@ describe('runHook', () => {
     expect(meta.trim()).toBe(`ENG-7@${ws}`);
   });
 
-  it('strips SUPABASE_SERVICE_ROLE_KEY from hook env', async () => {
-    process.env.SUPABASE_SERVICE_ROLE_KEY = 'should-not-leak';
+  it('strips DATABASE_URL from hook env', async () => {
+    process.env.DATABASE_URL = 'postgres://should:not@leak/here';
     try {
       const result = await runHook(
         'after_run',
-        'echo "key=${SUPABASE_SERVICE_ROLE_KEY:-MISSING}" > leak.txt',
+        'echo "url=${DATABASE_URL:-MISSING}" > leak.txt',
         { issue: ISSUE, workspacePath: ws, runNumber: 1 },
         { timeoutMs: 5000 },
       );
       expect(result.exitCode).toBe(0);
-      expect((await readFile(path.join(ws, 'leak.txt'), 'utf8')).trim()).toBe('key=MISSING');
+      expect((await readFile(path.join(ws, 'leak.txt'), 'utf8')).trim()).toBe('url=MISSING');
     } finally {
-      delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+      delete process.env.DATABASE_URL;
     }
   });
 

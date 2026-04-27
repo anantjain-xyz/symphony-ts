@@ -3,31 +3,31 @@
 [![CI](https://github.com/anantjain-xyz/symphony-ts/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/anantjain-xyz/symphony-ts/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/anantjain-xyz/symphony-ts/branch/main/graph/badge.svg)](https://codecov.io/gh/anantjain-xyz/symphony-ts)
 
-TypeScript port of [Symphony](https://github.com/openai/symphony), backed by Supabase for persistence and realtime.
+TypeScript port of [Symphony](https://github.com/openai/symphony), backed by a local Postgres for persistence and `LISTEN/NOTIFY` for live updates.
 
 A long-running daemon that polls Linear for active issues, provisions isolated workspaces per issue, and runs Claude Code (or Codex) coding-agent sessions against them with retries, concurrency caps, and live operator observability.
 
 ## The big picture
 
 ```
-   Linear (issues)                Supabase Postgres                  Operator
-        │                          ┌──────────────┐                     │
-        │ GraphQL                  │  issues      │                     │ browser
-        │                          │  runs        │                     │
-        ▼                          │  agent_events│◀──── Realtime ──────┤
- ┌──────────────┐   service key    │  live_sess.  │                     ▼
- │   WORKER     │ ───────────────▶ │  retry_queue │         ┌───────────────────┐
- │   (daemon)   │ ◀─────────────── │  hook_runs   │         │  DASHBOARD        │
- │              │                  │  workflows   │◀── RLS──│  (Next.js 15)     │
- │ poll → plan  │                  └──────────────┘   anon  │                   │
- │ → dispatch   │                                           │  fleet / runs     │
- └──────┬───────┘                                           └───────────────────┘
-        │ spawn
-        ▼
- ┌──────────────┐    NDJSON     ┌──────────────┐
- │ agent adapter│ ◀───JSON-RPC─▶│claude / codex│   ← the actual LLM agent
- │    (.mjs)    │               │  (subproc)   │
- └──────────────┘               └──────────────┘
+   Linear (issues)                  Postgres (docker)                    Operator
+        │                          ┌──────────────┐                       │
+        │ GraphQL                  │  issues      │                       │ browser
+        │                          │  runs        │                       │
+        ▼                          │  agent_events│                       ▼
+ ┌──────────────┐    DATABASE_URL  │  live_sess.  │            ┌────────────────────┐
+ │   WORKER     │ ───────────────▶ │  retry_queue │◀── SSE ────│  DASHBOARD         │
+ │   (daemon)   │ ◀─────────────── │  hook_runs   │  /api/stream│  (Next.js 15)     │
+ │              │                  │  workflows   │            │                    │
+ │ poll → plan  │                  └──────┬───────┘            │  fleet / runs      │
+ │ → dispatch   │                         │                    └────────────────────┘
+ └──────┬───────┘                         │ pg_notify (triggers)
+        │ spawn                           │
+        ▼                                 ▼
+ ┌──────────────┐    NDJSON        symphony_changes  ──── coarse fanout
+ │ agent adapter│ ◀───JSON-RPC─▶  agent_events:<run_id> ── per-run live stream
+ │    (.mjs)    │
+ └──────────────┘
         │
         ▼
  /tmp/symphony-workspaces/<issue>/   ← isolated filesystem per issue
@@ -48,8 +48,8 @@ symphony-ts/
 ├── .env.example           env template
 ├── .github/workflows/ci.yml    format · lint · typecheck · test
 │
-├── supabase/              DB schema + local dev config
-├── packages/shared/       zod schemas, DB types, client factory
+├── db/                    docker-compose Postgres + SQL migrations + tiny migrate runner
+├── packages/shared/       zod schemas, Drizzle schema, DB client factory
 └── apps/
     ├── worker/            Node.js orchestrator daemon
     └── dashboard/         Next.js 15 operator console
@@ -57,19 +57,19 @@ symphony-ts/
 
 - `apps/worker/` — Node daemon (poll loop, orchestrator, workspace manager, agent runner)
 - `apps/dashboard/` — Next.js operator console (live session view)
-- `packages/shared/` — zod schemas, generated DB types, Supabase client factory
-- `supabase/` — local Supabase config + SQL migrations
+- `packages/shared/` — zod schemas, Drizzle schema, `createDb()` / `createListener()` factories
+- `db/` — `docker-compose.yml` (postgres:16), raw SQL migrations, `migrate.ts`
 
 ## Local dev
 
 ```sh
 pnpm install
-supabase start                 # ports bumped to 54421+ to avoid collisions
-pnpm db:types                  # regenerate packages/shared/src/db-types.ts
+pnpm db:up                     # start postgres on :54422 via docker
+pnpm db:migrate                # apply ./db/migrations
 pnpm -r build                  # build everything
 ```
 
-Local Supabase URLs and keys: `supabase status`. Studio is at http://127.0.0.1:54423.
+`pnpm db:reset` wipes the volume and re-applies migrations from scratch. `pnpm db:down` stops the container.
 
 ### Env
 
@@ -77,13 +77,13 @@ Both apps read from a single `.env.local` at the repo root:
 
 ```sh
 cp .env.example .env.local
-# fill in SUPABASE_SERVICE_ROLE_KEY (from `supabase status` -> Secret)
-#         NEXT_PUBLIC_SUPABASE_ANON_KEY (from `supabase status` -> Publishable)
+# fill in DATABASE_URL    (default: postgres://symphony:symphony@127.0.0.1:54422/symphony)
 #         LINEAR_API_KEY
 ```
 
 The worker loads it via `dotenv` in `apps/worker/src/index.ts`; the dashboard
-loads it via `loadEnvConfig` in `apps/dashboard/next.config.mjs`.
+loads it via `loadEnvConfig` in `apps/dashboard/next.config.mjs`. The dashboard
+uses `DATABASE_URL` server-side only — it never lands in the browser bundle.
 
 ### Retargeting at a different repo / Linear team
 
@@ -129,7 +129,7 @@ The dashboard is open to anyone who can reach the port — auth is disabled beca
 ### Smoke test the dashboard with seeded data
 
 ```sh
-SUPABASE_SERVICE_ROLE_KEY=... pnpm --filter @symphony/worker exec tsx scripts/seed.ts
+DATABASE_URL=... pnpm --filter @symphony/worker exec tsx scripts/seed.ts
 ```
 
 Inserts two issues, a successful attempt with events, a failed attempt, and a queued retry — enough to render every dashboard surface.
@@ -137,12 +137,11 @@ Inserts two issues, a successful attempt with events, a failed attempt, and a qu
 ### Tests
 
 ```sh
-TEST_SUPABASE_URL=http://127.0.0.1:54421 \
-TEST_SUPABASE_SERVICE_ROLE_KEY=... \
+TEST_DATABASE_URL=postgres://symphony:symphony@127.0.0.1:54422/symphony \
 pnpm test
 ```
 
-Integration tests (Repo, OrchestratorLoop, recovery) run against local Supabase. Without `TEST_SUPABASE_SERVICE_ROLE_KEY` they're skipped automatically.
+Integration tests (Repo, OrchestratorLoop, recovery) run against the local Postgres. Without `TEST_DATABASE_URL` they're skipped automatically.
 
 ### Quality checks
 
@@ -165,17 +164,20 @@ One package, re-exported from `index.ts`. Everything else depends on this.
 packages/shared/src/
 ├── index.ts        barrel re-exports
 ├── schema.ts       ⭐ zod schemas → runtime validation + TS types
-├── supabase.ts     createServiceClient() factory
-└── db-types.ts     generated from Supabase (pnpm db:types)
+└── db/
+    ├── schema.ts    Drizzle table/enum/view definitions (mirror of db/migrations)
+    ├── client.ts    createDb() + createListener() factories
+    └── types.ts     Tables<>/TablesInsert<>/TablesUpdate<> shim over Drizzle's $infer
 ```
 
 | File | Key exports |
 |---|---|
-| `schema.ts` | `WorkflowFrontMatter`, `TrackerConfig`, `Issue`, `RunAttemptStatus`, `AgentEventKind`, `LiveSession`, event payload schemas |
-| `supabase.ts` | `SymphonyClient` type, `createServiceClient()` |
-| `db-types.ts` | `Database`, `Tables<'...'>`, `Enums<...>` — auto-generated, don't edit |
+| `schema.ts` | `WorkflowFrontMatter`, `TrackerConfig`, `Issue`, `RunStatus`, `AgentEventKind`, `LiveSession`, event payload schemas |
+| `db/schema.ts` | `runs`, `issues`, `agentEvents`, `liveSessions`, `retryQueue`, `workflows`, `hookRuns`, `rateLimitState`, `workerHeartbeat`, `agentEventsLatest` view, plus `runStatusEnum` / `agentEventKindEnum` / `hookNameEnum` and the `Json` type |
+| `db/client.ts` | `Db` type, `createDb(url, opts)` (Drizzle + postgres-js pool), `createListener(url)` (dedicated postgres-js client for `LISTEN`) |
+| `db/types.ts` | `Tables<'runs'>` / `TablesInsert<'runs'>` / `TablesUpdate<'runs'>` — same call shape as the old Supabase-generated helpers, backed by Drizzle's column inference |
 
-`schema.ts` defines *application* shapes (what the worker thinks an Issue is); `db-types.ts` defines *database* shapes. They overlap but aren't identical.
+`schema.ts` defines *application* shapes (what the worker thinks an Issue is); `db/schema.ts` defines *database* shapes. They overlap but aren't identical.
 
 ### `apps/worker` — the orchestrator daemon
 
@@ -200,7 +202,7 @@ apps/worker/src/
 │   └── events.ts         map agent events → DB rows
 │
 ├── db/
-│   ├── repo.ts           typed CRUD, AlreadyRunningError for races
+│   ├── repo.ts           typed Drizzle CRUD, AlreadyRunningError for races
 │   └── recovery.ts       boot-time orphan/workspace reconciliation
 │
 ├── workspace/
@@ -263,7 +265,7 @@ Plus `agents/codex-adapter.mjs` and `agents/claude-adapter.mjs` — standalone N
 
 #### Everything else
 
-- **`db/repo.ts`** — typed wrappers around Supabase. `markRunning()` throws `AlreadyRunningError` if two dispatches race.
+- **`db/repo.ts`** — typed Drizzle wrappers. `markRunning()` throws `AlreadyRunningError` if two dispatches race (postgres returns `code: '23505'` on the partial unique index).
 - **`db/recovery.ts`** — at boot: Linear preflight → snapshot WORKFLOW → rescue orphans (`status='running'` left over from a crash → mark `failed/process_crashed`, schedule retry, delete live_session) → wipe workspaces for terminal-state issues.
 - **`workspace/manager.ts`** — creates `/tmp/symphony-workspaces/<sanitized-id>/`, uses a `.ready` sentinel to know if `after_create` succeeded.
 - **`workspace/hooks.ts`** — runs hooks via `bash -lc`, filters env vars, records every invocation in `hook_runs`.
@@ -272,7 +274,7 @@ Plus `agents/codex-adapter.mjs` and `agents/claude-adapter.mjs` — standalone N
 - **`logging.ts`** — Pino with `maskSecret()` for API keys.
 - **`index.ts`** — loads env → builds config → inits repo/tracker/loop → `recover()` → `loop.start()` → SIGTERM graceful drain (30s), SIGHUP re-reads WORKFLOW.md.
 
-Test files (`*.test.ts`) live next to sources. Integration tests (`*.integration.test.ts`) hit a local Supabase.
+Test files (`*.test.ts`) live next to sources. Integration tests (`*.integration.test.ts`) hit the local Postgres.
 
 ### `apps/dashboard` — the operator console
 
@@ -286,39 +288,36 @@ apps/dashboard/src/
 │   ├── page.tsx                  ⭐ fleet view: KPIs + active / retries / failures / past
 │   ├── KpiBlock.tsx              KPI metric card
 │   ├── LiveRuntime.tsx           worker heartbeat / uptime KPI
-│   ├── RealtimeRefresh.tsx       Supabase subscription → router.refresh
+│   ├── RealtimeRefresh.tsx       /api/stream EventSource → router.refresh
+│   ├── api/stream/route.ts       SSE bridge: LISTEN symphony_changes
+│   ├── api/runs/[id]/stream/     SSE bridge: LISTEN agent_events:<run_id>
 │   ├── issues/[id]/page.tsx      one issue, all its runs
 │   └── runs/[id]/
 │       ├── page.tsx              run metadata (SSR)
-│       ├── LiveStream.tsx        ⭐ client component, Supabase Realtime
+│       ├── LiveStream.tsx        ⭐ client component, EventSource
 │       └── EventBlock.tsx        agent-event renderer
 │
 └── lib/
     ├── env.ts                    env validation
-    ├── supabase-server.ts        server-side client (anon key)
-    └── supabase-browser.ts       browser singleton (anon key)
+    └── db.ts                     server-side Drizzle singleton
 ```
 
 | Route | File | What you see |
 |---|---|---|
 | `/` | `app/page.tsx` | KPI header + three sections: Active runs, Retry queue, Recent failures |
 | `/issues` / `/issues/[id]` | `app/issues/page.tsx` + `app/issues/[id]/page.tsx` | Issue list and issue detail with the runs list w/ status colors |
-| `/runs` / `/runs/[id]` | `app/runs/page.tsx` + `app/runs/[id]/page.tsx` + `LiveStream.tsx` | All runs list, plus per-run live event firehose — subscribes to `agent_events` (INSERT) and `live_sessions` (*) for this run |
+| `/runs` / `/runs/[id]` | `app/runs/page.tsx` + `app/runs/[id]/page.tsx` + `LiveStream.tsx` | All runs list, plus per-run live event firehose — subscribes to `/api/runs/<id>/stream` |
 
-Worker uses service-role (bypasses RLS). Dashboard uses the anon key and reads tables directly (RLS disabled).
+The dashboard never connects to Postgres from the browser. Server Components read via the Drizzle singleton; the browser receives realtime updates over Server-Sent Events from the two route handlers above.
 
-### `supabase/` — the schema
+### `db/` — the schema
 
 ```
-supabase/
-├── config.toml                   local dev ports 54421-54427
+db/
+├── docker-compose.yml      postgres:16-alpine on :54422
+├── migrate.ts              tiny migration runner: advisory lock + _migrations table
 └── migrations/
-    ├── 20260415005242_init.sql                            ⭐ 7 tables, 3 enums, RLS, Realtime
-    ├── 20260420220000_run_attempts_running_invariant.sql  partial unique index
-    ├── 20260423000000_fix_realtime_publication.sql        target supabase_realtime publication
-    ├── 20260423120000_dashboard_terminal_status.sql       rate_limit_state, worker_heartbeat, agent_events_latest view
-    ├── 20260423120001_agent_event_kind_rate_limit.sql     adds 'rate_limit' enum value
-    └── 20260423230000_disable_auth_rls.sql                RLS off (local-only stack)
+    └── 20260415005242_init.sql  complete fresh-start schema
 ```
 
 The nine tables (+ one view):
@@ -336,7 +335,11 @@ The nine tables (+ one view):
  agent_events_latest   ← (view) latest event per run
 ```
 
-The `run_attempts_running_invariant` migration adds a **partial unique index** on `runs` where `status='running'` per `issue_id` — this is what makes `AlreadyRunningError` possible and prevents duplicate dispatch.
+The init migration adds a **partial unique index** on `runs` where `status='running'` per `issue_id` — this is what makes `AlreadyRunningError` possible and prevents duplicate dispatch.
+
+The init migration also installs two trigger functions:
+- `notify_table_change()` fires on every INSERT/UPDATE/DELETE of `runs`, `retry_queue`, `live_sessions`, `rate_limit_state` and emits `pg_notify('symphony_changes', '{"table":"…","op":"…"}')`. The dashboard's `/api/stream` SSE route forwards each NOTIFY to the browser, where `RealtimeRefresh.tsx` calls `router.refresh()` (debounced 600 ms).
+- `notify_agent_event()` fires on `agent_events` INSERT, emitting the full row JSON on `agent_events:<run_id>` (or a slim `{id, run_id, kind, created_at, truncated: true}` payload when the row exceeds pg_notify's 8 KB ceiling). The per-run `/api/runs/[id]/stream` route forwards these; `LiveStream.tsx` appends each payload to its event list.
 
 ## Tracing a full lifecycle
 
@@ -356,9 +359,12 @@ The `run_attempts_running_invariant` migration adds a **partial unique index** o
            ▼
  ④ adapter streams turn/event → events.ts → agent_events INSERT
                                 live_sessions UPSERT (tokens, status)
-           │
-           ▼
- ⑤ Dashboard LiveStream.tsx sees Realtime INSERTs → UI updates live
+           │                       │
+           │                       ▼
+           │                  pg_notify trigger ─── agent_events:<run_id>
+           │                                       symphony_changes
+           ▼                                              │
+ ⑤ Dashboard /api/stream + /api/runs/[id]/stream SSE ◀───┘ → UI updates live
            │
            ▼
  ⑥ adapter returns turn/complete:
@@ -378,9 +384,10 @@ The `run_attempts_running_invariant` migration adds a **partial unique index** o
 2. **Workspaces are per-issue, reusable across retries.** A `.ready` sentinel means `after_create` succeeded once; retries skip the expensive clone.
 3. **Races are caught by a DB invariant, not an in-memory lock.** The partial unique index is the only thing you trust.
 4. **Events are append-only; live_sessions is ephemeral.** History is immutable; "what's happening now" is a projection that dies on completion.
-5. **Local-only, no auth.** Worker uses the service-role key; dashboard uses the anon key and reads tables with RLS disabled. Don't expose the dashboard to an untrusted network.
-6. **Graceful shutdown drains in-flight.** SIGTERM waits 30s, then SIGKILL.
-7. **Boot recovery assumes crash-unsafe state.** Any row stuck `running` at startup is an orphan → fail + retry.
+5. **Local-only, no auth.** The DB owner role is implicit through `DATABASE_URL`; the dashboard never exposes Postgres credentials to the browser. Don't expose the dashboard to an untrusted network.
+6. **Realtime is plain Postgres.** `pg_notify` triggers + a Next.js SSE route handler holding a `LISTEN` connection. No extra services, no message broker, no WebSocket library.
+7. **Graceful shutdown drains in-flight.** SIGTERM waits 30s, then SIGKILL.
+8. **Boot recovery assumes crash-unsafe state.** Any row stuck `running` at startup is an orphan → fail + retry.
 
 ## Where to start reading
 
@@ -391,8 +398,8 @@ To understand the system, read in this order:
 3. `apps/worker/src/orchestrator/loop.ts` — the tick
 4. `apps/worker/src/orchestrator/dispatch.ts` — one attempt
 5. `apps/worker/src/agent/runner.ts` — the subprocess bridge
-6. `supabase/migrations/20260415005242_init.sql` — the data model
-7. `apps/dashboard/src/app/runs/[id]/LiveStream.tsx` — how the UI stays live
+6. `db/migrations/20260415005242_init.sql` — the data model + the realtime fanout
+7. `apps/dashboard/src/app/runs/[id]/LiveStream.tsx` + `apps/dashboard/src/app/api/runs/[id]/stream/route.ts` — how the UI stays live
 
 That's the critical path. Everything else is support.
 

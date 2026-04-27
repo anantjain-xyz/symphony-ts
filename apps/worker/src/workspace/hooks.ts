@@ -19,11 +19,7 @@ export interface HookEnv {
  * Spec: "API keys via environment variables, never logged in full" — and never
  * passed to operator-supplied hook scripts either.
  */
-const BLOCKED_ENV = new Set([
-  'SUPABASE_SERVICE_ROLE_KEY',
-  'LINEAR_API_KEY',
-  'TEST_SUPABASE_SERVICE_ROLE_KEY',
-]);
+const BLOCKED_ENV = new Set(['DATABASE_URL', 'TEST_DATABASE_URL', 'LINEAR_API_KEY']);
 
 /**
  * Run a workflow hook script via `bash -lc`. Returns the result without

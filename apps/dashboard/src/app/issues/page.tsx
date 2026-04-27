@@ -1,5 +1,6 @@
-import type { Tables } from '@symphony/shared';
-import { createSupabaseServerClient } from '@/lib/supabase-server';
+import { issues as issuesT, type Tables } from '@symphony/shared';
+import { and, desc, ilike, inArray, or } from 'drizzle-orm';
+import { db } from '@/lib/db';
 import { ListFilters } from '../_filters/ListFilters';
 import { asString, parseCsv } from '../_filters/params';
 import { IssueListRow } from './IssueListRow';
@@ -22,30 +23,41 @@ export default async function IssuesListPage({
   const stateFilter = parseCsv(asString(sp.state));
   const search = (asString(sp.q) ?? '').trim();
 
-  const supabase = createSupabaseServerClient();
-
-  // Pull the full universe of states (cheap — issues table is small) so the
-  // filter chips reflect what's actually in the DB rather than a hardcoded set.
-  const allStatesRes = await supabase.from('issues').select('state');
-  const stateOptions = uniqueSorted((allStatesRes.data ?? []).map((r) => r.state)).map((s) => ({
+  // Pull the full universe of states so the filter chips reflect what's
+  // actually in the DB rather than a hardcoded set. Cheap because issues
+  // is small.
+  const allStates = await db.select({ state: issuesT.state }).from(issuesT);
+  const stateOptions = uniqueSorted(allStates.map((r) => r.state)).map((s) => ({
     value: s,
     label: s,
   }));
 
-  let query = supabase
-    .from('issues')
-    .select('id, identifier, title, state, labels, last_seen_at')
-    .order('last_seen_at', { ascending: false })
-    .limit(PAGE_SIZE);
+  const conds = [
+    stateFilter.length > 0 ? inArray(issuesT.state, stateFilter) : undefined,
+    search
+      ? (() => {
+          const escaped = search.replace(/[%,]/g, '');
+          return or(
+            ilike(issuesT.identifier, `%${escaped}%`),
+            ilike(issuesT.title, `%${escaped}%`),
+          );
+        })()
+      : undefined,
+  ].filter((c): c is NonNullable<typeof c> => c !== undefined);
 
-  if (stateFilter.length > 0) query = query.in('state', stateFilter);
-  if (search) {
-    const escaped = search.replace(/[%,]/g, '');
-    query = query.or(`identifier.ilike.%${escaped}%,title.ilike.%${escaped}%`);
-  }
-
-  const { data: issuesRaw } = await query;
-  const issues = (issuesRaw ?? []) as Issue[];
+  const issues = (await db
+    .select({
+      id: issuesT.id,
+      identifier: issuesT.identifier,
+      title: issuesT.title,
+      state: issuesT.state,
+      labels: issuesT.labels,
+      last_seen_at: issuesT.last_seen_at,
+    })
+    .from(issuesT)
+    .where(conds.length > 0 ? and(...conds) : undefined)
+    .orderBy(desc(issuesT.last_seen_at))
+    .limit(PAGE_SIZE)) as Issue[];
 
   return (
     <>

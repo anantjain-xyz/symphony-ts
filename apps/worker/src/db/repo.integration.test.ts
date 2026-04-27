@@ -1,27 +1,27 @@
-import { createServiceClient } from '@symphony/shared';
+import { createDb, liveSessions } from '@symphony/shared';
+import { eq } from 'drizzle-orm';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Repo } from './repo.js';
 import { makeTestIssue, makeTestWorkflow } from './test-helpers.js';
 import { TestScope } from './test-scope.js';
 
-const URL = process.env.TEST_SUPABASE_URL ?? 'http://127.0.0.1:54421';
-const SERVICE_ROLE = process.env.TEST_SUPABASE_SERVICE_ROLE_KEY;
+const DB_URL = process.env.TEST_DATABASE_URL;
 
-const skip = !SERVICE_ROLE;
+const skip = !DB_URL;
 const d = skip ? describe.skip : describe;
 
 if (skip) {
   // eslint-disable-next-line no-console
-  console.warn('repo integration tests skipped (set TEST_SUPABASE_SERVICE_ROLE_KEY to enable)');
+  console.warn('repo integration tests skipped (set TEST_DATABASE_URL to enable)');
 }
 
 d('Repo integration', () => {
-  let db: ReturnType<typeof createServiceClient>;
+  let db: ReturnType<typeof createDb>;
   let repo: Repo;
   let scope: TestScope;
 
   beforeAll(() => {
-    db = createServiceClient({ url: URL, serviceRoleKey: SERVICE_ROLE! });
+    db = createDb(DB_URL!);
     repo = new Repo(db);
   });
 
@@ -74,6 +74,21 @@ d('Repo integration', () => {
     await repo.finishRun({ runId: reserved!.id, status: 'success' });
     expect(await repo.countRunning({ issueIds: [issueId] })).toBe(0);
     expect(await repo.lastRunNumber(issueId)).toBe(1);
+  });
+
+  it('returns no running runs for an explicitly empty issue scope', async () => {
+    const issueId = scope.newIssueId();
+    await repo.upsertIssues([makeTestIssue({ id: issueId, identifier: scope.newIdentifier() })]);
+
+    const reserved = await repo.tryReserveRun({
+      issueId,
+      runNumber: 1,
+      workspacePath: '/tmp/symphony-tests/empty-running-scope',
+    });
+    await repo.markRunning(reserved!.id);
+
+    expect(await repo.listRunning({ issueIds: [] })).toEqual([]);
+    expect(await repo.countRunning({ issueIds: [] })).toBe(0);
   });
 
   it('agent_events append and recentEvents in chronological order', async () => {
@@ -185,8 +200,6 @@ d('Repo integration', () => {
       runNumber: 2,
       workspacePath: '/tmp/symphony-tests/events-prior',
     });
-    // The new run has no events of its own at prompt-render time; without
-    // the new helper this would return [].
     expect(await repo.recentEvents(a2!.id)).toEqual([]);
 
     const recent = await repo.recentEventsForIssue(issueId, a2!.id, 10);
@@ -217,12 +230,10 @@ d('Repo integration', () => {
       runNumber: 2,
       workspacePath: '/tmp/symphony-tests/events-cap',
     });
-    // Seed an event on the new run — it must NOT appear in the result.
     await repo.appendEvent(a2!.id, 'status', { message: 'new-run-leak' });
 
     const recent = await repo.recentEventsForIssue(issueId, a2!.id, 3);
     expect(recent).toHaveLength(3);
-    // Most recent 3 from the prior run, in chronological order.
     expect(recent.map((e) => (e.payload as { message: string }).message)).toEqual([
       'e2',
       'e3',
@@ -287,5 +298,36 @@ d('Repo integration', () => {
       total_tokens: 150,
     });
     await repo.deleteLiveSession(reserved!.id);
+  });
+
+  it('does not delete placeholder live_sessions for an explicitly empty issue scope', async () => {
+    const issueId = scope.newIssueId();
+    await repo.upsertIssues([makeTestIssue({ id: issueId, identifier: scope.newIdentifier() })]);
+
+    const reserved = await repo.tryReserveRun({
+      issueId,
+      runNumber: 1,
+      workspacePath: '/tmp/symphony-tests/empty-placeholder-scope',
+    });
+    await repo.markRunning(reserved!.id);
+    await repo.upsertLiveSession({
+      run_id: reserved!.id,
+      session_id: `pending-${reserved!.id}`,
+      thread_id: '',
+      turn_id: '',
+      input_tokens: 0,
+      output_tokens: 0,
+      total_tokens: 0,
+    });
+    await repo.finishRun({
+      runId: reserved!.id,
+      status: 'failure',
+      errorClass: 'dispatch_error',
+      errorMessage: 'simulated crash',
+    });
+
+    expect(await repo.deleteOrphanedPendingSessions({ issueIds: [] })).toBe(0);
+    const rows = await db.select().from(liveSessions).where(eq(liveSessions.run_id, reserved!.id));
+    expect(rows).toHaveLength(1);
   });
 });

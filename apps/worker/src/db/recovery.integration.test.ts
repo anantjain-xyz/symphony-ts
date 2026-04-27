@@ -1,7 +1,8 @@
 import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { createServiceClient, type Issue } from '@symphony/shared';
+import { createDb, type Issue, liveSessions, retryQueue, runs } from '@symphony/shared';
+import { eq } from 'drizzle-orm';
 import pino from 'pino';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { resolveConfig } from '../config/resolve.js';
@@ -12,13 +13,12 @@ import { Repo } from './repo.js';
 import { makeTestIssue, makeTestWorkflow } from './test-helpers.js';
 import { TestScope } from './test-scope.js';
 
-const SUPA_URL = process.env.TEST_SUPABASE_URL ?? 'http://127.0.0.1:54421';
-const SERVICE_ROLE = process.env.TEST_SUPABASE_SERVICE_ROLE_KEY;
-const skip = !SERVICE_ROLE;
+const DB_URL = process.env.TEST_DATABASE_URL;
+const skip = !DB_URL;
 const d = skip ? describe.skip : describe;
 
 if (skip) {
-  console.warn('recovery integration tests skipped (set TEST_SUPABASE_SERVICE_ROLE_KEY to enable)');
+  console.warn('recovery integration tests skipped (set TEST_DATABASE_URL to enable)');
 }
 
 function stubTracker(active: Issue[], terminal: Issue[]): TrackerClient {
@@ -32,13 +32,13 @@ function stubTracker(active: Issue[], terminal: Issue[]): TrackerClient {
 }
 
 d('recover', () => {
-  let db: ReturnType<typeof createServiceClient>;
+  let db: ReturnType<typeof createDb>;
   let repo: Repo;
   let wsRoot: string;
   let scope: TestScope;
 
   beforeAll(() => {
-    db = createServiceClient({ url: SUPA_URL, serviceRoleKey: SERVICE_ROLE! });
+    db = createDb(DB_URL!);
     repo = new Repo(db);
   });
 
@@ -78,12 +78,12 @@ d('recover', () => {
     });
 
     expect(out.orphansAdopted).toBe(1);
-    const { data: row } = await db.from('runs').select('*').eq('id', reserved!.id).single();
+    const [row] = await db.select().from(runs).where(eq(runs.id, reserved!.id));
     expect(row!.status).toBe('failure');
     expect(row!.error_class).toBe('process_crashed');
-    const { data: q } = await db.from('retry_queue').select('*').eq('issue_id', active.id);
-    expect(q!.length).toBe(1);
-    expect(q![0]!.run_number).toBe(2);
+    const q = await db.select().from(retryQueue).where(eq(retryQueue.issue_id, active.id));
+    expect(q.length).toBe(1);
+    expect(q[0]!.run_number).toBe(2);
   });
 
   it('removes workspaces of terminal-state issues with no active runs', async () => {
@@ -221,9 +221,6 @@ d('recover', () => {
       output_tokens: 0,
       total_tokens: 12,
     });
-    // Move to terminal *without* deleting the live_session — simulates a
-    // dispatch that crashed between upsertLiveSession and the cleanup at the
-    // end of the run.
     await repo.finishRun({
       runId: reserved!.id,
       status: 'failure',
@@ -241,8 +238,8 @@ d('recover', () => {
     });
 
     expect(out.placeholderSessionsCleaned).toBe(1);
-    const { data: rows } = await db.from('live_sessions').select('*').eq('run_id', reserved!.id);
-    expect(rows ?? []).toHaveLength(0);
+    const rows = await db.select().from(liveSessions).where(eq(liveSessions.run_id, reserved!.id));
+    expect(rows).toHaveLength(0);
   });
 
   it('does not touch placeholder live_sessions whose run is still running', async () => {
@@ -253,9 +250,6 @@ d('recover', () => {
     });
     await repo.upsertIssues([issue]);
 
-    // The orphan-handling branch deletes its own live_session (regardless of
-    // session_id), so to isolate the placeholder sweep we keep this run in
-    // 'pending' — it isn't a recovery orphan, but it has the placeholder row.
     const reserved = await repo.tryReserveRun({
       issueId: issue.id,
       runNumber: 1,
@@ -281,7 +275,7 @@ d('recover', () => {
     });
 
     expect(out.placeholderSessionsCleaned).toBe(0);
-    const { data: rows } = await db.from('live_sessions').select('*').eq('run_id', reserved!.id);
-    expect(rows ?? []).toHaveLength(1);
+    const rows = await db.select().from(liveSessions).where(eq(liveSessions.run_id, reserved!.id));
+    expect(rows).toHaveLength(1);
   });
 });

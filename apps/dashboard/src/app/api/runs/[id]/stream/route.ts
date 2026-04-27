@@ -47,6 +47,15 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
         }
       }, KEEPALIVE_MS);
 
+      // Wire abort *before* awaiting listen() so a disconnect while the
+      // initial LISTEN is in flight is observed and we don't leak the
+      // postgres connection.
+      if (req.signal.aborted) {
+        close();
+        return;
+      }
+      req.signal.addEventListener('abort', close);
+
       try {
         const { unlisten: u } = await sql.listen(channel, (payload) => {
           if (closed) return;
@@ -56,14 +65,21 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
             close();
           }
         });
+        if (closed) {
+          u().catch(() => {});
+          return;
+        }
         unlisten = u;
-      } catch (err) {
+      } catch {
         close();
-        throw err;
+        return;
       }
 
-      controller.enqueue(enc.encode(': open\n\n'));
-      req.signal.addEventListener('abort', close);
+      try {
+        controller.enqueue(enc.encode(': open\n\n'));
+      } catch {
+        close();
+      }
     },
   });
 

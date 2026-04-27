@@ -19,16 +19,18 @@ Reviewer feedback arrives across three channels — gather all three:
    ```sh
    pr=$(gh pr view --json number -q .number)
    repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
-   gh api "repos/${repo}/issues/${pr}/comments"
+   gh api --paginate "repos/${repo}/issues/${pr}/comments"
    ```
 2. **Inline review comments** (line-anchored):
    ```sh
-   gh api "repos/${repo}/pulls/${pr}/comments"
+   gh api --paginate "repos/${repo}/pulls/${pr}/comments"
    ```
 3. **Review states** (approved / changes requested / commented):
    ```sh
-   gh api "repos/${repo}/pulls/${pr}/reviews"
+   gh api --paginate "repos/${repo}/pulls/${pr}/reviews"
    ```
+
+`--paginate` is mandatory: GitHub REST list endpoints page at 30 by default, so a busy PR can silently hide later comments and trick the sweep into declaring "no actionable feedback" when there is.
 
 The `Manual QA Plan` comment, when present, sharpens UI/runtime coverage — read it before transitioning.
 

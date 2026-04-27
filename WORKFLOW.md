@@ -135,7 +135,7 @@ You are working on issue **{{identifier}}: {{title}}**.
 
 ## Skills (progressive disclosure)
 
-Repeatable mechanics live in `.claude/skills/<name>/SKILL.md` and load on demand. Reach for them by name:
+Repeatable mechanics live under `.agents/skills/<name>/SKILL.md` (the canonical, runner-agnostic location; `.claude/skills/<name>` are symlinks Claude Code uses for auto-discovery). Reach for them by name — your runner will surface the right one on demand:
 
 | Skill | Use when |
 |---|---|

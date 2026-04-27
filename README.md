@@ -1,9 +1,8 @@
 # symphony-ts
 
 [![CI](https://github.com/anantjain-xyz/symphony-ts/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/anantjain-xyz/symphony-ts/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/anantjain-xyz/symphony-ts/branch/main/graph/badge.svg)](https://codecov.io/gh/anantjain-xyz/symphony-ts)
 
-TypeScript port of [Symphony](https://github.com/openai/symphony), backed by a local Postgres for persistence and `LISTEN/NOTIFY` for live updates.
+TypeScript port of [Symphony](https://github.com/openai/symphony), backed by a local Postgres for persistence and `LISTEN/NOTIFY` for live updates, with support for Claude Code in addition to Codex.
 
 A long-running daemon that polls Linear for active issues, provisions isolated workspaces per issue, and runs Claude Code (or Codex) coding-agent sessions against them with retries, concurrency caps, and live operator observability.
 
@@ -409,6 +408,6 @@ See [SPEC.md](https://github.com/openai/symphony/blob/main/SPEC.md) for the sour
 
 Licensed under [MIT](./LICENSE).
 
-All workspaces are `private: true`: this is an app, not a library, and we don't publish to npm. The name `symphony-ts` already exists on npm under a different maintainer, so if we ever flip publishing on we'll need to rename (e.g. `@anantjain/symphony` or scoped per workspace). Until then, the collision is harmless.
+All workspaces are `private: true`: since this is an app, not a library, and we don't publish to npm. The name `symphony-ts` already exists on npm under a different maintainer, so if we ever flip publishing on we'll need to rename (e.g. `@anantjain/symphony` or scoped per workspace). Until then, the collision is harmless.
 
 Versioning is managed by [Changesets](https://github.com/changesets/changesets): run `pnpm changeset` to record a change, `pnpm version` to bump packages and update `CHANGELOG.md`, and `pnpm release` to tag the release commit on `main`.

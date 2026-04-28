@@ -8,6 +8,28 @@ A long-running daemon that polls Linear for active issues, provisions isolated w
 
 <img width="1512" height="801" alt="Screenshot 2026-04-27 at 12 19 02 PM" src="https://github.com/user-attachments/assets/7c193679-edaf-4056-b6a4-f3ae6f311cde" />
 
+## Quickstart
+
+**Prereqs:** Node 20+, pnpm 9+, Docker. A Linear API key for live runs — or skip it and use seeded data (see below).
+
+```sh
+pnpm install
+pnpm db:up && pnpm db:migrate
+cp .env.example .env.local            # fill in LINEAR_API_KEY
+pnpm -r build
+pnpm --filter @symphony/worker dev    # terminal 1
+pnpm --filter @symphony/dashboard dev # terminal 2 → http://localhost:3000
+```
+
+No Linear key handy? Skip the worker and seed mock fixtures into Postgres to render every dashboard surface:
+
+```sh
+pnpm --filter @symphony/worker exec tsx scripts/seed-mock.ts
+pnpm --filter @symphony/dashboard dev
+```
+
+See **Local dev** below for env details, retargeting, and tests.
+
 ## The big picture
 
 ```

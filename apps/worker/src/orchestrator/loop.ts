@@ -215,10 +215,25 @@ export class OrchestratorLoop {
       if (handle) this.registerActive(handle);
     }
 
-    // 7. Run any due retries that aren't already in flight.
+    // 7. Run any due retries that aren't already in flight, honoring the same
+    //    global + per-state caps as fresh dispatches. Without this gate a wave
+    //    of nearly-simultaneous failures (whose backoff timers expire on the
+    //    same tick) all fire at once and push active runs above the cap. A
+    //    retry that doesn't fit stays in `retry_queue` (no `clearRetry`) and
+    //    will be reconsidered on the next tick when a slot opens.
     const due = await repo.dueRetries(
       this.deps.scopedIssueIds ? { issueIds: this.deps.scopedIssueIds } : undefined,
     );
+    const globalCap = config.maxConcurrentAgents();
+    const perStateCap = config.maxConcurrentByState();
+    // Rebuild per-state load from `this.active` so the slate dispatches in
+    // step 6 are reflected.
+    const stateLoad = new Map<string, number>();
+    for (const [issueId] of this.active) {
+      const issue = active.find((i) => i.id === issueId);
+      if (!issue) continue;
+      stateLoad.set(issue.state, (stateLoad.get(issue.state) ?? 0) + 1);
+    }
     for (const r of due) {
       if (this.active.has(r.issue_id)) continue;
       const issue = active.find((i) => i.id === r.issue_id);
@@ -236,10 +251,33 @@ export class OrchestratorLoop {
         }
         continue;
       }
+      if (this.active.size >= globalCap) {
+        log.debug(
+          { issueId: r.issue_id, runNumber: r.run_number, active: this.active.size, globalCap },
+          'retry deferred: global cap',
+        );
+        continue;
+      }
+      const stateCap = perStateCap[issue.state];
+      if (stateCap !== undefined && (stateLoad.get(issue.state) ?? 0) >= stateCap) {
+        log.debug(
+          {
+            issueId: r.issue_id,
+            runNumber: r.run_number,
+            state: issue.state,
+            stateCap,
+          },
+          'retry deferred: per-state cap',
+        );
+        continue;
+      }
       log.info({ issueId: r.issue_id, runNumber: r.run_number }, 'firing retry');
       await repo.clearRetry(r.issue_id);
       const handle = await this.dispatch(issue, r.run_number);
-      if (handle) this.registerActive(handle);
+      if (handle) {
+        this.registerActive(handle);
+        stateLoad.set(issue.state, (stateLoad.get(issue.state) ?? 0) + 1);
+      }
     }
   }
 

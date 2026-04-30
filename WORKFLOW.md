@@ -34,7 +34,7 @@ hooks:
   after_create: |
     git clone "$REPO_URL" .
     git checkout -B "${ISSUE_BRANCH:-symphony/${ISSUE_IDENTIFIER}}"
-    ${SYMPHONY_INSTALL_CMD:-npm ci}
+    eval "${SYMPHONY_INSTALL_CMD:-npm ci}"
   before_run: |
     echo "starting attempt for ${ISSUE_IDENTIFIER}"
   after_run: |

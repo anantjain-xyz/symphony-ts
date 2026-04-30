@@ -19,33 +19,27 @@ If the PR is already `MERGED` when entering this skill, skip the merge: record t
    ```sh
    gh pr view --json number,state,mergeable,mergeStateStatus,reviewDecision,statusCheckRollup
    ```
-   Required: `state=OPEN`, `reviewDecision=APPROVED` (or no required reviewers), required checks green.
+   Required: `state=OPEN`, `reviewDecision=APPROVED` (or no required reviewers).
 2. Sync first — run the `pull` skill to merge `origin/main`. Conflicts must be resolved in code; never leave a `DIRTY`/`CONFLICTING` PR. Re-run validation after the merge.
 3. Push the merge result with the `push` skill.
-4. Squash-merge with auto-merge so the merge fires only after checks pass:
+4. **Wait for CI to be green.** Don't rely on `gh pr merge --auto` — it only blocks on checks that branch protection marks as required, and many repos either configure no required checks or only a subset. Poll `gh pr checks` explicitly so the gate works the same whether the repo enforces checks at the GitHub level or not — every 30s, up to 30 minutes, before merging:
    ```sh
-   gh pr merge --squash --auto
+   for _ in $(seq 1 60); do
+     gh pr checks
+     rc=$?
+     case "$rc" in
+       0) break ;;       # all checks passed
+       8) sleep 30 ;;    # checks still pending — keep waiting
+       *) echo "PR checks failed (exit $rc)" >&2; exit 1 ;;
+     esac
+   done
+   [ "$rc" -eq 0 ] || { echo "Timed out waiting for checks" >&2; exit 1; }
    ```
-   If auto-merge is disabled on the repo, fall back to a direct merge once checks are green:
+   `gh pr checks` exits 0 only when every check passed; 8 while any are pending; non-zero/non-8 if any failed. A failure or timeout falls into the failure-mode handler below: record the cause and move the issue to `Rework`.
+5. Squash-merge (blocks until the merge completes):
    ```sh
    gh pr merge --squash
    ```
-5. Wait for the merge to complete, with a hard cap and terminal-state guard so the loop can't hang:
-   ```sh
-   for _ in $(seq 1 60); do
-     read -r state checks <<<"$(gh pr view --json state,mergeStateStatus -q '.state + " " + .mergeStateStatus')"
-     case "$state" in
-       MERGED) break ;;
-       CLOSED) echo "PR closed without merge" >&2; exit 1 ;;
-     esac
-     case "$checks" in
-       BLOCKED|DIRTY) echo "Merge blocked: $checks" >&2; exit 1 ;;
-     esac
-     sleep 30
-   done
-   [ "$(gh pr view --json state -q .state)" = "MERGED" ] || { echo "Timed out waiting for merge" >&2; exit 1; }
-   ```
-   Tune the iteration count (60 × 30s = 30 min) if the repo's checks are slower. Any exit-1 path falls into the failure-mode handler below: record the cause and move the issue to `Rework`.
 6. Capture the merge commit:
    ```sh
    gh pr view --json mergeCommit -q .mergeCommit.oid
@@ -57,9 +51,9 @@ If the PR is already `MERGED` when entering this skill, skip the merge: record t
 
 If any of the following hit, record the cause in the workpad and move the issue to `Rework` with a brief blocker note:
 
-- Required checks went red on the merge candidate and you can't fix locally.
-- Auto-merge is disabled and direct merge keeps failing.
+- PR checks went red on the merge candidate and you can't fix locally.
+- The `gh pr checks` wait loop times out (still pending after 30 min).
 - The merge result reintroduces a conflict you can't resolve.
-- The wait loop times out, the PR transitions to `CLOSED` without `MERGED`, or `mergeStateStatus` flips to `BLOCKED`/`DIRTY` while waiting.
+- `gh pr merge --squash` keeps failing (e.g., `mergeStateStatus` flips to `BLOCKED`/`DIRTY`, or the PR transitions to `CLOSED` without `MERGED`).
 
 Do not force-push, reset, or close-and-reopen the PR to escape the failure.

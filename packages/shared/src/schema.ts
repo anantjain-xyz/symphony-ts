@@ -202,7 +202,7 @@ export const Issue = z
 export type Issue = z.infer<typeof Issue>;
 
 // =========================================================================
-// Run + live sessions + events (mirrors Supabase enums)
+// Run + live sessions + events
 // =========================================================================
 
 export const RunStatus = z.enum([

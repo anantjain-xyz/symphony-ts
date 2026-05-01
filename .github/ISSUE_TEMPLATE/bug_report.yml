@@ -41,7 +41,7 @@ body:
         - Worker
         - Dashboard
         - Shared package
-        - Supabase schema
+        - Database schema
         - CI or release
         - Documentation
         - Unsure
@@ -51,7 +51,7 @@ body:
     id: environment
     attributes:
       label: Environment
-      description: Include OS, Node.js, pnpm, Supabase CLI, browser, and relevant service versions.
+      description: Include OS, Node.js, pnpm, Docker, browser, and relevant service versions.
       render: text
     validations:
       required: false

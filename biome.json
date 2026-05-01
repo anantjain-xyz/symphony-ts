@@ -9,8 +9,6 @@
       "!**/coverage",
       "!apps/dashboard/next-env.d.ts",
       "!packages/shared/src/db-types.ts",
-      "!supabase/.branches",
-      "!supabase/.temp",
       "!.playwright-mcp"
     ]
   },

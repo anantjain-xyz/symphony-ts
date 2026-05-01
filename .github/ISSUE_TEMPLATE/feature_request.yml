@@ -33,7 +33,7 @@ body:
         - Worker
         - Dashboard
         - Shared package
-        - Supabase schema
+        - Database schema
         - CI or release
         - Documentation
         - Unsure

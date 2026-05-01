@@ -198,7 +198,7 @@ packages/shared/src/
 | `schema.ts` | `WorkflowFrontMatter`, `TrackerConfig`, `Issue`, `RunStatus`, `AgentEventKind`, `LiveSession`, event payload schemas |
 | `db/schema.ts` | `runs`, `issues`, `agentEvents`, `liveSessions`, `retryQueue`, `workflows`, `hookRuns`, `rateLimitState`, `workerHeartbeat`, `agentEventsLatest` view, plus `runStatusEnum` / `agentEventKindEnum` / `hookNameEnum` and the `Json` type |
 | `db/client.ts` | `Db` type, `createDb(url, opts)` (Drizzle + postgres-js pool), `createListener(url)` (dedicated postgres-js client for `LISTEN`) |
-| `db/types.ts` | `Tables<'runs'>` / `TablesInsert<'runs'>` / `TablesUpdate<'runs'>` — same call shape as the old Supabase-generated helpers, backed by Drizzle's column inference |
+| `db/types.ts` | `Tables<'runs'>` / `TablesInsert<'runs'>` / `TablesUpdate<'runs'>` — backed by Drizzle's column inference |
 
 `schema.ts` defines *application* shapes (what the worker thinks an Issue is); `db/schema.ts` defines *database* shapes. They overlap but aren't identical.
 

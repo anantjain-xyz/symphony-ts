@@ -15,7 +15,7 @@ export interface LoopDeps {
   log: Logger;
   /**
    * Integration-test only. When set, `retry_queue` reads in `tick()` are
-   * restricted to these issue ids — so tests running against a shared Supabase
+   * restricted to these issue ids — so tests running against a shared Postgres
    * cannot sweep the live worker's backoff state when the stub tracker's
    * `fetchById` returns `null` for unknown ids.
    */

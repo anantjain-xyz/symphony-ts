@@ -154,10 +154,22 @@ describe('normalize', () => {
       ...ENG42,
       relations: {
         nodes: [
-          { type: 'blocked_by', relatedIssue: { identifier: 'ENG-40', state: { type: 'started' } } },
-          { type: 'blocked_by', relatedIssue: { identifier: 'ENG-39', state: { type: 'completed' } } },
-          { type: 'blocked_by', relatedIssue: { identifier: 'ENG-38', state: { type: 'canceled' } } },
-          { type: 'blocked_by', relatedIssue: { identifier: 'ENG-37', state: { type: 'backlog' } } },
+          {
+            type: 'blocked_by',
+            relatedIssue: { identifier: 'ENG-40', state: { type: 'started' } },
+          },
+          {
+            type: 'blocked_by',
+            relatedIssue: { identifier: 'ENG-39', state: { type: 'completed' } },
+          },
+          {
+            type: 'blocked_by',
+            relatedIssue: { identifier: 'ENG-38', state: { type: 'canceled' } },
+          },
+          {
+            type: 'blocked_by',
+            relatedIssue: { identifier: 'ENG-37', state: { type: 'backlog' } },
+          },
           { type: 'blocked_by', relatedIssue: { identifier: 'ENG-36', state: null } },
         ],
       },

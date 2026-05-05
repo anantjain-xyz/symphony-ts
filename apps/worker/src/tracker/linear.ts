@@ -370,7 +370,10 @@ interface LinearIssueNode {
   relations: {
     nodes: Array<{
       type: string;
-      relatedIssue: { identifier: string } | null;
+      relatedIssue: {
+        identifier: string;
+        state: { type: string } | null;
+      } | null;
     }>;
   } | null;
   attachments: { nodes: Array<{ url: string }> } | null;
@@ -380,15 +383,20 @@ interface LinearIssueNode {
 // integration-dependent and not always populated, but the URL shape is stable.
 const GITHUB_PR_URL_RE = /^https?:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+(?:[/?#].*)?$/;
 
+// Linear `state.type` values for issues that no longer gate dependents.
+// Anything else (`triage`/`backlog`/`unstarted`/`started`) is still open.
+const TERMINAL_STATE_TYPES = new Set(['completed', 'canceled']);
+
 export function normalize(node: LinearIssueNode): Issue {
   if (!node.state?.name) {
     throw new Error(`Linear issue ${node.identifier} has no state`);
   }
   const blockers: string[] = [];
   for (const rel of node.relations?.nodes ?? []) {
-    if (rel.type === 'blocked_by' && rel.relatedIssue) {
-      blockers.push(rel.relatedIssue.identifier);
-    }
+    if (rel.type !== 'blocked_by' || !rel.relatedIssue) continue;
+    const stateType = rel.relatedIssue.state?.type;
+    if (stateType && TERMINAL_STATE_TYPES.has(stateType)) continue;
+    blockers.push(rel.relatedIssue.identifier);
   }
   const prUrls = Array.from(
     new Set(
@@ -426,7 +434,10 @@ const ISSUE_FIELDS = `
   relations {
     nodes {
       type
-      relatedIssue { identifier }
+      relatedIssue {
+        identifier
+        state { type }
+      }
     }
   }
   attachments { nodes { url } }

@@ -82,7 +82,14 @@ const ENG42 = {
   branchName: 'eng-42-fix-bug',
   state: { name: 'Todo' },
   labels: { nodes: [{ name: 'backend' }] },
-  relations: { nodes: [{ type: 'blocked_by', relatedIssue: { identifier: 'ENG-40' } }] },
+  relations: {
+    nodes: [
+      {
+        type: 'blocked_by',
+        relatedIssue: { identifier: 'ENG-40', state: { type: 'started' } },
+      },
+    ],
+  },
   attachments: null,
 };
 
@@ -140,6 +147,34 @@ describe('normalize', () => {
         attachments: null,
       }),
     ).toThrow(/no state/);
+  });
+
+  it('skips blocked_by relations whose related issue is completed or canceled', () => {
+    const issue = normalize({
+      ...ENG42,
+      relations: {
+        nodes: [
+          {
+            type: 'blocked_by',
+            relatedIssue: { identifier: 'ENG-40', state: { type: 'started' } },
+          },
+          {
+            type: 'blocked_by',
+            relatedIssue: { identifier: 'ENG-39', state: { type: 'completed' } },
+          },
+          {
+            type: 'blocked_by',
+            relatedIssue: { identifier: 'ENG-38', state: { type: 'canceled' } },
+          },
+          {
+            type: 'blocked_by',
+            relatedIssue: { identifier: 'ENG-37', state: { type: 'backlog' } },
+          },
+          { type: 'blocked_by', relatedIssue: { identifier: 'ENG-36', state: null } },
+        ],
+      },
+    });
+    expect(issue.blockers).toEqual(['ENG-40', 'ENG-37', 'ENG-36']);
   });
 
   it('extracts GitHub PR URLs from attachments and dedups them', () => {

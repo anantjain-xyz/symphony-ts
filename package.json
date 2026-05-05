@@ -37,7 +37,7 @@
     "typecheck": "pnpm -r typecheck",
     "db:up": "docker compose -f db/docker-compose.yml up -d",
     "db:down": "docker compose -f db/docker-compose.yml down",
-    "db:migrate": "tsx db/migrate.ts",
+    "db:migrate": "tsx --env-file-if-exists=.env.local db/migrate.ts",
     "db:reset": "docker compose -f db/docker-compose.yml down -v && pnpm db:up && until docker exec symphony-postgres pg_isready -U symphony -d symphony >/dev/null 2>&1; do sleep 1; done && pnpm db:migrate",
     "changeset": "changeset",
     "version": "changeset version",

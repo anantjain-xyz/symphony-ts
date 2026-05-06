@@ -367,10 +367,15 @@ interface LinearIssueNode {
   // shapes) without the field still type-check.
   project?: { id: string } | null;
   labels: { nodes: Array<{ name: string }> } | null;
-  relations: {
+  // Linear models "X is blocked by Y" as a single IssueRelation row owned by Y
+  // with type='blocks' pointing at X. From X's side it's reachable via
+  // `inverseRelations`, where `issue` is the source (the blocker) and
+  // `relatedIssue` would point back at X. There is no 'blocked_by' type — that
+  // direction is always implicit in inverseRelations.
+  inverseRelations: {
     nodes: Array<{
       type: string;
-      relatedIssue: {
+      issue: {
         identifier: string;
         state: { type: string } | null;
       } | null;
@@ -392,11 +397,11 @@ export function normalize(node: LinearIssueNode): Issue {
     throw new Error(`Linear issue ${node.identifier} has no state`);
   }
   const blockers: string[] = [];
-  for (const rel of node.relations?.nodes ?? []) {
-    if (rel.type !== 'blocked_by' || !rel.relatedIssue) continue;
-    const stateType = rel.relatedIssue.state?.type;
+  for (const rel of node.inverseRelations?.nodes ?? []) {
+    if (rel.type !== 'blocks' || !rel.issue) continue;
+    const stateType = rel.issue.state?.type;
     if (stateType && TERMINAL_STATE_TYPES.has(stateType)) continue;
-    blockers.push(rel.relatedIssue.identifier);
+    blockers.push(rel.issue.identifier);
   }
   const prUrls = Array.from(
     new Set(
@@ -431,10 +436,10 @@ const ISSUE_FIELDS = `
   state { name }
   project { id }
   labels { nodes { name } }
-  relations {
+  inverseRelations {
     nodes {
       type
-      relatedIssue {
+      issue {
         identifier
         state { type }
       }

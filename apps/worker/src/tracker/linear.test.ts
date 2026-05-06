@@ -82,11 +82,11 @@ const ENG42 = {
   branchName: 'eng-42-fix-bug',
   state: { name: 'Todo' },
   labels: { nodes: [{ name: 'backend' }] },
-  relations: {
+  inverseRelations: {
     nodes: [
       {
-        type: 'blocked_by',
-        relatedIssue: { identifier: 'ENG-40', state: { type: 'started' } },
+        type: 'blocks',
+        issue: { identifier: 'ENG-40', state: { type: 'started' } },
       },
     ],
   },
@@ -100,11 +100,14 @@ const ENG41_URGENT = {
   title: 'Hotfix',
   priority: 1, // urgent
   state: { name: 'In Progress' },
-  relations: { nodes: [] },
+  inverseRelations: { nodes: [] },
 };
 
 describe('normalize', () => {
-  it('lowercases state and pulls blockers from blocked_by relations', () => {
+  it('lowercases state and pulls blockers from inverseRelations (type=blocks)', () => {
+    // Linear represents "ENG-42 blocked by ENG-40" as a single IssueRelation
+    // owned by ENG-40 (type=blocks, relatedIssue=ENG-42). From ENG-42's side
+    // it surfaces under inverseRelations with `issue` pointing at the blocker.
     const issue = normalize(ENG42);
     expect(issue.state).toBe('todo');
     expect(issue.blockers).toEqual(['ENG-40']);
@@ -112,7 +115,7 @@ describe('normalize', () => {
     expect(issue.branch).toBe('eng-42-fix-bug');
   });
 
-  it('handles null branch, labels, relations', () => {
+  it('handles null branch, labels, inverseRelations', () => {
     const issue = normalize({
       id: 'x',
       identifier: 'X-1',
@@ -122,7 +125,7 @@ describe('normalize', () => {
       branchName: null,
       state: { name: 'Backlog' },
       labels: null,
-      relations: null,
+      inverseRelations: null,
       attachments: null,
     });
     expect(issue.state).toBe('backlog');
@@ -143,34 +146,25 @@ describe('normalize', () => {
         branchName: null,
         state: null,
         labels: null,
-        relations: null,
+        inverseRelations: null,
         attachments: null,
       }),
     ).toThrow(/no state/);
   });
 
-  it('skips blocked_by relations whose related issue is completed or canceled', () => {
+  it('skips blockers whose source issue is completed or canceled', () => {
     const issue = normalize({
       ...ENG42,
-      relations: {
+      inverseRelations: {
         nodes: [
-          {
-            type: 'blocked_by',
-            relatedIssue: { identifier: 'ENG-40', state: { type: 'started' } },
-          },
-          {
-            type: 'blocked_by',
-            relatedIssue: { identifier: 'ENG-39', state: { type: 'completed' } },
-          },
-          {
-            type: 'blocked_by',
-            relatedIssue: { identifier: 'ENG-38', state: { type: 'canceled' } },
-          },
-          {
-            type: 'blocked_by',
-            relatedIssue: { identifier: 'ENG-37', state: { type: 'backlog' } },
-          },
-          { type: 'blocked_by', relatedIssue: { identifier: 'ENG-36', state: null } },
+          { type: 'blocks', issue: { identifier: 'ENG-40', state: { type: 'started' } } },
+          { type: 'blocks', issue: { identifier: 'ENG-39', state: { type: 'completed' } } },
+          { type: 'blocks', issue: { identifier: 'ENG-38', state: { type: 'canceled' } } },
+          { type: 'blocks', issue: { identifier: 'ENG-37', state: { type: 'backlog' } } },
+          { type: 'blocks', issue: { identifier: 'ENG-36', state: null } },
+          // Non-blocking inverse relations (e.g. `related`, `duplicate`) must
+          // not contribute to blockers even when the source issue is active.
+          { type: 'related', issue: { identifier: 'ENG-35', state: { type: 'started' } } },
         ],
       },
     });

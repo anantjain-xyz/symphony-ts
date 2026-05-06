@@ -133,6 +133,31 @@ prompt`;
     }
   });
 
+  it('expands ${VAR:-default} to the default when the env var is unset or empty', () => {
+    const orig = process.env.SYMPHONY_AGENT_BACKEND;
+    delete process.env.SYMPHONY_AGENT_BACKEND;
+    try {
+      const src = `---
+tracker:
+  kind: linear
+  api_key: k
+  active_states: [a]
+  terminal_states: [b]
+agent:
+  backend: \${SYMPHONY_AGENT_BACKEND:-claude}
+---
+prompt`;
+      expect(parseWorkflowSource(src).frontMatter.agent.backend).toBe('claude');
+      process.env.SYMPHONY_AGENT_BACKEND = '';
+      expect(parseWorkflowSource(src).frontMatter.agent.backend).toBe('claude');
+      process.env.SYMPHONY_AGENT_BACKEND = 'codex';
+      expect(parseWorkflowSource(src).frontMatter.agent.backend).toBe('codex');
+    } finally {
+      if (orig === undefined) delete process.env.SYMPHONY_AGENT_BACKEND;
+      else process.env.SYMPHONY_AGENT_BACKEND = orig;
+    }
+  });
+
   it('preserves unknown top-level keys', () => {
     const src = MINIMAL.replace('---\n', '---\nfuture_thing:\n  enabled: true\n');
     const w = parseWorkflowSource(src);

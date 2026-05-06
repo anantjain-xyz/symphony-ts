@@ -102,16 +102,28 @@ const ENV_FALLBACKS: Readonly<Record<string, () => string>> = {
   TMPDIR: () => tmpdir(),
 };
 
-const ENV_PATTERN = /\$\{([A-Z_][A-Z0-9_]*)\}|\$([A-Z_][A-Z0-9_]*)/g;
+// Supports `${VAR}`, `${VAR:-default}` (bash semantics: default applies when
+// VAR is unset OR empty), and bare `$VAR`. Nested expansion in defaults is not
+// supported — keep defaults to literal scalars.
+const ENV_PATTERN = /\$\{([A-Z_][A-Z0-9_]*)(?::-([^}]*))?\}|\$([A-Z_][A-Z0-9_]*)/g;
 function expandString(s: string): string {
-  return s.replace(ENV_PATTERN, (_, braced: string | undefined, bare: string | undefined) => {
-    const name = braced ?? bare;
-    if (!name) return '';
-    const fromEnv = process.env[name];
-    if (fromEnv !== undefined) return fromEnv;
-    const fallback = ENV_FALLBACKS[name];
-    return fallback ? fallback() : '';
-  });
+  return s.replace(
+    ENV_PATTERN,
+    (
+      _,
+      braced: string | undefined,
+      bracedDefault: string | undefined,
+      bare: string | undefined,
+    ) => {
+      const name = braced ?? bare;
+      if (!name) return '';
+      const fromEnv = process.env[name];
+      if (fromEnv !== undefined && fromEnv !== '') return fromEnv;
+      if (bracedDefault !== undefined) return bracedDefault;
+      const fallback = ENV_FALLBACKS[name];
+      return fallback ? fallback() : '';
+    },
+  );
 }
 
 /**

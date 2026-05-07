@@ -392,6 +392,17 @@ const GITHUB_PR_URL_RE = /^https?:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+(?:[/?
 // Anything else (`triage`/`backlog`/`unstarted`/`started`) is still open.
 const TERMINAL_STATE_TYPES = new Set(['completed', 'canceled']);
 
+// Linear's `branchName` is `<lowercased-identifier>-<title-slug>` (optionally
+// prefixed with `<user>/`). Drop the title slug so checked-out branches stay
+// short — keep any user prefix and the identifier.
+function shortenBranchName(branchName: string | null, identifier: string): string | null {
+  if (!branchName) return null;
+  const id = identifier.toLowerCase();
+  const idx = branchName.toLowerCase().indexOf(id);
+  if (idx < 0) return branchName;
+  return branchName.slice(0, idx + id.length);
+}
+
 export function normalize(node: LinearIssueNode): Issue {
   if (!node.state?.name) {
     throw new Error(`Linear issue ${node.identifier} has no state`);
@@ -415,7 +426,7 @@ export function normalize(node: LinearIssueNode): Issue {
     description: node.description,
     priority: node.priority,
     state: node.state.name.toLowerCase(),
-    branch: node.branchName,
+    branch: shortenBranchName(node.branchName, node.identifier),
     labels: (node.labels?.nodes ?? []).map((l) => l.name),
     blockers,
     pr_urls: prUrls,

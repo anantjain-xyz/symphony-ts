@@ -14,7 +14,7 @@ description: Create a well-formed git commit from the current changes. Use when 
 ## Inputs
 
 - `git status`, `git diff`, `git diff --staged` for actual changes.
-- Recent commit messages on the branch and in `origin/main` for style.
+- Recent commit messages on the branch and in `origin/master` for style.
 - The Symphony Workpad on the current Linear issue for scope/intent.
 
 ## Steps

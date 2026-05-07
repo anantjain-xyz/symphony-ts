@@ -31,6 +31,10 @@ workspace:
   root: ${TMPDIR}/symphony-workspaces
 
 hooks:
+  # eval is required: SYMPHONY_INSTALL_CMD frequently chains commands
+  # (e.g. "make install_tools && make gen") which a bare expansion would
+  # exec as a single argv. The env var is set by the operator's .env.local,
+  # not from untrusted input — same trust boundary as the rest of this hook.
   after_create: |
     git clone "$REPO_URL" .
     git checkout -B "${ISSUE_BRANCH:-symphony/${ISSUE_IDENTIFIER}}"
@@ -67,9 +71,10 @@ claude:
   # repo's .claude/settings.json can layer in repo-specific extras on top.
   allowed_tools:
     # GitHub CLI (PR create/view/comment/merge, gh api, gh auth status, gh run)
+    # The allowed_tools is intentionally more permissive than usual since we're using
+    # the auto permission_mode, which uses a classifier to judge whether the call
+    # should be blocked or not.
     - Bash(gh *)
-    # Git read + the mutating ops the workflow needs (commit/push/branch/etc).
-    # Destructive forms (reset --hard, push --force*, clean -f*) intentionally omitted.
     - Bash(git status*)
     - Bash(git log*)
     - Bash(git diff*)
@@ -80,7 +85,9 @@ claude:
     - Bash(git add*)
     - Bash(git commit*)
     - Bash(git push)
-    - Bash(git push origin*)
+    - Bash(git push origin HEAD)
+    - Bash(git push -u origin HEAD)
+    - Bash(git push -u origin *)
     - Bash(git pull*)
     - Bash(git fetch*)
     - Bash(git merge*)
@@ -96,8 +103,7 @@ claude:
     - Bash(npm --version)
     - Bash(pnpm --version)
     - Bash(python3 --version)
-    # Fetching canonical boilerplate docs (LICENSE, CODE_OF_CONDUCT, ...) — see Guardrails.
-    - Bash(curl *)
+    - Bash(curl -fsS https://api.linear.app/*)
   disallowed_tools: []
   add_dirs: []
   turn_timeout_ms: 3600000
@@ -141,7 +147,7 @@ Repeatable mechanics live under `.agents/skills/<name>/SKILL.md` (the canonical,
 | Skill | Use when |
 |---|---|
 | `workpad` | finding, bootstrapping, updating, or resetting the Symphony Workpad on a Linear issue |
-| `pull` | syncing the branch with `origin/main` and resolving conflicts |
+| `pull` | syncing the branch with `origin/master` and resolving conflicts |
 | `commit` | creating a well-formed git commit from staged changes |
 | `push` | pushing the branch and ensuring a PR exists with the `symphony` label |
 | `pr-feedback` | sweeping the PR for actionable reviewer feedback before `In Review` |
@@ -164,14 +170,14 @@ Facts about this run — do not waste turns rediscovering them.
 If this is a retry (attempt number > 1 or the workpad already exists), do these **before** regenerating anything:
 
 1. Read the existing `## Symphony Workpad` comment in full — it is the canonical state; the orchestrator's retry-context trailer may be empty or stale.
-2. Run `git status && git log --oneline origin/main..HEAD` to see what prior attempts already committed. Pick up their work; do not re-do committed files.
+2. Run `git status && git log --oneline origin/master..HEAD` to see what prior attempts already committed. Pick up their work; do not re-do committed files.
 3. Scan the workpad `### Confusions` and `### Notes` for known failure modes (content-filter hits, tool access, flaky tests) and avoid repeating them.
 4. If the workpad's last-update timestamp is older than the prior attempt's start, prior attempts died mid-stream without persisting — rebuild your picture from repo state (committed files, open PR) rather than the workpad's plan alone.
 5. **No-op redispatch short-circuit.** Only applies when the issue state is `Todo` or `In Progress` (NOT `Rework` — that always requires the full reset of Step 3, and NOT `Merging` — that always runs the Land procedure). Within those two states, the short-circuit fires only if **all** of the following hold:
    - Every Plan / Acceptance / Validation checkbox in the workpad is already ticked.
    - A PR is linked.
    - `gh pr view --json state,mergeable,mergeStateStatus,statusCheckRollup` shows the PR `OPEN`/`MERGED`, `mergeable` is `MERGEABLE` (NOT `CONFLICTING` or `UNKNOWN`), `mergeStateStatus` is `CLEAN`/`HAS_HOOKS`/`UNSTABLE` (NOT `DIRTY`/`BLOCKED` due to conflicts), and required checks are green.
-   - `git log --oneline origin/main..HEAD` matches the workpad's recorded commits.
+   - `git log --oneline origin/master..HEAD` matches the workpad's recorded commits.
 
    If any of those fail — especially a `CONFLICTING` / `DIRTY` PR — do NOT short-circuit. Drop into Step 1 and run the `pull` skill. If the only failing check is mergeability, the redispatch is specifically a "fix the conflicts" signal — treat it that way.
 
@@ -192,7 +198,7 @@ Route on the issue's current state. Before routing, check whether the branch PR 
 | `Rework` | Run Step 3 (full reset). |
 | `Done` | Shut down. |
 
-**Branch-PR-closed guard** (pre-merge states only — `Todo`/`In Progress`/`Rework`): if the branch's PR is `CLOSED` or `MERGED`, prior branch work is non-reusable. Fresh branch from `origin/main`, restart from Step 1.
+**Branch-PR-closed guard** (pre-merge states only — `Todo`/`In Progress`/`Rework`): if the branch's PR is `CLOSED` or `MERGED`, prior branch work is non-reusable. Fresh branch from `origin/master`, restart from Step 1.
 
 ## Step 1: Setup and plan (Todo / In Progress)
 
@@ -203,7 +209,7 @@ Route on the issue's current state. Before routing, check whether the branch PR 
    - User-facing changes → include a UI walkthrough (launch path → interaction → expected result) as a required criterion.
    - If the ticket body has `Validation`, `Test Plan`, or `Testing` sections, copy them verbatim into Acceptance Criteria / Validation as required checkboxes. No optional downgrade.
 5. **Reproduction signal**: capture the current behavior before changing code — command output, screenshot, or deterministic UI state — in `### Notes`.
-6. **Sync**: run the `pull` skill to merge `origin/main` and resolve any conflicts before continuing. If a PR is already attached, also confirm `gh pr view --json mergeable,mergeStateStatus` reports `MERGEABLE` after pushing. Record result (`clean` / `conflicts resolved`) and the new short SHA in `### Notes`.
+6. **Sync**: run the `pull` skill to merge `origin/master` and resolve any conflicts before continuing. If a PR is already attached, also confirm `gh pr view --json mergeable,mergeStateStatus` reports `MERGEABLE` after pushing. Record result (`clean` / `conflicts resolved`) and the new short SHA in `### Notes`.
 7. Proceed to Step 2.
 
 ## Step 2: Execute and publish
@@ -217,7 +223,7 @@ Route on the issue's current state. Before routing, check whether the branch PR 
 3. **Cleanup test data.** Anything you created in external systems for testing — Linear issues, comments, attachments; non-issue GitHub branches, draft PRs, gists; database rows in shared instances; etc. — must be deleted before moving the issue to `In Review`. Do not delete the active issue branch, its PR, or issue-owned evidence/attachments needed for review. The end state must match the start state plus only the artifacts that belong to this issue. Test-data cleanup is mandatory; record the cleanup actions in `### Notes`.
 4. **Before every push**: run required validation; rerun until green; use the `commit` skill to commit; use the `push` skill to publish.
 5. The `push` skill handles attaching the PR URL to the issue and applying the `symphony` label. For user-facing changes, keep Playwright screenshots in the Linear workpad only; do not require or manually upload screenshots in the GitHub PR description. Do not commit proof screenshots to the repository.
-6. After review feedback or check failures: run the `pull` skill again to merge `origin/main`, then re-run validation.
+6. After review feedback or check failures: run the `pull` skill again to merge `origin/master`, then re-run validation.
 7. Final workpad pass before `In Review`:
    - All plan / acceptance / validation checkboxes reflect reality.
    - Add `### Confusions` section only if something during execution was unclear.
@@ -246,7 +252,7 @@ Use only for genuine external blockers after fallbacks exhausted.
 1. Re-read the full issue body and all human comments. Identify what to do differently.
 2. Close the existing PR tied to this issue.
 3. Run the `workpad` skill to **reset** the existing comment in place via the GraphQL `commentUpdate` workaround (one workpad per issue, ever — never delete it).
-4. Fresh branch from `origin/main`.
+4. Fresh branch from `origin/master`.
 5. Start over from Step 1.
 
 ## Land procedure (entered via `Merging`)
@@ -255,17 +261,12 @@ Run the `land` skill — it handles the approve/sync/squash-merge loop, the `Don
 
 ## Guardrails
 
-- **Boilerplate documents** (LICENSE, CODE_OF_CONDUCT, SECURITY templates, Contributor Covenant / Apache / MIT / GPL verbatim text): fetch from the authoritative URL with `curl -fsSL <URL> -o <file>`. Do **not** regenerate verbatim inline — upstream content filters may abort the turn silently. Canonical sources:
-  - Apache-2.0 LICENSE: `https://www.apache.org/licenses/LICENSE-2.0.txt`
-  - MIT LICENSE (template): `https://opensource.org/license/mit/`
-  - Contributor Covenant 2.1: `https://www.contributor-covenant.org/version/2/1/code_of_conduct/code_of_conduct.md`
 - Workpad is the single source of truth. One `## Symphony Workpad` comment per issue, ever. Do not edit the issue body/description for planning or progress. **The workpad comment is never test data and must not be deleted** — see the `workpad` skill for handling accidental duplicates.
 - Do not post additional "done"/summary comments outside the workpad.
 - Temporary proof edits must be reverted before commit.
 - **Test data cleanup is mandatory.** Any artifacts created in external systems during testing (Linear issues/comments/attachments, non-issue GitHub branches/draft PRs/gists, rows in shared databases, etc.) must be deleted before transitioning to `In Review`. Do not delete the active issue branch, its PR, or issue-owned evidence/attachments needed for review. Leaving test residue is treated the same as leaving a temporary code edit unrevert.
 - **Proof-of-testing screenshots must be Playwright-captured** for user-facing changes, and must appear in the Linear workpad via Linear-hosted markdown images or attachments. Do not require screenshots in the GitHub PR description, do not upload them manually to GitHub, and do not check screenshot files into the repository. Hand-cropped screenshots, `console.log` snippets, or text-only descriptions do not satisfy this requirement.
 - Out-of-scope improvements → new Backlog issue (clear title / description / acceptance criteria, same project as current issue, `related` link to current, `blockedBy` if dependent).
-- Never `--no-verify`, `git reset --hard`, `git push --force*`, or `git clean -f*` without an explicit ask.
 - Never run `pkill`/`killall`/`pgrep -f` with a broad pattern (e.g. `pkill -f "next dev"`, `pkill -f node`). Agents share the host with the operator's dashboard and with other workspaces' dev servers — unscoped matches kill *every* matching process, including the operator's. Scope cleanup to the port or the workspace: prefer `lsof -t -i :<PORT> | xargs -r kill` (handles the zero-match and multi-PID cases safely); when matching by command line, anchor to this workspace (`pkill -f 'next-server.*'"$ISSUE_IDENTIFIER"`). Same rule for `kill %1` / `kill %<jobspec>` only — those are scoped to the current shell.
 - `In Review` / `Done` / `Backlog` → do not modify the issue or its code.
 - Keep issue text concise, specific, reviewer-oriented.
@@ -277,6 +278,6 @@ Run the `land` skill — it handles the approve/sync/squash-merge loop, the `Don
 - Acceptance criteria and ticket-mandated validation items all checked.
 - Validation/tests green for the latest commit.
 - `pr-feedback` sweep clean (no actionable comments remain).
-- PR checks green, branch pushed, PR linked on the issue, `symphony` label present.
+- PR checks not failing, branch pushed, PR linked on the issue, `symphony` label present.
 - User-facing changes: Playwright-captured screenshots embedded in the Linear workpad.
 - All test data created during validation has been cleaned up; no residue left in Linear, GitHub, or shared backends.

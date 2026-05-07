@@ -18,14 +18,14 @@ description: Push the current branch to origin and ensure a PR exists for it (cr
    ```sh
    git push -u origin HEAD
    ```
-3. If the push is rejected as non-fast-forward, run the `pull` skill to merge `origin/main`, re-run validation, then push again. Use `--force-with-lease` only when you knowingly rewrote history; never use `--force`.
+3. If the push is rejected as non-fast-forward, run the `pull` skill to merge `origin/master`, re-run validation, then push again. Use `--force-with-lease` only when you knowingly rewrote history; never use `--force`.
 4. Ensure a PR exists for the branch:
    ```sh
    pr_state=$(gh pr view --json state -q .state 2>/dev/null || true)
    ```
-   - Empty → `gh pr create --title "<title>" --body "<body>"`.
+   - Empty → `gh pr create --draft --title "<title>" --body "<body>"`.
    - `OPEN` → `gh pr edit --title "<title>" --body "<body>"` if scope shifted.
-   - `CLOSED`/`MERGED` → branch is non-reusable; cut a fresh branch from `origin/main`.
+   - `CLOSED`/`MERGED` → branch is non-reusable; cut a fresh branch from `origin/master`.
 5. Title: short (< 70 chars), describes the *outcome* of the change, not the most recent fix. For Symphony issues, prefer `SYM-NN: <summary>`.
 6. Body: refresh to reflect total branch scope (not only the latest commits). Use the project's PR template if one exists.
 7. Apply the `symphony` label via REST (the `gh pr edit --add-label` path 500s on this org due to a Projects-classic GraphQL deprecation):

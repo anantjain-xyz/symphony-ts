@@ -5,8 +5,8 @@
  *
  * Speaks Symphony's NDJSON JSON-RPC protocol on stdio (see
  * apps/worker/src/agent/protocol.ts), translating `turn/start` into a
- * `codex exec --json` invocation and streaming Codex's JSONL items back as
- * Symphony `turn/event` + `turn/complete` notifications.
+ * `cbcode --agent codex exec --json` invocation and streaming Codex's JSONL
+ * items back as Symphony `turn/event` + `turn/complete` notifications.
  *
  * One turn per process: Symphony's CodexRunner spawns a fresh adapter per
  * attempt, so we exit when the child exits.
@@ -74,10 +74,11 @@ rl.on('close', () => {
 });
 
 function startTurn(prompt, turnSandboxPolicy) {
-  const { args, sandbox } = buildCodexArgs(turnSandboxPolicy);
-  logStderr(`spawning: codex ${args.join(' ')} (cwd=${thread.cwd}, sandbox=${sandbox})`);
+  const { args: codexArgs, sandbox } = buildCodexArgs(turnSandboxPolicy);
+  const args = ['--agent', 'codex', ...codexArgs];
+  logStderr(`spawning: cbcode ${args.join(' ')} (cwd=${thread.cwd}, sandbox=${sandbox})`);
 
-  const child = spawn('codex', args, {
+  const child = spawn('cbcode', args, {
     cwd: thread.cwd,
     stdio: ['pipe', 'pipe', 'pipe'],
     env: process.env,

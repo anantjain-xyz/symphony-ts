@@ -1,13 +1,13 @@
 ---
 name: pull
-description: Sync the current branch with origin/main via merge (not rebase) and resolve any conflicts. Use whenever Symphony's workflow says "merge origin/main into the branch" — at Step 1 setup, before push, and as part of the Land procedure.
+description: Sync the current branch with origin/master via merge (not rebase) and resolve any conflicts. Use whenever Symphony's workflow says "merge origin/master into the branch" — at Step 1 setup, before push, and as part of the Land procedure.
 ---
 
 # Pull
 
 ## Goals
 
-- Bring `origin/main` into the working branch with a real merge commit so reviewers can see the integration.
+- Bring `origin/master` into the working branch with a real merge commit so reviewers can see the integration.
 - Resolve conflicts in code (not by deleting state). Never use `git reset --hard`, `git push --force*`, or `git clean -f*` to "make it go away".
 - After merging, the PR should report `MERGEABLE` and `CLEAN`/`HAS_HOOKS`/`UNSTABLE` — never `CONFLICTING`/`DIRTY`.
 
@@ -24,13 +24,13 @@ description: Sync the current branch with origin/main via merge (not rebase) and
    ```sh
    git pull --ff-only origin "$(git branch --show-current)" || true
    ```
-5. Merge `origin/main` with a clearer conflict style:
+5. Merge `origin/master` with a clearer conflict style:
    ```sh
-   git -c merge.conflictstyle=zdiff3 merge origin/main
+   git -c merge.conflictstyle=zdiff3 merge origin/master
    ```
 6. Resolve conflicts (see below), then `git add <files>` and `git merge --continue` (or `git commit` if the merge auto-paused).
 7. Re-run validation (`pnpm format:check && pnpm lint && pnpm typecheck && pnpm test`) before pushing.
-8. Record the result in the workpad's `### Notes` (e.g. `merge origin/main: clean` or `conflicts resolved: <files>`) and the new short SHA.
+8. Record the result in the workpad's `### Notes` (e.g. `merge origin/master: clean` or `conflicts resolved: <files>`) and the new short SHA.
 
 ## Resolving conflicts
 

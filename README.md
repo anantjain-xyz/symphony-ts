@@ -1,6 +1,6 @@
 # symphony-ts
 
-[![CI](https://github.com/anantjain-xyz/symphony-ts/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/anantjain-xyz/symphony-ts/actions/workflows/ci.yml)
+> **Coinbase fork** — this is a fork of [anantjain-xyz/symphony-ts](https://github.com/anantjain-xyz/symphony-ts), adapted for internal Coinbase use. Upstream changes are pulled in periodically; Coinbase-specific adaptations live on this fork.
 
 TypeScript port of [Symphony](https://github.com/openai/symphony), backed by a local Postgres for persistence and `LISTEN/NOTIFY` for live updates, with support for Claude Code in addition to Codex.
 

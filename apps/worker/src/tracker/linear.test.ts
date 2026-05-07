@@ -112,7 +112,12 @@ describe('normalize', () => {
     expect(issue.state).toBe('todo');
     expect(issue.blockers).toEqual(['ENG-40']);
     expect(issue.labels).toEqual(['backend']);
-    expect(issue.branch).toBe('eng-42-fix-bug');
+    expect(issue.branch).toBe('eng-42');
+  });
+
+  it('strips the title slug from branchName, preserving any user prefix', () => {
+    const withPrefix = normalize({ ...ENG42, branchName: 'anant/eng-42-fix-the-bug' });
+    expect(withPrefix.branch).toBe('anant/eng-42');
   });
 
   it('handles null branch, labels, inverseRelations', () => {

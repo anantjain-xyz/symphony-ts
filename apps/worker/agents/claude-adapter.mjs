@@ -5,7 +5,7 @@
  *
  * Speaks Symphony's NDJSON JSON-RPC protocol on stdio (see
  * apps/worker/src/agent/protocol.ts), translating `turn/start` into a
- * `claude -p --output-format stream-json --verbose --session-id <uuid>`
+ * `cbcode --agent claude -p --output-format stream-json --verbose --session-id <uuid>`
  * invocation and streaming Claude's stream-json events back as Symphony
  * `turn/event` + `turn/complete` notifications.
  *
@@ -85,10 +85,10 @@ rl.on('close', () => {
 });
 
 function startTurn(prompt) {
-  const args = buildClaudeArgs();
-  logStderr(`spawning: claude ${args.join(' ')} (cwd=${thread.cwd})`);
+  const args = ['--agent', 'claude', ...buildClaudeArgs()];
+  logStderr(`spawning: cbcode ${args.join(' ')} (cwd=${thread.cwd})`);
 
-  const child = spawn('claude', args, {
+  const child = spawn('cbcode', args, {
     cwd: thread.cwd,
     stdio: ['pipe', 'pipe', 'pipe'],
     env: process.env,
@@ -160,6 +160,8 @@ function buildClaudeArgs() {
     '--verbose',
     '--session-id',
     thread.sessionId,
+    '--model',
+    'claude-opus-4-7[1m]',
   ];
 
   const mode = process.env.SYMPHONY_CLAUDE_PERMISSION_MODE;

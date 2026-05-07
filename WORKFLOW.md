@@ -44,8 +44,9 @@ hooks:
 agent:
   # Which backend to drive. `codex` spawns `codex-adapter.mjs`; `claude` spawns
   # `claude-adapter.mjs` and supports `pnpm --filter @symphony/worker attach
-  # <issue>` to resume the same session from your own terminal.
-  backend: claude
+  # <issue>` to resume the same session from your own terminal. Sourced from
+  # .env.local via $SYMPHONY_AGENT_BACKEND; defaults to `claude` when unset.
+  backend: ${SYMPHONY_AGENT_BACKEND:-claude}
   max_concurrent_agents: 4
   max_retry_backoff_ms: 300000
   max_concurrent_agents_by_state:

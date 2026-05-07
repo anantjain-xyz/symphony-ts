@@ -184,7 +184,7 @@ Route on the issue's current state. Before routing, check whether the branch PR 
 | State | Action |
 |---|---|
 | `Backlog` | Do not modify. Shut down. |
-| `Todo` | Move to `In Progress`, bootstrap workpad (`workpad` skill), run Step 1. If a PR is already attached: check `gh pr view --json mergeable,mergeStateStatus` first — a `CONFLICTING`/`DIRTY` PR is the most common reason for a Todo redispatch and the conflicts MUST be resolved (`pull` skill) before anything else. Then run the `pr-feedback` sweep before new work. |
+| `Todo` | Bootstrap workpad (`workpad` skill), then move to `In Progress`, run Step 1. If a PR is already attached: check `gh pr view --json mergeable,mergeStateStatus` first — a `CONFLICTING`/`DIRTY` PR is the most common reason for a Todo redispatch and the conflicts MUST be resolved (`pull` skill) before anything else. Then run the `pr-feedback` sweep before new work. |
 | `In Progress` | Continue Step 1 from existing workpad. |
 | `In Review` | Do not change code or content. Wait/poll for review decision. |
 | `Merging` (PR already `MERGED`) | Skip land procedure; record merge SHA in workpad; move to `Done`. |

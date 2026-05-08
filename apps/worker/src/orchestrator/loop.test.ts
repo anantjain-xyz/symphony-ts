@@ -5,6 +5,7 @@ import { resolveConfig } from '../config/resolve.js';
 import type { RateLimitStateRow, Repo, RetryQueueRow } from '../db/repo.js';
 import { makeTestIssue, makeTestWorkflow } from '../db/test-helpers.js';
 import type { TrackerClient } from '../tracker/linear.js';
+import type { UsageProbe } from '../usage/probe.js';
 import { WorkspaceManager } from '../workspace/manager.js';
 import type { DispatchHandle } from './dispatch.js';
 import { OrchestratorLoop } from './loop.js';
@@ -38,6 +39,8 @@ function fakeRepo(overrides: Partial<Repo>): Repo {
     activeRateLimits: vi.fn(async () => [] as RateLimitStateRow[]),
     lastRunNumber: vi.fn(async () => 0),
     tryReserveRun: vi.fn(async () => null),
+    // applyUsageGate upserts on every tick, so even non-gate tests need this.
+    upsertRateLimit: vi.fn(async () => {}),
     ...overrides,
   };
   return new Proxy(base as unknown as Repo, {
@@ -118,6 +121,233 @@ describe('OrchestratorLoop rate-limit gate', () => {
 
     await loop.tick();
     expect(reserve).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('OrchestratorLoop usage gate', () => {
+  function makeProbe(snapshot: Awaited<ReturnType<UsageProbe['probe']>>): {
+    probe: UsageProbe;
+    calls: ReturnType<typeof vi.fn<UsageProbe['probe']>>;
+  } {
+    const calls = vi.fn<UsageProbe['probe']>(async () => snapshot);
+    return { probe: { probe: calls }, calls };
+  }
+  function makeRateLimitMock() {
+    return vi.fn<Repo['upsertRateLimit']>(async () => {});
+  }
+
+  it('writes a usage_gate row with reset_at when remaining drops below threshold', async () => {
+    const issue = makeIssue();
+    const upsertRateLimit = makeRateLimitMock();
+    const reserve = vi.fn(async () => null);
+    const repo = fakeRepo({ tryReserveRun: reserve, upsertRateLimit });
+
+    const wf = makeTestWorkflow({ sourceHash: 'usage-gate-below' });
+    wf.frontMatter.agent.min_remaining_usage_pct = 20;
+    // codex backend by default → source must be `codex_usage_gate`.
+    const futureReset = new Date(Date.now() + 60 * 60_000);
+    const { probe, calls } = makeProbe({ remainingPct: 5, resetAt: futureReset });
+
+    const loop = new OrchestratorLoop({
+      tracker: stubTracker([issue]),
+      repo,
+      workspaces: new WorkspaceManager('/tmp/symphony-loop-test'),
+      config: resolveConfig(wf),
+      log: pino({ level: 'silent' }),
+      usageProbe: probe,
+    });
+
+    await loop.tick();
+
+    expect(calls).toHaveBeenCalledWith('codex');
+    expect(upsertRateLimit).toHaveBeenCalledWith({
+      source: 'codex_usage_gate',
+      remaining: 5,
+      resetAt: futureReset,
+    });
+    // The new row didn't make it into activeRateLimits() (mock returned []),
+    // so dispatch wasn't gated by *this* tick — but the next tick will see
+    // the row and pause. We only verify the write happened here.
+    expect(reserve).toHaveBeenCalled();
+  });
+
+  it('falls back to a near-future reset when probe omits resetAt', async () => {
+    const issue = makeIssue();
+    const upsertRateLimit = makeRateLimitMock();
+    const repo = fakeRepo({ tryReserveRun: vi.fn(async () => null), upsertRateLimit });
+
+    const wf = makeTestWorkflow({ sourceHash: 'usage-gate-no-reset' });
+    wf.frontMatter.agent.min_remaining_usage_pct = 20;
+    const { probe } = makeProbe({ remainingPct: 5, resetAt: null });
+
+    const before = Date.now();
+    const loop = new OrchestratorLoop({
+      tracker: stubTracker([issue]),
+      repo,
+      workspaces: new WorkspaceManager('/tmp/symphony-loop-test'),
+      config: resolveConfig(wf),
+      log: pino({ level: 'silent' }),
+      usageProbe: probe,
+    });
+    await loop.tick();
+    const after = Date.now();
+
+    expect(upsertRateLimit).toHaveBeenCalledTimes(1);
+    const arg = upsertRateLimit.mock.calls[0]![0];
+    expect(arg.resetAt).not.toBeNull();
+    // 5min default.
+    expect(arg.resetAt!.getTime()).toBeGreaterThanOrEqual(before + 5 * 60_000);
+    expect(arg.resetAt!.getTime()).toBeLessThanOrEqual(after + 5 * 60_000 + 100);
+  });
+
+  it('clears the gate (reset_at: null) when remaining recovers above threshold', async () => {
+    const issue = makeIssue();
+    const upsertRateLimit = makeRateLimitMock();
+    const repo = fakeRepo({ tryReserveRun: vi.fn(async () => null), upsertRateLimit });
+
+    const wf = makeTestWorkflow({ sourceHash: 'usage-gate-above' });
+    wf.frontMatter.agent.min_remaining_usage_pct = 20;
+    const { probe } = makeProbe({
+      remainingPct: 80,
+      resetAt: new Date(Date.now() + 60 * 60_000),
+    });
+
+    const loop = new OrchestratorLoop({
+      tracker: stubTracker([issue]),
+      repo,
+      workspaces: new WorkspaceManager('/tmp/symphony-loop-test'),
+      config: resolveConfig(wf),
+      log: pino({ level: 'silent' }),
+      usageProbe: probe,
+    });
+    await loop.tick();
+
+    // resetAt: null excludes the row from `activeRateLimits()` — i.e. lifts
+    // any prior pause this same gate had set.
+    expect(upsertRateLimit).toHaveBeenCalledWith({
+      source: 'codex_usage_gate',
+      remaining: 80,
+      resetAt: null,
+    });
+  });
+
+  it('clears stale gate row when probe fails (fail open)', async () => {
+    // Codex review (PR #97) called this out: returning early on probe failure
+    // would strand a prior `<backend>_usage_gate` row's `reset_at`, which
+    // would keep dispatch paused for hours despite the probe being broken —
+    // the opposite of "fail open". Now we always upsert null on failure so
+    // any prior pause lifts.
+    const issue = makeIssue();
+    const upsertRateLimit = makeRateLimitMock();
+    const reserve = vi.fn(async () => null);
+    const repo = fakeRepo({ tryReserveRun: reserve, upsertRateLimit });
+
+    const wf = makeTestWorkflow({ sourceHash: 'usage-gate-fail-open' });
+    wf.frontMatter.agent.min_remaining_usage_pct = 20;
+    const { probe, calls } = makeProbe(null);
+
+    const loop = new OrchestratorLoop({
+      tracker: stubTracker([issue]),
+      repo,
+      workspaces: new WorkspaceManager('/tmp/symphony-loop-test'),
+      config: resolveConfig(wf),
+      log: pino({ level: 'silent' }),
+      usageProbe: probe,
+    });
+    await loop.tick();
+
+    expect(calls).toHaveBeenCalledTimes(1);
+    expect(upsertRateLimit).toHaveBeenCalledWith({
+      source: 'codex_usage_gate',
+      remaining: null,
+      resetAt: null,
+    });
+    // Dispatch proceeds normally (reserve was attempted).
+    expect(reserve).toHaveBeenCalled();
+  });
+
+  it('clears stale gate row when threshold is 0 (gate disabled)', async () => {
+    // Same Codex-review concern: if a prior tick set `<backend>_usage_gate`
+    // with a future `reset_at` and the user then sets the env var to 0 to
+    // disable the feature, we must lift that pause — not leave it stranded.
+    const issue = makeIssue();
+    const upsertRateLimit = makeRateLimitMock();
+    const repo = fakeRepo({ tryReserveRun: vi.fn(async () => null), upsertRateLimit });
+
+    const wf = makeTestWorkflow({ sourceHash: 'usage-gate-disabled' });
+    wf.frontMatter.agent.min_remaining_usage_pct = 0;
+    const { probe, calls } = makeProbe({ remainingPct: 1, resetAt: null });
+
+    const loop = new OrchestratorLoop({
+      tracker: stubTracker([issue]),
+      repo,
+      workspaces: new WorkspaceManager('/tmp/symphony-loop-test'),
+      config: resolveConfig(wf),
+      log: pino({ level: 'silent' }),
+      usageProbe: probe,
+    });
+    await loop.tick();
+
+    // Probe is never consulted when the gate is disabled, but we still clear
+    // any stale row.
+    expect(calls).not.toHaveBeenCalled();
+    expect(upsertRateLimit).toHaveBeenCalledWith({
+      source: 'codex_usage_gate',
+      remaining: null,
+      resetAt: null,
+    });
+  });
+
+  it('clears stale gate row when no probe is wired into the loop', async () => {
+    // The DI-omitted path in tests, but symmetrically the fix applies in
+    // production too: if probe construction fails at boot and we restart
+    // without one, any prior gate must lift.
+    const issue = makeIssue();
+    const upsertRateLimit = makeRateLimitMock();
+    const repo = fakeRepo({ tryReserveRun: vi.fn(async () => null), upsertRateLimit });
+
+    const wf = makeTestWorkflow({ sourceHash: 'usage-gate-no-probe' });
+    wf.frontMatter.agent.min_remaining_usage_pct = 20;
+
+    const loop = new OrchestratorLoop({
+      tracker: stubTracker([issue]),
+      repo,
+      workspaces: new WorkspaceManager('/tmp/symphony-loop-test'),
+      config: resolveConfig(wf),
+      log: pino({ level: 'silent' }),
+      // usageProbe intentionally omitted
+    });
+    await loop.tick();
+
+    expect(upsertRateLimit).toHaveBeenCalledWith({
+      source: 'codex_usage_gate',
+      remaining: null,
+      resetAt: null,
+    });
+  });
+
+  it('uses the claude_ source key when backend is claude', async () => {
+    const issue = makeIssue();
+    const upsertRateLimit = makeRateLimitMock();
+    const repo = fakeRepo({ tryReserveRun: vi.fn(async () => null), upsertRateLimit });
+
+    const wf = makeTestWorkflow({ sourceHash: 'usage-gate-claude' });
+    wf.frontMatter.agent.backend = 'claude';
+    wf.frontMatter.agent.min_remaining_usage_pct = 20;
+    const { probe } = makeProbe({ remainingPct: 8, resetAt: null });
+
+    const loop = new OrchestratorLoop({
+      tracker: stubTracker([issue]),
+      repo,
+      workspaces: new WorkspaceManager('/tmp/symphony-loop-test'),
+      config: resolveConfig(wf),
+      log: pino({ level: 'silent' }),
+      usageProbe: probe,
+    });
+    await loop.tick();
+
+    const arg = upsertRateLimit.mock.calls[0]![0];
+    expect(arg.source).toBe('claude_usage_gate');
   });
 });
 

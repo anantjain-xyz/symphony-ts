@@ -1,8 +1,9 @@
-import type { Issue } from '@symphony/shared';
+import type { AgentBackend, Issue } from '@symphony/shared';
 import type { Logger } from 'pino';
 import type { ResolvedConfig } from '../config/resolve.js';
 import type { RateLimitStateRow, Repo } from '../db/repo.js';
 import type { TrackerClient } from '../tracker/linear.js';
+import type { UsageProbe } from '../usage/probe.js';
 import { WorkspaceManager } from '../workspace/manager.js';
 import { selectDispatchable } from './concurrency.js';
 import { type DispatchHandle, dispatchRun } from './dispatch.js';
@@ -14,12 +15,26 @@ export interface LoopDeps {
   config: ResolvedConfig;
   log: Logger;
   /**
+   * Optional. When set and `agent.min_remaining_usage_pct > 0`, every tick
+   * checks the active backend's remaining quota and writes a
+   * `<backend>_usage_gate` row to `rate_limit_state` if it's below threshold,
+   * so the existing rate-limit pause kicks in. Caller is responsible for
+   * caching (see `usage/cache.ts`); the loop calls `probe()` on every tick.
+   */
+  usageProbe?: UsageProbe;
+  /**
    * Integration-test only. When set, `retry_queue` reads in `tick()` are
    * restricted to these issue ids — so tests running against a shared Postgres
    * cannot sweep the live worker's backoff state when the stub tracker's
    * `fetchById` returns `null` for unknown ids.
    */
   scopedIssueIds?: string[];
+}
+
+// Must start with `<backend>_` so the existing `rateLimitPause()` filter
+// picks it up alongside adapter-emitted `<backend>_<bucket>` rows.
+function usageGateSource(backend: AgentBackend): string {
+  return `${backend}_usage_gate`;
 }
 
 /**
@@ -155,6 +170,16 @@ export class OrchestratorLoop {
       }
     }
 
+    // 2a-bis. Usage gate. Probe the active backend's remaining quota (e.g. by
+    //         shelling out to `claude /status` / `codex /status` — see
+    //         usage/probe.ts) and write to `rate_limit_state` so the existing
+    //         pause logic in 2b picks it up. Reused, rather than parallel,
+    //         because the dashboard already renders `rate_limit_state` rows
+    //         and the suppression-of-due-retries behavior comes for free.
+    //         Errors here are FAIL-OPEN (`probe()` returns null on any
+    //         failure) — a flaky probe must never halt the worker.
+    await this.applyUsageGate();
+
     // 2b. Rate-limit gate. If the active backend has any `rate_limit_state`
     //     row with `reset_at` in the future, suppress new dispatches and
     //     due-retry firing for this tick — otherwise we'd keep launching
@@ -279,6 +304,45 @@ export class OrchestratorLoop {
         stateLoad.set(issue.state, (stateLoad.get(issue.state) ?? 0) + 1);
       }
     }
+  }
+
+  /**
+   * Every reachable branch upserts the `<backend>_usage_gate` row. A previous
+   * tick may have set `reset_at` hours away; just *not* writing on the
+   * disabled / probe-broken / above-threshold paths would strand that pause
+   * and break both "0 disables" and fail-open. Idempotent — null-writes on
+   * healthy ticks are cheap.
+   */
+  private async applyUsageGate(): Promise<void> {
+    const { repo, config, usageProbe, log } = this.deps;
+    const threshold = config.minRemainingUsagePct();
+    const backend = config.agentBackend();
+    const source = usageGateSource(backend);
+    const clear = () => repo.upsertRateLimit({ source, remaining: null, resetAt: null });
+
+    if (threshold <= 0) {
+      await clear();
+      return;
+    }
+    if (!usageProbe) {
+      await clear();
+      return;
+    }
+    const snapshot = await usageProbe.probe(backend);
+    if (!snapshot) {
+      await clear();
+      return;
+    }
+    if (snapshot.remainingPct < threshold) {
+      const resetAt = snapshot.resetAt ?? new Date(Date.now() + 5 * 60_000);
+      log.info(
+        { backend, remainingPct: snapshot.remainingPct, threshold, resetAt: resetAt.toISOString() },
+        'usage gate: remaining quota below threshold; pausing dispatch',
+      );
+      await repo.upsertRateLimit({ source, remaining: snapshot.remainingPct, resetAt });
+      return;
+    }
+    await repo.upsertRateLimit({ source, remaining: snapshot.remainingPct, resetAt: null });
   }
 
   /**

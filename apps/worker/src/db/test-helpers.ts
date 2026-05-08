@@ -46,6 +46,9 @@ export function makeTestWorkflow(opts: {
         max_concurrent_agents: 4,
         max_retry_backoff_ms: 1000,
         max_concurrent_agents_by_state: {},
+        // Default off in tests: callers that want to exercise the usage gate
+        // override on the returned workflow.
+        min_remaining_usage_pct: 0,
       },
       codex: {
         command: opts.codexCommand ?? 'codex',

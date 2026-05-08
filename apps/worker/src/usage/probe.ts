@@ -33,21 +33,16 @@ interface NodePtyModule {
 }
 
 const STATUS_INPUT = '/status\r';
-// Real-world `claude /status` and `codex /status` settle within a few hundred
-// ms of opening the session, but TUI repaints, MOTD banners, and slower
-// machines can stretch that. 3s gives the panel time to render without
-// blocking the orchestrator tick noticeably (we cache for 60s anyway).
+// Hard ceiling on how long we'll block the orchestrator tick waiting for the
+// status panel to render. We exit earlier on settled output (see SETTLE_MS).
 const READ_WINDOW_MS = 3000;
+// Return as soon as the PTY has been quiet this long after first data — most
+// status panels finish in 200–500ms, so we shouldn't sit on the full 3s when
+// we've already got everything.
+const SETTLE_MS = 250;
+// Cap the buffer so a CLI stuck in a login/error loop can't OOM the worker.
+const BUF_CAP = 64 * 1024;
 
-/**
- * Default probe: spawns the active backend's CLI under a PTY, sends `/status`,
- * collects ~3s of output, and parses remaining quota out of the visible panel.
- *
- * Failure modes (CLI missing, not logged in, PTY native build absent, parse
- * miss) all return `null` — the caller treats `null` as **fail open** and
- * does NOT gate dispatch. Halting the worker on a flaky probe would be worse
- * than running with stale information.
- */
 export function defaultUsageProbe(log: Logger): UsageProbe {
   return {
     probe: async (backend) => {
@@ -81,11 +76,26 @@ async function runStatusProbe(backend: AgentBackend, log: Logger): Promise<Usage
     rows: 40,
     env: process.env,
   });
-  proc.onData((d) => {
-    buf += d;
+  await new Promise<void>((resolve) => {
+    let lastDataAt = 0;
+    let settleTimer: NodeJS.Timeout | null = null;
+    const hardDeadline = setTimeout(() => {
+      if (settleTimer) clearTimeout(settleTimer);
+      resolve();
+    }, READ_WINDOW_MS);
+    proc.onData((d) => {
+      if (buf.length < BUF_CAP) buf += d;
+      lastDataAt = Date.now();
+      if (settleTimer) clearTimeout(settleTimer);
+      settleTimer = setTimeout(() => {
+        if (Date.now() - lastDataAt >= SETTLE_MS) {
+          clearTimeout(hardDeadline);
+          resolve();
+        }
+      }, SETTLE_MS);
+    });
+    proc.write(STATUS_INPUT);
   });
-  proc.write(STATUS_INPUT);
-  await new Promise((r) => setTimeout(r, READ_WINDOW_MS));
   try {
     proc.kill();
   } catch {
@@ -123,19 +133,8 @@ function stripAnsi(s: string): string {
   return s.replace(ANSI_RE, '');
 }
 
-/**
- * Parse `claude /status` output. Codexbar's reference parser
- * (Sources/CodexBarCore/Providers/Claude/ClaudeUsageFetcher.swift) keys off
- * lines like:
- *
- *     Session usage: 47% (resets at 14:00)
- *     Weekly usage:  12% (resets in 5 days)
- *
- * Different `claude` versions render slightly different verbiage, so we look
- * for any line carrying both a percent number and one of the bucket keywords
- * — "session"/"5h"/"five hour"/"5-hour" or "weekly"/"7-day"/"week". The
- * smallest remaining wins.
- */
+// Bucket-keyword + percent matchers are forgiving across CLI version drift —
+// we just need any line that names a quota window and carries a number.
 export function parseClaudeStatus(text: string): UsageSnapshot | null {
   return parseStatusGeneric(text, [
     /session|5\s*-?\s*h|five\s+hour/i,
@@ -143,16 +142,6 @@ export function parseClaudeStatus(text: string): UsageSnapshot | null {
   ]);
 }
 
-/**
- * Parse `codex /status` output. Codexbar's reference parser
- * (Sources/CodexBarCore/Providers/Codex/CodexStatusProbe.swift) reads:
- *
- *     5h limit:     61% used  (resets in 02:14)
- *     Weekly limit: 18% used  (resets Mon)
- *
- * Same forgiving approach as claude — match on bucket keyword + a percent —
- * and pick whichever window has the smallest remaining.
- */
 export function parseCodexStatus(text: string): UsageSnapshot | null {
   return parseStatusGeneric(text, [
     /5\s*-?\s*h(?:ours?)?\b|hourly/i,

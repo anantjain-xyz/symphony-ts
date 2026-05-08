@@ -39,9 +39,7 @@ function fakeRepo(overrides: Partial<Repo>): Repo {
     activeRateLimits: vi.fn(async () => [] as RateLimitStateRow[]),
     lastRunNumber: vi.fn(async () => 0),
     tryReserveRun: vi.fn(async () => null),
-    // The usage gate runs on every tick (loop.ts: applyUsageGate) and
-    // unconditionally upserts so a prior pause can't strand. Tests that don't
-    // exercise the gate still need the method to exist on the proxy.
+    // applyUsageGate upserts on every tick, so even non-gate tests need this.
     upsertRateLimit: vi.fn(async () => {}),
     ...overrides,
   };

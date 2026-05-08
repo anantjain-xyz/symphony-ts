@@ -1,4 +1,4 @@
-import type { Issue } from '@symphony/shared';
+import type { AgentBackend, Issue } from '@symphony/shared';
 import type { Logger } from 'pino';
 import type { ResolvedConfig } from '../config/resolve.js';
 import type { RateLimitStateRow, Repo } from '../db/repo.js';
@@ -31,12 +31,9 @@ export interface LoopDeps {
   scopedIssueIds?: string[];
 }
 
-/**
- * Source key for rows the usage gate writes to `rate_limit_state`. Has to
- * start with `<backend>_` so the existing `rateLimitPause()` filter
- * (loop.ts: it matches by backend prefix) picks it up automatically.
- */
-function usageGateSource(backend: 'claude' | 'codex'): string {
+// Must start with `<backend>_` so the existing `rateLimitPause()` filter
+// picks it up alongside adapter-emitted `<backend>_<bucket>` rows.
+function usageGateSource(backend: AgentBackend): string {
   return `${backend}_usage_gate`;
 }
 
@@ -310,24 +307,11 @@ export class OrchestratorLoop {
   }
 
   /**
-   * Probe the active backend's remaining quota and reflect the result into
-   * `rate_limit_state` so the existing pause logic in step 2b can act on it.
-   * Every reachable branch upserts the `<backend>_usage_gate` row — either
-   * with a future `reset_at` (engage pause) or with `reset_at: null` (lift
-   * pause). The unconditional clear matters: a previously-tripped gate row
-   * has a `reset_at` that may be hours away, so just *not* writing on the
-   * disabled / probe-broken / above-threshold paths would strand the prior
-   * pause and contradict both "0 disables" and fail-open.
-   *
-   *  - threshold = 0 (disabled) → upsert null → lifts any stale pause.
-   *  - no probe wired (test scaffold only) → same: upsert null.
-   *  - probe returned null (CLI missing, parse miss, ...) → fail open: null.
-   *  - remaining < threshold → upsert with the reset the probe reported
-   *    (or 5 min ahead if it didn't, so we recheck soon).
-   *  - remaining >= threshold → upsert null.
-   *
-   * `upsertRateLimit` is idempotent under `onConflictDoUpdate`, so the extra
-   * null-writes on healthy ticks are cheap (one row, one upsert).
+   * Every reachable branch upserts the `<backend>_usage_gate` row. A previous
+   * tick may have set `reset_at` hours away; just *not* writing on the
+   * disabled / probe-broken / above-threshold paths would strand that pause
+   * and break both "0 disables" and fail-open. Idempotent — null-writes on
+   * healthy ticks are cheap.
    */
   private async applyUsageGate(): Promise<void> {
     const { repo, config, usageProbe, log } = this.deps;

@@ -58,6 +58,9 @@ export function ThemeToggle() {
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    // Don't intercept browser/OS shortcuts (Cmd+R refresh, Cmd+ArrowRight, etc.)
+    // when focus happens to be inside the radiogroup.
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
     const idx = ORDER.indexOf(pref);
     let nextIdx: number | null = null;
     if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {

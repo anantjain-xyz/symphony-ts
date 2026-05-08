@@ -51,7 +51,7 @@ export function defaultUsageProbe(log: Logger): UsageProbe {
       } catch (err) {
         log.warn(
           { backend, err: err instanceof Error ? err.message : String(err) },
-          'usage probe failed; failing open',
+          'usage probe failed; orchestrator will fail closed',
         );
         return null;
       }
@@ -64,7 +64,7 @@ async function runStatusProbe(backend: AgentBackend, log: Logger): Promise<Usage
   if (!pty) {
     log.warn(
       { backend },
-      'usage probe: node-pty unavailable (install fail or missing) — failing open',
+      'usage probe: node-pty unavailable (install fail or missing); orchestrator will fail closed',
     );
     return null;
   }

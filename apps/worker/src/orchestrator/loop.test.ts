@@ -231,21 +231,21 @@ describe('OrchestratorLoop usage gate', () => {
     });
   });
 
-  it('clears stale gate row when probe fails (fail open)', async () => {
-    // Codex review (PR #97) called this out: returning early on probe failure
-    // would strand a prior `<backend>_usage_gate` row's `reset_at`, which
-    // would keep dispatch paused for hours despite the probe being broken —
-    // the opposite of "fail open". Now we always upsert null on failure so
-    // any prior pause lifts.
+  it('writes a fail-closed gate row when the probe fails', async () => {
+    // The user has opted in to the gate (threshold > 0) but we cannot read
+    // remaining quota — dispatching blind risks burning what's left of an
+    // exhausted account. Pause for 5 minutes; the next tick re-probes and
+    // either extends or clears.
     const issue = makeIssue();
     const upsertRateLimit = makeRateLimitMock();
     const reserve = vi.fn(async () => null);
     const repo = fakeRepo({ tryReserveRun: reserve, upsertRateLimit });
 
-    const wf = makeTestWorkflow({ sourceHash: 'usage-gate-fail-open' });
+    const wf = makeTestWorkflow({ sourceHash: 'usage-gate-fail-closed' });
     wf.frontMatter.agent.min_remaining_usage_pct = 20;
     const { probe, calls } = makeProbe(null);
 
+    const before = Date.now();
     const loop = new OrchestratorLoop({
       tracker: stubTracker([issue]),
       repo,
@@ -255,14 +255,21 @@ describe('OrchestratorLoop usage gate', () => {
       usageProbe: probe,
     });
     await loop.tick();
+    const after = Date.now();
 
     expect(calls).toHaveBeenCalledTimes(1);
-    expect(upsertRateLimit).toHaveBeenCalledWith({
-      source: 'codex_usage_gate',
-      remaining: null,
-      resetAt: null,
-    });
-    // Dispatch proceeds normally (reserve was attempted).
+    expect(upsertRateLimit).toHaveBeenCalledTimes(1);
+    const arg = upsertRateLimit.mock.calls[0]![0];
+    expect(arg.source).toBe('codex_usage_gate');
+    expect(arg.remaining).toBeNull();
+    expect(arg.resetAt).toBeInstanceOf(Date);
+    const resetMs = (arg.resetAt as Date).getTime();
+    expect(resetMs).toBeGreaterThanOrEqual(before + 5 * 60_000);
+    expect(resetMs).toBeLessThanOrEqual(after + 5 * 60_000 + 1000);
+    // Dispatch was never attempted: the gate row written above will pause
+    // dispatch on the next tick (rateLimitPause picks it up). On *this* tick,
+    // the row was just written, so reserve still ran — confirm the test is
+    // asserting the gate state, not the in-tick suppression.
     expect(reserve).toHaveBeenCalled();
   });
 

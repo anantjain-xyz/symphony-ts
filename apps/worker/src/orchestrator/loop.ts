@@ -176,8 +176,11 @@ export class OrchestratorLoop {
     //         pause logic in 2b picks it up. Reused, rather than parallel,
     //         because the dashboard already renders `rate_limit_state` rows
     //         and the suppression-of-due-retries behavior comes for free.
-    //         Errors here are FAIL-OPEN (`probe()` returns null on any
-    //         failure) — a flaky probe must never halt the worker.
+    //         Probe failure FAILS CLOSED: when the user has opted in to the
+    //         gate (`min_remaining_usage_pct > 0`) and we cannot read remaining
+    //         quota, we pause dispatch for 5 minutes rather than dispatch
+    //         blind. The pause is rewritten on each failed tick so it lifts
+    //         within one cache TTL of the probe recovering.
     await this.applyUsageGate();
 
     // 2b. Rate-limit gate. If the active backend has any `rate_limit_state`
@@ -309,9 +312,14 @@ export class OrchestratorLoop {
   /**
    * Every reachable branch upserts the `<backend>_usage_gate` row. A previous
    * tick may have set `reset_at` hours away; just *not* writing on the
-   * disabled / probe-broken / above-threshold paths would strand that pause
-   * and break both "0 disables" and fail-open. Idempotent — null-writes on
-   * healthy ticks are cheap.
+   * disabled / above-threshold paths would strand that pause and break "0
+   * disables". Idempotent — null-writes on healthy ticks are cheap.
+   *
+   * Probe failure (snapshot === null) FAILS CLOSED: the user has opted in to
+   * the gate and we cannot see remaining quota, so we pause dispatch for 5
+   * minutes rather than dispatch blind against a possibly-exhausted account.
+   * The pause is rewritten on each failed tick, so it lifts within one cache
+   * TTL of the probe recovering.
    */
   private async applyUsageGate(): Promise<void> {
     const { repo, config, usageProbe, log } = this.deps;
@@ -330,7 +338,12 @@ export class OrchestratorLoop {
     }
     const snapshot = await usageProbe.probe(backend);
     if (!snapshot) {
-      await clear();
+      const resetAt = new Date(Date.now() + 5 * 60_000);
+      log.warn(
+        { backend, threshold, resetAt: resetAt.toISOString() },
+        'usage probe failed; pausing dispatch (fail-closed)',
+      );
+      await repo.upsertRateLimit({ source, remaining: null, resetAt });
       return;
     }
     if (snapshot.remainingPct < threshold) {

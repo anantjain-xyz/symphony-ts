@@ -311,29 +311,45 @@ export class OrchestratorLoop {
 
   /**
    * Probe the active backend's remaining quota and reflect the result into
-   * `rate_limit_state`:
-   *  - If remaining < threshold, upsert a `<backend>_usage_gate` row with the
-   *    reset time the probe reported (or fall back to ~5min ahead, so we
-   *    re-check soon if no reset was parseable).
-   *  - If remaining >= threshold, upsert the same source key with a *null*
-   *    `reset_at`, which excludes it from `activeRateLimits()`'s
-   *    `gt(reset_at, now)` filter — i.e. it lifts any prior pause.
-   *  - If the gate is disabled (threshold = 0) or no probe is wired, do
-   *    nothing.
-   *  - On probe failure (`probe()` returns null), do nothing — fail open.
+   * `rate_limit_state` so the existing pause logic in step 2b can act on it.
+   * Every reachable branch upserts the `<backend>_usage_gate` row — either
+   * with a future `reset_at` (engage pause) or with `reset_at: null` (lift
+   * pause). The unconditional clear matters: a previously-tripped gate row
+   * has a `reset_at` that may be hours away, so just *not* writing on the
+   * disabled / probe-broken / above-threshold paths would strand the prior
+   * pause and contradict both "0 disables" and fail-open.
+   *
+   *  - threshold = 0 (disabled) → upsert null → lifts any stale pause.
+   *  - no probe wired (test scaffold only) → same: upsert null.
+   *  - probe returned null (CLI missing, parse miss, ...) → fail open: null.
+   *  - remaining < threshold → upsert with the reset the probe reported
+   *    (or 5 min ahead if it didn't, so we recheck soon).
+   *  - remaining >= threshold → upsert null.
+   *
+   * `upsertRateLimit` is idempotent under `onConflictDoUpdate`, so the extra
+   * null-writes on healthy ticks are cheap (one row, one upsert).
    */
   private async applyUsageGate(): Promise<void> {
     const { repo, config, usageProbe, log } = this.deps;
     const threshold = config.minRemainingUsagePct();
-    if (threshold <= 0 || !usageProbe) return;
     const backend = config.agentBackend();
-    const snapshot = await usageProbe.probe(backend);
-    if (!snapshot) return; // probe failed; existing state stands. Fail open.
     const source = usageGateSource(backend);
+    const clear = () => repo.upsertRateLimit({ source, remaining: null, resetAt: null });
+
+    if (threshold <= 0) {
+      await clear();
+      return;
+    }
+    if (!usageProbe) {
+      await clear();
+      return;
+    }
+    const snapshot = await usageProbe.probe(backend);
+    if (!snapshot) {
+      await clear();
+      return;
+    }
     if (snapshot.remainingPct < threshold) {
-      // Below threshold → engage the pause. If the probe didn't surface a
-      // reset_at, default to 5 min so we recheck soon — better than holding
-      // the gate forever on a parse miss.
       const resetAt = snapshot.resetAt ?? new Date(Date.now() + 5 * 60_000);
       log.info(
         { backend, remainingPct: snapshot.remainingPct, threshold, resetAt: resetAt.toISOString() },
@@ -342,9 +358,6 @@ export class OrchestratorLoop {
       await repo.upsertRateLimit({ source, remaining: snapshot.remainingPct, resetAt });
       return;
     }
-    // Above threshold → ensure the gate is lifted. Writing reset_at: null
-    // excludes the row from activeRateLimits()'s `gt(reset_at, now)` filter,
-    // so any prior pause we set clears immediately.
     await repo.upsertRateLimit({ source, remaining: snapshot.remainingPct, resetAt: null });
   }
 

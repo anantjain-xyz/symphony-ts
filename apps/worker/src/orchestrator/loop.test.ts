@@ -39,6 +39,10 @@ function fakeRepo(overrides: Partial<Repo>): Repo {
     activeRateLimits: vi.fn(async () => [] as RateLimitStateRow[]),
     lastRunNumber: vi.fn(async () => 0),
     tryReserveRun: vi.fn(async () => null),
+    // The usage gate runs on every tick (loop.ts: applyUsageGate) and
+    // unconditionally upserts so a prior pause can't strand. Tests that don't
+    // exercise the gate still need the method to exist on the proxy.
+    upsertRateLimit: vi.fn(async () => {}),
     ...overrides,
   };
   return new Proxy(base as unknown as Repo, {
@@ -228,7 +232,12 @@ describe('OrchestratorLoop usage gate', () => {
     });
   });
 
-  it('does not write rate_limit_state when probe fails (fail open)', async () => {
+  it('clears stale gate row when probe fails (fail open)', async () => {
+    // Codex review (PR #97) called this out: returning early on probe failure
+    // would strand a prior `<backend>_usage_gate` row's `reset_at`, which
+    // would keep dispatch paused for hours despite the probe being broken —
+    // the opposite of "fail open". Now we always upsert null on failure so
+    // any prior pause lifts.
     const issue = makeIssue();
     const upsertRateLimit = makeRateLimitMock();
     const reserve = vi.fn(async () => null);
@@ -249,14 +258,22 @@ describe('OrchestratorLoop usage gate', () => {
     await loop.tick();
 
     expect(calls).toHaveBeenCalledTimes(1);
-    expect(upsertRateLimit).not.toHaveBeenCalled();
+    expect(upsertRateLimit).toHaveBeenCalledWith({
+      source: 'codex_usage_gate',
+      remaining: null,
+      resetAt: null,
+    });
     // Dispatch proceeds normally (reserve was attempted).
     expect(reserve).toHaveBeenCalled();
   });
 
-  it('skips probing entirely when threshold is 0 (gate disabled)', async () => {
+  it('clears stale gate row when threshold is 0 (gate disabled)', async () => {
+    // Same Codex-review concern: if a prior tick set `<backend>_usage_gate`
+    // with a future `reset_at` and the user then sets the env var to 0 to
+    // disable the feature, we must lift that pause — not leave it stranded.
     const issue = makeIssue();
-    const repo = fakeRepo({ tryReserveRun: vi.fn(async () => null) });
+    const upsertRateLimit = makeRateLimitMock();
+    const repo = fakeRepo({ tryReserveRun: vi.fn(async () => null), upsertRateLimit });
 
     const wf = makeTestWorkflow({ sourceHash: 'usage-gate-disabled' });
     wf.frontMatter.agent.min_remaining_usage_pct = 0;
@@ -272,7 +289,42 @@ describe('OrchestratorLoop usage gate', () => {
     });
     await loop.tick();
 
+    // Probe is never consulted when the gate is disabled, but we still clear
+    // any stale row.
     expect(calls).not.toHaveBeenCalled();
+    expect(upsertRateLimit).toHaveBeenCalledWith({
+      source: 'codex_usage_gate',
+      remaining: null,
+      resetAt: null,
+    });
+  });
+
+  it('clears stale gate row when no probe is wired into the loop', async () => {
+    // The DI-omitted path in tests, but symmetrically the fix applies in
+    // production too: if probe construction fails at boot and we restart
+    // without one, any prior gate must lift.
+    const issue = makeIssue();
+    const upsertRateLimit = makeRateLimitMock();
+    const repo = fakeRepo({ tryReserveRun: vi.fn(async () => null), upsertRateLimit });
+
+    const wf = makeTestWorkflow({ sourceHash: 'usage-gate-no-probe' });
+    wf.frontMatter.agent.min_remaining_usage_pct = 20;
+
+    const loop = new OrchestratorLoop({
+      tracker: stubTracker([issue]),
+      repo,
+      workspaces: new WorkspaceManager('/tmp/symphony-loop-test'),
+      config: resolveConfig(wf),
+      log: pino({ level: 'silent' }),
+      // usageProbe intentionally omitted
+    });
+    await loop.tick();
+
+    expect(upsertRateLimit).toHaveBeenCalledWith({
+      source: 'codex_usage_gate',
+      remaining: null,
+      resetAt: null,
+    });
   });
 
   it('uses the claude_ source key when backend is claude', async () => {

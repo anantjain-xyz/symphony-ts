@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { relativeTime } from '../RunRow';
+import { RelativeTime } from '../RelativeTime';
 
 export function IssueListRow({
   id,
@@ -46,7 +46,7 @@ export function IssueListRow({
         )}
       </div>
       <div className="font-mono text-[11px] text-ink-3 tabular text-right">
-        <span className="text-ink-4">seen</span> {relativeTime(lastSeenAt)}
+        <span className="text-ink-4">seen</span> <RelativeTime iso={lastSeenAt} />
         <span className="ml-2 text-ink-4 group-hover:text-signal">→</span>
       </div>
     </Link>

@@ -34,9 +34,11 @@ describe('parseClaudeStatus', () => {
 
 describe('parseCodexStatus', () => {
   it('reads the 5h and weekly buckets and picks the more constrained one', () => {
-    const sample = ['Status', '5h limit:    61% used  (resets in 02:14)', 'Weekly limit: 18% used  (resets Mon)'].join(
-      '\n',
-    );
+    const sample = [
+      'Status',
+      '5h limit:    61% used  (resets in 02:14)',
+      'Weekly limit: 18% used  (resets Mon)',
+    ].join('\n');
     const out = parseCodexStatus(sample);
     expect(out!.remainingPct).toBe(39); // 5h is 61% used = 39% remaining; weekly is 82%.
   });

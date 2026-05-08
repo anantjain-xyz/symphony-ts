@@ -127,9 +127,10 @@ describe('OrchestratorLoop rate-limit gate', () => {
 });
 
 describe('OrchestratorLoop usage gate', () => {
-  function makeProbe(
-    snapshot: Awaited<ReturnType<UsageProbe['probe']>>,
-  ): { probe: UsageProbe; calls: ReturnType<typeof vi.fn<UsageProbe['probe']>> } {
+  function makeProbe(snapshot: Awaited<ReturnType<UsageProbe['probe']>>): {
+    probe: UsageProbe;
+    calls: ReturnType<typeof vi.fn<UsageProbe['probe']>>;
+  } {
     const calls = vi.fn<UsageProbe['probe']>(async () => snapshot);
     return { probe: { probe: calls }, calls };
   }

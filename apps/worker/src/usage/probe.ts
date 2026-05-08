@@ -64,10 +64,7 @@ export function defaultUsageProbe(log: Logger): UsageProbe {
   };
 }
 
-async function runStatusProbe(
-  backend: AgentBackend,
-  log: Logger,
-): Promise<UsageSnapshot | null> {
+async function runStatusProbe(backend: AgentBackend, log: Logger): Promise<UsageSnapshot | null> {
   const pty = await loadNodePty();
   if (!pty) {
     log.warn(
@@ -97,7 +94,10 @@ async function runStatusProbe(
   const text = stripAnsi(buf);
   const parsed = backend === 'claude' ? parseClaudeStatus(text) : parseCodexStatus(text);
   if (!parsed) {
-    log.warn({ backend, sample: text.slice(0, 200) }, 'usage probe: could not parse /status output');
+    log.warn(
+      { backend, sample: text.slice(0, 200) },
+      'usage probe: could not parse /status output',
+    );
     return null;
   }
   return parsed;
@@ -137,7 +137,10 @@ function stripAnsi(s: string): string {
  * smallest remaining wins.
  */
 export function parseClaudeStatus(text: string): UsageSnapshot | null {
-  return parseStatusGeneric(text, [/session|5\s*-?\s*h|five\s+hour/i, /weekly|7\s*-?\s*day|\bweek\b/i]);
+  return parseStatusGeneric(text, [
+    /session|5\s*-?\s*h|five\s+hour/i,
+    /weekly|7\s*-?\s*day|\bweek\b/i,
+  ]);
 }
 
 /**
@@ -151,7 +154,10 @@ export function parseClaudeStatus(text: string): UsageSnapshot | null {
  * and pick whichever window has the smallest remaining.
  */
 export function parseCodexStatus(text: string): UsageSnapshot | null {
-  return parseStatusGeneric(text, [/5\s*-?\s*h(?:ours?)?\b|hourly/i, /weekly|7\s*-?\s*day|\bweek\b/i]);
+  return parseStatusGeneric(text, [
+    /5\s*-?\s*h(?:ours?)?\b|hourly/i,
+    /weekly|7\s*-?\s*day|\bweek\b/i,
+  ]);
 }
 
 function parseStatusGeneric(text: string, bucketPatterns: RegExp[]): UsageSnapshot | null {
@@ -190,7 +196,9 @@ function inferRemainingPct(line: string, pct: number): number {
 
 function extractResetAt(line: string): Date | null {
   // "(resets at 14:00)" or "(resets in 02:14)" or "resets at 2026-01-02T..."
-  const isoMatch = line.match(/(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)/);
+  const isoMatch = line.match(
+    /(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)/,
+  );
   if (isoMatch) {
     const d = new Date(isoMatch[1]!);
     if (!Number.isNaN(d.getTime())) return d;

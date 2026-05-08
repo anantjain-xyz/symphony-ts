@@ -1,7 +1,7 @@
 import type { AgentBackend } from '@symphony/shared';
 import type { UsageProbe, UsageSnapshot } from './probe.js';
 
-const DEFAULT_TTL_MS = 60_000;
+const DEFAULT_TTL_MS = 5 * 60_000;
 
 interface Entry {
   snapshot: UsageSnapshot | null;

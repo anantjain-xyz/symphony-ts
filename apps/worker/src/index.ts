@@ -28,6 +28,8 @@ import { createLogger } from './logging.js';
 import { Heartbeat } from './orchestrator/heartbeat.js';
 import { OrchestratorLoop } from './orchestrator/loop.js';
 import { createLinearClient } from './tracker/linear.js';
+import { cachingUsageProbe } from './usage/cache.js';
+import { defaultUsageProbe } from './usage/probe.js';
 import { WorkspaceManager } from './workspace/manager.js';
 
 async function main(): Promise<void> {
@@ -61,7 +63,13 @@ async function main(): Promise<void> {
   const heartbeat = new Heartbeat(repo, log);
   await heartbeat.start();
 
-  const loop = new OrchestratorLoop({ tracker, repo, workspaces, config, log });
+  // Wrap the probe in a 60s TTL cache so we don't shell out to the CLI on
+  // every tick (poll interval is 30s by default). The loop calls probe() each
+  // tick; the cache absorbs the repeats. Disabling is implicit — when
+  // `min_remaining_usage_pct` is 0 the loop short-circuits before calling.
+  const usageProbe = cachingUsageProbe(defaultUsageProbe(log));
+
+  const loop = new OrchestratorLoop({ tracker, repo, workspaces, config, log, usageProbe });
 
   let stopRequested = false;
   const shutdown = async (signal: NodeJS.Signals) => {

@@ -87,6 +87,10 @@ export const AgentConfig = z
     max_concurrent_agents: z.number().int().positive().default(10),
     max_retry_backoff_ms: z.number().int().positive().default(300_000),
     max_concurrent_agents_by_state: z.record(z.string(), z.number().int().positive()).default({}),
+    // Skip dispatching new tasks when the active backend's remaining quota
+    // (`/status` on `claude`/`codex`) drops below this %. 0 disables the gate.
+    // Sourced from .env via WORKFLOW.md interpolation (SYMPHONY_MIN_REMAINING_USAGE_PCT).
+    min_remaining_usage_pct: z.number().int().min(0).max(100).default(10),
   })
   .strict()
   .default({
@@ -94,6 +98,7 @@ export const AgentConfig = z
     max_concurrent_agents: 10,
     max_retry_backoff_ms: 300_000,
     max_concurrent_agents_by_state: {},
+    min_remaining_usage_pct: 10,
   });
 export type AgentConfig = z.infer<typeof AgentConfig>;
 

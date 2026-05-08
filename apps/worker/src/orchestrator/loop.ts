@@ -3,6 +3,7 @@ import type { Logger } from 'pino';
 import type { ResolvedConfig } from '../config/resolve.js';
 import type { RateLimitStateRow, Repo } from '../db/repo.js';
 import type { TrackerClient } from '../tracker/linear.js';
+import type { UsageProbe } from '../usage/probe.js';
 import { WorkspaceManager } from '../workspace/manager.js';
 import { selectDispatchable } from './concurrency.js';
 import { type DispatchHandle, dispatchRun } from './dispatch.js';
@@ -14,12 +15,29 @@ export interface LoopDeps {
   config: ResolvedConfig;
   log: Logger;
   /**
+   * Optional. When set and `agent.min_remaining_usage_pct > 0`, every tick
+   * checks the active backend's remaining quota and writes a
+   * `<backend>_usage_gate` row to `rate_limit_state` if it's below threshold,
+   * so the existing rate-limit pause kicks in. Caller is responsible for
+   * caching (see `usage/cache.ts`); the loop calls `probe()` on every tick.
+   */
+  usageProbe?: UsageProbe;
+  /**
    * Integration-test only. When set, `retry_queue` reads in `tick()` are
    * restricted to these issue ids — so tests running against a shared Postgres
    * cannot sweep the live worker's backoff state when the stub tracker's
    * `fetchById` returns `null` for unknown ids.
    */
   scopedIssueIds?: string[];
+}
+
+/**
+ * Source key for rows the usage gate writes to `rate_limit_state`. Has to
+ * start with `<backend>_` so the existing `rateLimitPause()` filter
+ * (loop.ts: it matches by backend prefix) picks it up automatically.
+ */
+function usageGateSource(backend: 'claude' | 'codex'): string {
+  return `${backend}_usage_gate`;
 }
 
 /**
@@ -155,6 +173,16 @@ export class OrchestratorLoop {
       }
     }
 
+    // 2a-bis. Usage gate. Probe the active backend's remaining quota (e.g. by
+    //         shelling out to `claude /status` / `codex /status` — see
+    //         usage/probe.ts) and write to `rate_limit_state` so the existing
+    //         pause logic in 2b picks it up. Reused, rather than parallel,
+    //         because the dashboard already renders `rate_limit_state` rows
+    //         and the suppression-of-due-retries behavior comes for free.
+    //         Errors here are FAIL-OPEN (`probe()` returns null on any
+    //         failure) — a flaky probe must never halt the worker.
+    await this.applyUsageGate();
+
     // 2b. Rate-limit gate. If the active backend has any `rate_limit_state`
     //     row with `reset_at` in the future, suppress new dispatches and
     //     due-retry firing for this tick — otherwise we'd keep launching
@@ -279,6 +307,45 @@ export class OrchestratorLoop {
         stateLoad.set(issue.state, (stateLoad.get(issue.state) ?? 0) + 1);
       }
     }
+  }
+
+  /**
+   * Probe the active backend's remaining quota and reflect the result into
+   * `rate_limit_state`:
+   *  - If remaining < threshold, upsert a `<backend>_usage_gate` row with the
+   *    reset time the probe reported (or fall back to ~5min ahead, so we
+   *    re-check soon if no reset was parseable).
+   *  - If remaining >= threshold, upsert the same source key with a *null*
+   *    `reset_at`, which excludes it from `activeRateLimits()`'s
+   *    `gt(reset_at, now)` filter — i.e. it lifts any prior pause.
+   *  - If the gate is disabled (threshold = 0) or no probe is wired, do
+   *    nothing.
+   *  - On probe failure (`probe()` returns null), do nothing — fail open.
+   */
+  private async applyUsageGate(): Promise<void> {
+    const { repo, config, usageProbe, log } = this.deps;
+    const threshold = config.minRemainingUsagePct();
+    if (threshold <= 0 || !usageProbe) return;
+    const backend = config.agentBackend();
+    const snapshot = await usageProbe.probe(backend);
+    if (!snapshot) return; // probe failed; existing state stands. Fail open.
+    const source = usageGateSource(backend);
+    if (snapshot.remainingPct < threshold) {
+      // Below threshold → engage the pause. If the probe didn't surface a
+      // reset_at, default to 5 min so we recheck soon — better than holding
+      // the gate forever on a parse miss.
+      const resetAt = snapshot.resetAt ?? new Date(Date.now() + 5 * 60_000);
+      log.info(
+        { backend, remainingPct: snapshot.remainingPct, threshold, resetAt: resetAt.toISOString() },
+        'usage gate: remaining quota below threshold; pausing dispatch',
+      );
+      await repo.upsertRateLimit({ source, remaining: snapshot.remainingPct, resetAt });
+      return;
+    }
+    // Above threshold → ensure the gate is lifted. Writing reset_at: null
+    // excludes the row from activeRateLimits()'s `gt(reset_at, now)` filter,
+    // so any prior pause we set clears immediately.
+    await repo.upsertRateLimit({ source, remaining: snapshot.remainingPct, resetAt: null });
   }
 
   /**

@@ -127,6 +127,10 @@ importers:
       vitest:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.19.17)
+    optionalDependencies:
+      node-pty:
+        specifier: ^1.0.0
+        version: 1.1.0
 
   packages/shared:
     dependencies:
@@ -1890,6 +1894,9 @@ packages:
       sass:
         optional: true
 
+  node-addon-api@7.1.1:
+    resolution: {integrity: sha512-5m3bsyrjFWE1xf7nz7YXdN4udnVtXK6/Yfgn5qnahL6bCkf2yKt4k3nuTKAtT4r3IG8JNR2ncsIMdZuAzJjHQQ==}
+
   node-fetch@2.7.0:
     resolution: {integrity: sha512-c4FRfUm/dbcWZ7U+1Wq0AwCyFL+3nt2bEw05wfxSz+DWpWsitgmSgYmy2dQdWyKC1694ELPqMs/YzUSNozLt8A==}
     engines: {node: 4.x || >=6.0.0}
@@ -1898,6 +1905,9 @@ packages:
     peerDependenciesMeta:
       encoding:
         optional: true
+
+  node-pty@1.1.0:
+    resolution: {integrity: sha512-20JqtutY6JPXTUnL0ij1uad7Qe1baT46lyolh2sSENDd4sTzKZ4nmAFkeAARDKwmlLjPx6XKRlwRUxwjOy+lUg==}
 
   node-releases@2.0.37:
     resolution: {integrity: sha512-1h5gKZCF+pO/o3Iqt5Jp7wc9rH3eJJ0+nh/CIoiRwjRxde/hAHyLPXYN4V3CqKAbiZPSeJFSWHmJsbkicta0Eg==}
@@ -4209,9 +4219,17 @@ snapshots:
       - '@babel/core'
       - babel-plugin-macros
 
+  node-addon-api@7.1.1:
+    optional: true
+
   node-fetch@2.7.0:
     dependencies:
       whatwg-url: 5.0.0
+
+  node-pty@1.1.0:
+    dependencies:
+      node-addon-api: 7.1.1
+    optional: true
 
   node-releases@2.0.37: {}
 

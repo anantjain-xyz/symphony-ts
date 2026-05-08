@@ -51,6 +51,12 @@ agent:
   max_retry_backoff_ms: 300000
   max_concurrent_agents_by_state:
     in progress: 2
+  # Pause new dispatches when the active backend's remaining quota drops below
+  # this %. 0 disables. Probe shells out to `claude /status` / `codex /status`
+  # under a PTY (see apps/worker/src/usage/probe.ts) and writes a
+  # `<backend>_usage_gate` row to `rate_limit_state` when the gate trips —
+  # the existing rate-limit pause in the orchestrator picks it up from there.
+  min_remaining_usage_pct: ${SYMPHONY_MIN_REMAINING_USAGE_PCT:-10}
 
 codex:
   command: node ${SYMPHONY_CODEX_ADAPTER}

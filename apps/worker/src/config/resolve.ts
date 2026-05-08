@@ -31,6 +31,11 @@ export interface ResolvedConfig {
   claudeCommand(): string;
   /** Turn timeout for the selected backend. */
   turnTimeoutMs(): number;
+  /**
+   * Pause new dispatches when the active backend's remaining quota drops below
+   * this %. 0 disables the gate (no probing happens at all).
+   */
+  minRemainingUsagePct(): number;
   /** Full claude block (used by dispatch to build adapter flags). */
   claude(): ClaudeConfig;
   promptTemplate(): string;
@@ -93,6 +98,7 @@ export function resolveConfig(
       workflow.frontMatter.agent.backend === 'claude'
         ? workflow.frontMatter.claude.turn_timeout_ms
         : workflow.frontMatter.codex.turn_timeout_ms,
+    minRemainingUsagePct: () => workflow.frontMatter.agent.min_remaining_usage_pct,
     claude: () => workflow.frontMatter.claude,
     promptTemplate: () => workflow.promptTemplate,
     sourceHash: () => workflow.sourceHash,
@@ -129,6 +135,7 @@ export function liveConfig(initial: ResolvedConfig): LiveResolvedConfig {
     codexCommand: () => current.codexCommand(),
     claudeCommand: () => current.claudeCommand(),
     turnTimeoutMs: () => current.turnTimeoutMs(),
+    minRemainingUsagePct: () => current.minRemainingUsagePct(),
     claude: () => current.claude(),
     promptTemplate: () => current.promptTemplate(),
     sourceHash: () => current.sourceHash(),

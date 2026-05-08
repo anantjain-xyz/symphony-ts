@@ -3,7 +3,7 @@ import { and, desc, eq, getTableColumns, ilike, inArray, or, sql } from 'drizzle
 import { db } from '@/lib/db';
 import { ListFilters } from '../_filters/ListFilters';
 import { asString, parseCsv } from '../_filters/params';
-import { RunRow, relativeTime } from '../RunRow';
+import { RunRow } from '../RunRow';
 
 export const dynamic = 'force-dynamic';
 
@@ -105,7 +105,7 @@ export default async function RunsListPage({
               status={r.status}
               pid={r.worker_pid}
               errorClass={r.error_class}
-              when={relativeTime(r.ended_at ?? r.started_at)}
+              whenIso={r.ended_at ?? r.started_at}
               whenLabel={r.ended_at ? 'ended' : 'started'}
             />
           ))}

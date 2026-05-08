@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { RelativeTime } from './RelativeTime';
 
 export function RunRow({
   href,
@@ -9,7 +10,7 @@ export function RunRow({
   pid,
   latestEvent,
   errorClass,
-  when,
+  whenIso,
   whenLabel,
 }: {
   href: string;
@@ -20,7 +21,7 @@ export function RunRow({
   pid?: number | null;
   latestEvent?: string;
   errorClass?: string | null;
-  when: string;
+  whenIso: string | null;
   whenLabel: string;
 }) {
   return (
@@ -53,7 +54,7 @@ export function RunRow({
         )}
       </div>
       <div className="font-mono text-[11px] text-ink-3 tabular text-right">
-        <span className="text-ink-4">{whenLabel}</span> {when}
+        <span className="text-ink-4">{whenLabel}</span> <RelativeTime iso={whenIso} />
         <span className="ml-2 text-ink-4 group-hover:text-signal">→</span>
       </div>
     </Link>
@@ -92,15 +93,4 @@ function ErrorClassBadge({ value }: { value: string }) {
   return (
     <span className="smallcaps text-[10px] text-danger truncate">{value.replace(/_/g, ' ')}</span>
   );
-}
-
-export function relativeTime(iso: string | null): string {
-  if (!iso) return '—';
-  const ms = Date.now() - new Date(iso).getTime();
-  const abs = Math.abs(ms);
-  const sign = ms >= 0 ? 'ago' : 'from now';
-  if (abs < 60_000) return `${Math.round(abs / 1000)}s ${sign}`;
-  if (abs < 3_600_000) return `${Math.round(abs / 60_000)}m ${sign}`;
-  if (abs < 86_400_000) return `${Math.round(abs / 3_600_000)}h ${sign}`;
-  return `${Math.round(abs / 86_400_000)}d ${sign}`;
 }

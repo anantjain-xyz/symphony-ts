@@ -17,7 +17,7 @@ import { KpiBlock } from './KpiBlock';
 import { LiveRuntime } from './LiveRuntime';
 import { RateLimitPauseKpi } from './RateLimitPauseKpi';
 import { RealtimeRefresh } from './RealtimeRefresh';
-import { RunRow, relativeTime } from './RunRow';
+import { RunRow } from './RunRow';
 
 export const dynamic = 'force-dynamic';
 
@@ -222,7 +222,7 @@ export default async function FleetPage() {
               status={r.status}
               pid={r.worker_pid}
               latestEvent={formatLatestEvent(latestEventByRun.get(r.id))}
-              when={relativeTime(r.started_at)}
+              whenIso={r.started_at}
               whenLabel="started"
             />
           ))}
@@ -243,7 +243,7 @@ export default async function FleetPage() {
               runNumber={r.run_number}
               status="queued"
               errorClass={r.error_class}
-              when={relativeTime(r.due_at)}
+              whenIso={r.due_at}
               whenLabel="due"
             />
           ))}
@@ -264,7 +264,7 @@ export default async function FleetPage() {
               runNumber={r.run_number}
               status={r.status}
               errorClass={r.error_class}
-              when={relativeTime(r.ended_at)}
+              whenIso={r.ended_at}
               whenLabel="ended"
             />
           ))}

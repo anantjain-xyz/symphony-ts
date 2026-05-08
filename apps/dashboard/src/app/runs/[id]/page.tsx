@@ -10,6 +10,7 @@ import { asc, desc, eq, getTableColumns } from 'drizzle-orm';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { db } from '@/lib/db';
+import { RelativeTime } from '../../RelativeTime';
 import { LiveStream } from './LiveStream';
 
 export const dynamic = 'force-dynamic';
@@ -117,8 +118,8 @@ function Header({
         {issue?.title ?? '—'}
       </h1>
       <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 smallcaps text-[10px] text-ink-3">
-        <Stat label="started" value={formatRelative(run.started_at)} />
-        {run.ended_at && <Stat label="ended" value={formatRelative(run.ended_at)} />}
+        <Stat label="started" value={<RelativeTime iso={run.started_at} />} />
+        {run.ended_at && <Stat label="ended" value={<RelativeTime iso={run.ended_at} />} />}
         <Stat label="duration" value={formatDuration(run.started_at, run.ended_at)} />
         {terminal && <Stat label="state" value="terminal" valueClass="text-ink-2" />}
       </div>
@@ -126,7 +127,15 @@ function Header({
   );
 }
 
-function Stat({ label, value, valueClass }: { label: string; value: string; valueClass?: string }) {
+function Stat({
+  label,
+  value,
+  valueClass,
+}: {
+  label: string;
+  value: React.ReactNode;
+  valueClass?: string;
+}) {
   return (
     <span className="inline-flex items-baseline gap-1.5">
       <span className="text-ink-4">{label}</span>
@@ -155,17 +164,6 @@ function StatusBadge({ status }: { status: string }) {
       <span className={`smallcaps text-[10px] ${c.text}`}>{c.label}</span>
     </span>
   );
-}
-
-function formatRelative(iso: string | null): string {
-  if (!iso) return '—';
-  const ms = Date.now() - new Date(iso).getTime();
-  const abs = Math.abs(ms);
-  const sign = ms >= 0 ? 'ago' : 'from now';
-  if (abs < 60_000) return `${Math.round(abs / 1000)}s ${sign}`;
-  if (abs < 3_600_000) return `${Math.round(abs / 60_000)}m ${sign}`;
-  if (abs < 86_400_000) return `${Math.round(abs / 3_600_000)}h ${sign}`;
-  return `${Math.round(abs / 86_400_000)}d ${sign}`;
 }
 
 function formatDuration(start: string | null, end: string | null): string {

@@ -13,6 +13,7 @@ import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { IssueLinks } from '@/components/IssueLinks';
 import { db } from '@/lib/db';
+import { RelativeTime } from '../../RelativeTime';
 
 export const dynamic = 'force-dynamic';
 
@@ -186,11 +187,11 @@ function Header({ issue, lastRun }: { issue: Issue; lastRun: Run | undefined }) 
         {issue.title}
       </h1>
       <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 smallcaps text-[10px] text-ink-3">
-        <Stat label="last seen" value={formatRelative(issue.last_seen_at)} />
+        <Stat label="last seen" value={<RelativeTime iso={issue.last_seen_at} />} />
         {lastRun && (
           <>
             <Stat label="latest" value={`#${lastRun.run_number} · ${lastRun.status}`} />
-            <Stat label="started" value={formatRelative(lastRun.started_at)} />
+            <Stat label="started" value={<RelativeTime iso={lastRun.started_at} />} />
             {lastRun.ended_at && (
               <Stat label="duration" value={formatDuration(lastRun.started_at, lastRun.ended_at)} />
             )}
@@ -249,7 +250,7 @@ function RunCard({ run, tokens }: { run: Run; tokens: number }) {
                 <span className="text-ink-4">tok</span> {tokens.toLocaleString()}
               </span>
             )}
-            {run.started_at && <span className="text-ink-3">{formatRelative(run.started_at)}</span>}
+            {run.started_at && <RelativeTime className="text-ink-3" iso={run.started_at} />}
           </div>
         </div>
         <span className="smallcaps text-[10px] text-ink-3 group-hover:text-signal pr-1">run →</span>
@@ -418,7 +419,7 @@ function Telemetry({
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <span className="inline-flex items-baseline gap-1.5">
       <span className="text-ink-4">{label}</span>
@@ -444,17 +445,6 @@ function countByStatus(runs: Run[]) {
     if (k in c) c[k]++;
   }
   return c;
-}
-
-function formatRelative(iso: string | null): string {
-  if (!iso) return '—';
-  const ms = Date.now() - new Date(iso).getTime();
-  const abs = Math.abs(ms);
-  const sign = ms >= 0 ? 'ago' : 'from now';
-  if (abs < 60_000) return `${Math.round(abs / 1000)}s ${sign}`;
-  if (abs < 3_600_000) return `${Math.round(abs / 60_000)}m ${sign}`;
-  if (abs < 86_400_000) return `${Math.round(abs / 3_600_000)}h ${sign}`;
-  return `${Math.round(abs / 86_400_000)}d ${sign}`;
 }
 
 function formatDuration(start: string | null, end: string | null): string {

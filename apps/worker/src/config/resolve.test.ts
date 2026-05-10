@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { liveConfig, resolveConfig } from './resolve.js';
+import { liveConfig, type ResolvedConfig, resolveConfig } from './resolve.js';
 import { parseWorkflowSource } from './workflow.js';
 
 const SRC = `---
@@ -143,5 +143,26 @@ describe('liveConfig', () => {
     expect(live.sourceHash()).toBe(a.sourceHash);
     live.swap(resolveConfig(b));
     expect(live.sourceHash()).toBe(b.sourceHash);
+  });
+
+  it('forwards arbitrary methods on the inner config without explicit enumeration', () => {
+    // Stand-in for a future `ResolvedConfig` method: liveConfig has never heard
+    // of it, but the Proxy must still forward the call through to the inner.
+    // This is the test the ticket asks for — the wrapper stays untouched when
+    // ResolvedConfig grows.
+    const inner = {
+      ...resolveConfig(parseWorkflowSource(SRC_A)),
+      futureField: () => 'future-value',
+    } as ResolvedConfig & { futureField(): string };
+    const live = liveConfig(inner) as typeof inner & { swap(next: ResolvedConfig): void };
+    expect(live.futureField()).toBe('future-value');
+
+    // And after a swap, the new inner's same-named method is reached too.
+    const innerB = {
+      ...resolveConfig(parseWorkflowSource(SRC_B)),
+      futureField: () => 'future-value-B',
+    } as ResolvedConfig & { futureField(): string };
+    live.swap(innerB);
+    expect(live.futureField()).toBe('future-value-B');
   });
 });

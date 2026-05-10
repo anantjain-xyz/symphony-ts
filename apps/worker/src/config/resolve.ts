@@ -108,34 +108,22 @@ export function resolveConfig(
  * inner ResolvedConfig at call time, which is itself static and survives
  * future swaps unchanged. This is the contract dispatch relies on so an
  * in-flight attempt finishes under the config it started with.
+ *
+ * Implemented as a `Proxy` so new `ResolvedConfig` methods are forwarded
+ * automatically — there's no parallel list of forwarders to keep in sync.
  */
 export function liveConfig(initial: ResolvedConfig): LiveResolvedConfig {
   let current = initial;
-  return {
-    pollIntervalMs: () => current.pollIntervalMs(),
-    maxConcurrentAgents: () => current.maxConcurrentAgents(),
-    maxConcurrentByState: () => current.maxConcurrentByState(),
-    maxRetryBackoffMs: () => current.maxRetryBackoffMs(),
-    hookTimeoutMs: () => current.hookTimeoutMs(),
-    workspaceRoot: () => current.workspaceRoot(),
-    trackerEndpoint: () => current.trackerEndpoint(),
-    trackerApiKey: () => current.trackerApiKey(),
-    activeStates: () => current.activeStates(),
-    terminalStates: () => current.terminalStates(),
-    identifierPrefix: () => current.identifierPrefix(),
-    projectId: () => current.projectId(),
-    agentBackend: () => current.agentBackend(),
-    agentCommand: () => current.agentCommand(),
-    codexCommand: () => current.codexCommand(),
-    claudeCommand: () => current.claudeCommand(),
-    turnTimeoutMs: () => current.turnTimeoutMs(),
-    claude: () => current.claude(),
-    promptTemplate: () => current.promptTemplate(),
-    sourceHash: () => current.sourceHash(),
-    workflow: () => current.workflow(),
-    snapshot: () => current,
-    swap: (next) => {
-      current = next;
-    },
+  const swap = (next: ResolvedConfig) => {
+    current = next;
   };
+  const snapshot = () => current;
+  return new Proxy({} as LiveResolvedConfig, {
+    get(_target, prop) {
+      if (prop === 'swap') return swap;
+      if (prop === 'snapshot') return snapshot;
+      const value = (current as unknown as Record<PropertyKey, unknown>)[prop];
+      return typeof value === 'function' ? value.bind(current) : value;
+    },
+  });
 }

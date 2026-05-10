@@ -12,7 +12,8 @@ export interface CreateDbOptions {
 /**
  * Create a Drizzle client with a postgres-js pool. Each call creates a new
  * pool — callers should treat the returned client as a singleton for their
- * process and never instantiate it per-request.
+ * process and never instantiate it per-request. Call `db.close()` on shutdown
+ * (e.g. seed scripts) to drain the pool so the process exits promptly.
  */
 export function createDb(url: string, opts: CreateDbOptions = {}) {
   const sql = postgres(url, {
@@ -22,7 +23,10 @@ export function createDb(url: string, opts: CreateDbOptions = {}) {
     },
     prepare: true,
   });
-  return drizzle(sql, { schema });
+  const db = drizzle(sql, { schema });
+  return Object.assign(db, {
+    close: (closeOpts?: { timeout?: number }) => sql.end(closeOpts),
+  });
 }
 
 /**

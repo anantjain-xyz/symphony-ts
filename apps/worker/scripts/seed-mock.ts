@@ -523,8 +523,7 @@ async function main() {
 
   // Close the postgres-js pool so the process exits promptly instead of
   // sitting on idle connections.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (db as any).$client.end({ timeout: 5 });
+  await db.close({ timeout: 5 });
 }
 
 // ---- helpers ----

@@ -172,10 +172,11 @@ If this is a retry (attempt number > 1 or the workpad already exists), do these 
    - A PR is linked.
    - `gh pr view --json state,mergeable,mergeStateStatus,statusCheckRollup` shows the PR `OPEN`/`MERGED`, `mergeable` is `MERGEABLE` (NOT `CONFLICTING` or `UNKNOWN`), `mergeStateStatus` is `CLEAN`/`HAS_HOOKS`/`UNSTABLE` (NOT `DIRTY`/`BLOCKED` due to conflicts), and required checks are green.
    - `git log --oneline origin/main..HEAD` matches the workpad's recorded commits.
+   - The `pr-feedback` sweep is clean: no unresolved or actionable top-level comments, inline comments, or review feedback remain.
 
-   If any of those fail — especially a `CONFLICTING` / `DIRTY` PR — do NOT short-circuit. Drop into Step 1 and run the `pull` skill. If the only failing check is mergeability, the redispatch is specifically a "fix the conflicts" signal — treat it that way.
+   If any of those fail — especially a `CONFLICTING` / `DIRTY` PR — do NOT short-circuit. Drop into Step 1 and run the `pull` skill. If the only failing check is mergeability, the redispatch is specifically a "fix the conflicts" signal — treat it that way. If the PR feedback sweep is not clean, run the `pr-feedback` skill before doing new work or declaring no-op.
 
-   When the short-circuit does apply, append a one-line `### Notes` entry (`no-op redispatch — work already complete on <short-sha> / PR #<n>`) and shut down without re-running validation. Only re-engage if the on-disk state contradicts the workpad.
+   When the short-circuit does apply, append a one-line `### Notes` entry (`no-op redispatch — work already complete on <short-sha> / PR #<n>`), move the Linear issue to `In Review`, verify the state changed, then shut down without re-running validation. Only re-engage if the on-disk state contradicts the workpad.
 
 ## Status routing
 

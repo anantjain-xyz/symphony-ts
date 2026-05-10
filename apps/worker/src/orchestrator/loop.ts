@@ -1,4 +1,4 @@
-import type { Issue } from '@symphony/shared';
+import { type Issue, formatError } from '@symphony/shared';
 import type { Logger } from 'pino';
 import type { ResolvedConfig } from '../config/resolve.js';
 import type { RateLimitStateRow, Repo } from '../db/repo.js';
@@ -57,10 +57,7 @@ export class OrchestratorLoop {
   async run(): Promise<void> {
     while (!this.stopping) {
       this.currentTick = this.tick().catch((err) => {
-        this.deps.log.error(
-          { err: err instanceof Error ? err.message : String(err) },
-          'tick failed',
-        );
+        this.deps.log.error({ err: formatError(err) }, 'tick failed');
       });
       await this.currentTick;
       if (this.stopping) break;
@@ -313,10 +310,7 @@ export class OrchestratorLoop {
       if (!current) return true;
       return !config.activeStates().includes(current.state);
     } catch (err) {
-      log.warn(
-        { issueId, err: err instanceof Error ? err.message : String(err) },
-        'retry cleanup: fetchById failed; deferring',
-      );
+      log.warn({ issueId, err: formatError(err) }, 'retry cleanup: fetchById failed; deferring');
       return false;
     }
   }

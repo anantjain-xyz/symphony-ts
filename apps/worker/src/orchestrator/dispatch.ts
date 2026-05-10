@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Issue } from '@symphony/shared';
+import { type Issue, formatError } from '@symphony/shared';
 import type { Logger } from 'pino';
 import { mapTurnEvent } from '../agent/events.js';
 import { AgentRunner, TurnTimeoutError } from '../agent/runner.js';
@@ -380,22 +380,4 @@ function buildClaudeEnv(config: ResolvedConfig): Record<string, string> {
     env.SYMPHONY_CLAUDE_ADD_DIRS = c.add_dirs.join(':');
   }
   return env;
-}
-
-// Prior implementation fell through to `String(err)` for non-Error throws,
-// which renders plain objects as the useless literal "[object Object]" in
-// runs.error_message. Handle the common non-Error shapes explicitly.
-function formatError(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  if (typeof err === 'string') return err;
-  if (err && typeof err === 'object') {
-    const maybeMsg = (err as { message?: unknown }).message;
-    if (typeof maybeMsg === 'string' && maybeMsg.length > 0) return maybeMsg;
-    try {
-      return JSON.stringify(err);
-    } catch {
-      return Object.prototype.toString.call(err);
-    }
-  }
-  return String(err);
 }

@@ -18,7 +18,7 @@ process.env.SYMPHONY_CLAUDE_ADAPTER ??= resolve(
   '../agents/claude-adapter.mjs',
 );
 
-import { createDb } from '@symphony/shared';
+import { createDb, formatError } from '@symphony/shared';
 import { reloadWorkflowConfig } from './config/reload.js';
 import { liveConfig, resolveConfig } from './config/resolve.js';
 import { loadWorkflowFile } from './config/workflow.js';
@@ -84,11 +84,11 @@ async function main(): Promise<void> {
   });
 
   process.on('uncaughtException', (err) => {
-    log.fatal({ err: errToString(err) }, 'uncaughtException');
+    log.fatal({ err: formatError(err, { includeStack: true }) }, 'uncaughtException');
     process.exit(1);
   });
   process.on('unhandledRejection', (err) => {
-    log.fatal({ err: errToString(err) }, 'unhandledRejection');
+    log.fatal({ err: formatError(err, { includeStack: true }) }, 'unhandledRejection');
     process.exit(1);
   });
 
@@ -122,11 +122,6 @@ function requireEnv<K extends string>(keys: readonly K[]): Record<K, string> {
     throw new Error(`missing required env vars: ${missing.join(', ')}`);
   }
   return out;
-}
-
-function errToString(err: unknown): string {
-  if (err instanceof Error) return err.stack ?? err.message;
-  return String(err);
 }
 
 main().catch((err) => {

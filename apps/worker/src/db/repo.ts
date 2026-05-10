@@ -1,6 +1,5 @@
 import {
   agentEvents,
-  agentEventsLatest as _agentEventsLatest,
   type AgentEventKind,
   type Db,
   hookRuns,

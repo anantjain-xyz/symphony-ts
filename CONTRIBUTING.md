@@ -96,6 +96,10 @@ pnpm format
 - Dashboard code lives under `apps/dashboard/src`.
 - Local workflow configuration and prompt behavior are documented in
   `WORKFLOW.md`.
+- Error handling and the `bestEffort` helper are documented in
+  `docs/error-handling.md`. Bare empty `} catch {}` blocks are blocked by
+  Biome's `noEmptyBlockStatements`; every silenced rejection needs an inline
+  comment explaining why.
 
 ## Reporting Security Issues
 

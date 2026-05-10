@@ -3,6 +3,7 @@ import type { Logger } from 'pino';
 import type { ResolvedConfig } from '../config/resolve.js';
 import { backoffMs } from '../orchestrator/backoff.js';
 import type { TrackerClient } from '../tracker/linear.js';
+import { bestEffort } from '../util/best-effort.js';
 import type { WorkspaceManager } from '../workspace/manager.js';
 import type { Repo } from './repo.js';
 
@@ -62,7 +63,9 @@ export async function recover(deps: RecoveryDeps): Promise<RecoveryOutcome> {
       { runId: o.id, issueId: o.issue_id },
       'orphan run; marking as crashed and scheduling retry',
     );
-    await repo.deleteLiveSession(o.id).catch(() => {});
+    await bestEffort(repo.deleteLiveSession(o.id), log, 'deleteLiveSession on orphan adopt', {
+      runId: o.id,
+    });
     await repo.finishRun({
       runId: o.id,
       status: 'failure',

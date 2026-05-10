@@ -17,7 +17,9 @@ export interface CreateDbOptions {
 export function createDb(url: string, opts: CreateDbOptions = {}) {
   const sql = postgres(url, {
     max: opts.max ?? 10,
-    onnotice: () => {},
+    onnotice: () => {
+      /* postgres-js NOTICE messages are noise for our usage */
+    },
     prepare: true,
   });
   return drizzle(sql, { schema });
@@ -33,6 +35,8 @@ export function createListener(url: string) {
   return postgres(url, {
     max: 1,
     prepare: false,
-    onnotice: () => {},
+    onnotice: () => {
+      /* postgres-js NOTICE messages are noise for our usage */
+    },
   });
 }

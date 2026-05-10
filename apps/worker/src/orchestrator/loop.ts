@@ -101,7 +101,10 @@ export class OrchestratorLoop {
       try {
         h.killNow();
       } catch {
-        // Best effort.
+        // Synchronous best-effort: SIGKILL races process-group teardown and
+        // routinely throws ESRCH ("no such process") when the child already
+        // died. We are running from process.on('exit') and cannot recover
+        // from a per-handle failure anyway, so swallow and keep iterating.
       }
     }
   }

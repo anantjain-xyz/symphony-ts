@@ -1,3 +1,4 @@
+import { formatError } from '@symphony/shared';
 import type { Logger } from 'pino';
 import type { ResolvedConfig } from '../config/resolve.js';
 import { backoffMs } from '../orchestrator/backoff.js';
@@ -82,7 +83,7 @@ export async function recover(deps: RecoveryDeps): Promise<RecoveryOutcome> {
         {
           runId: o.id,
           workspacePath: o.workspace_path,
-          err: err instanceof Error ? err.message : String(err),
+          err: formatError(err),
         },
         'partial workspace cleanup failed',
       );
@@ -109,10 +110,7 @@ export async function recover(deps: RecoveryDeps): Promise<RecoveryOutcome> {
       );
     }
   } catch (err) {
-    log.warn(
-      { err: err instanceof Error ? err.message : String(err) },
-      'placeholder live_sessions sweep failed',
-    );
+    log.warn({ err: formatError(err) }, 'placeholder live_sessions sweep failed');
   }
 
   let workspacesRemoved = 0;
@@ -125,13 +123,13 @@ export async function recover(deps: RecoveryDeps): Promise<RecoveryOutcome> {
         workspacesRemoved += 1;
       } catch (err) {
         log.warn(
-          { identifier: issue.identifier, err: err instanceof Error ? err.message : String(err) },
+          { identifier: issue.identifier, err: formatError(err) },
           'workspace removal failed',
         );
       }
     }
   } catch (err) {
-    log.warn({ err: err instanceof Error ? err.message : String(err) }, 'terminal sweep failed');
+    log.warn({ err: formatError(err) }, 'terminal sweep failed');
   }
 
   return {

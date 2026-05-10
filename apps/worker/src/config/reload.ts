@@ -1,3 +1,4 @@
+import { formatError } from '@symphony/shared';
 import type { Logger } from 'pino';
 import { type LiveResolvedConfig, resolveConfig } from './resolve.js';
 import { loadWorkflowFile } from './workflow.js';
@@ -45,7 +46,7 @@ async function doReload({ workflowPath, live, log }: ReloadDeps): Promise<Reload
     next = await loadWorkflowFile(workflowPath);
   } catch (err) {
     log.error(
-      { err: err instanceof Error ? (err.stack ?? err.message) : String(err) },
+      { err: formatError(err, { includeStack: true }) },
       'reload: failed to load/validate WORKFLOW.md; keeping previous config',
     );
     return 'invalid';

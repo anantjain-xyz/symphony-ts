@@ -1,3 +1,4 @@
+import { formatError } from '@symphony/shared';
 import type { Logger } from 'pino';
 import type { Repo } from '../db/repo.js';
 
@@ -31,12 +32,7 @@ export class Heartbeat {
     this.timer = setInterval(() => {
       void this.repo
         .beatWorkerHeartbeat()
-        .catch((err) =>
-          this.log.warn(
-            { err: err instanceof Error ? err.message : String(err) },
-            'heartbeat failed',
-          ),
-        );
+        .catch((err) => this.log.warn({ err: formatError(err) }, 'heartbeat failed'));
     }, intervalMs);
     this.timer.unref?.();
   }

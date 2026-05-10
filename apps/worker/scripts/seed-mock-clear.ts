@@ -10,7 +10,7 @@
  * The only out-of-band row is the `claude_primary` rate-limit pause.
  */
 
-import { createDb, type Db, issues, rateLimitState } from '@symphony/shared';
+import { createDb, issues, rateLimitState } from '@symphony/shared';
 import { eq, like } from 'drizzle-orm';
 
 const URL = process.env.DATABASE_URL;
@@ -38,10 +38,7 @@ async function main() {
   for (const i of removedIssues) console.log(`  - ${i.identifier}`);
   console.log(`Removed ${removedRateLimits.length} mock rate_limit_state rows.`);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (db as Db & { $client: { end: (o: { timeout: number }) => Promise<void> } }).$client.end({
-    timeout: 5,
-  });
+  await db.close({ timeout: 5 });
 }
 
 main().catch((e) => {

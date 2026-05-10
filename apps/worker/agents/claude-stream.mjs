@@ -29,7 +29,9 @@ export function createClaudeStream({
   sessionId,
   emitEvent,
   emitComplete,
-  logWarn = () => {},
+  logWarn = () => {
+    /* default no-op logger */
+  },
 }) {
   /** tool_use_id -> tool name (for prettier result_summary emission) */
   const pendingTools = new Map();

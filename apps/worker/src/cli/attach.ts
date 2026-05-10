@@ -114,6 +114,8 @@ async function lookupSessionIdFromDisk(cwd: string): Promise<string | null> {
   try {
     projects = await readdir(projectsRoot);
   } catch {
+    // Claude Code has never run on this machine (~/.claude/projects absent).
+    // No session to resume.
     return null;
   }
 
@@ -124,6 +126,8 @@ async function lookupSessionIdFromDisk(cwd: string): Promise<string | null> {
     try {
       entries = await readdir(full);
     } catch {
+      // Project dir vanished mid-scan or is unreadable; skip it and keep
+      // searching the others rather than aborting the whole lookup.
       continue;
     }
     for (const entry of entries) {
@@ -138,6 +142,9 @@ async function lookupSessionIdFromDisk(cwd: string): Promise<string | null> {
           if (parsed.cwd === cwd) matchesCwd = true;
         }
       } catch {
+        // Unreadable file or malformed first-line JSON — Claude session logs
+        // are append-only NDJSON, so a parse failure means a partial write
+        // we can safely skip and continue with the next candidate.
         continue;
       }
       if (!matchesCwd) continue;

@@ -30,11 +30,17 @@ export function streamPgChannel(channel: string, signal: AbortSignal): Response 
         if (closed) return;
         closed = true;
         clearInterval(keepalive);
-        unlisten?.().catch(() => {});
-        sql.end({ timeout: 1 }).catch(() => {});
+        unlisten?.().catch(() => {
+          /* expected on race with abort — see block comment above */
+        });
+        sql.end({ timeout: 1 }).catch(() => {
+          /* expected on race with abort — see block comment above */
+        });
         try {
           controller.close();
-        } catch {}
+        } catch {
+          // Already closed (re-entrant cleanup path) — see block comment above.
+        }
       };
 
       const enqueue = (chunk: string) => {
@@ -63,7 +69,9 @@ export function streamPgChannel(channel: string, signal: AbortSignal): Response 
           enqueue(`data: ${payload}\n\n`);
         });
         if (closed) {
-          u().catch(() => {});
+          u().catch(() => {
+            /* aborted before listen settled — see block comment above */
+          });
           return;
         }
         unlisten = u;

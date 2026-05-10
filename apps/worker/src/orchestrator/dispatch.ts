@@ -6,6 +6,7 @@ import { AgentRunner, TurnTimeoutError } from '../agent/runner.js';
 import type { ResolvedConfig } from '../config/resolve.js';
 import { AlreadyRunningError, type Repo, type RunRow } from '../db/repo.js';
 import { appendRetryContext, buildRetryContext, renderPrompt } from '../prompt/render.js';
+import { bestEffort } from '../util/best-effort.js';
 import { type HookResult, runHook } from '../workspace/hooks.js';
 import { WorkspaceManager } from '../workspace/manager.js';
 
@@ -249,12 +250,19 @@ export function dispatchRun(deps: DispatchDeps, issue: Issue, run: RunRow): Disp
         { runId: run.id, err: formatted },
         isTimeout ? 'turn timed out' : 'dispatch failed',
       );
-      try {
-        if (runner) await runner.kill();
-      } catch {
-        /* ignore */
+      if (runner) {
+        try {
+          await runner.kill();
+        } catch (killErr) {
+          log.warn(
+            { runId: run.id, err: formatError(killErr) },
+            'runner kill during dispatch error cleanup failed',
+          );
+        }
       }
-      await repo.deleteLiveSession(run.id).catch(() => {});
+      await bestEffort(repo.deleteLiveSession(run.id), log, 'deleteLiveSession on dispatch error', {
+        runId: run.id,
+      });
       if (isTimeout) {
         await repo.finishRun({
           runId: run.id,

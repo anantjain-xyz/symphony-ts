@@ -2,6 +2,23 @@ import { mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 /**
+ * `stat`-based existence probe. Returns `false` for any error (typically
+ * ENOENT) so the caller can branch on existence without silencing errors via
+ * a bare `try/catch {}`.
+ */
+async function pathExists(p: string): Promise<boolean> {
+  try {
+    await stat(p);
+    return true;
+  } catch {
+    // ENOENT (and any other stat failure) is interpreted as "not present"
+    // — the only consumers of pathExists are existence checks where any
+    // failure to stat is, for our purposes, equivalent to "absent".
+    return false;
+  }
+}
+
+/**
  * Sentinel written at the workspace root once after_create completes cleanly.
  * Presence = "after_create succeeded, workspace is usable."
  * Absence = "workspace was never initialized, or a previous after_create
@@ -50,24 +67,18 @@ export class WorkspaceManager {
     const key = sanitizeKey(identifier);
     const wsPath = this.assertSafePath(key);
     let createdNow = false;
-    try {
-      await stat(wsPath);
-    } catch {
+    if (!(await pathExists(wsPath))) {
       await mkdir(wsPath, { recursive: true });
       createdNow = true;
     }
 
     let needsInit = createdNow;
-    if (!createdNow) {
-      try {
-        await stat(path.join(wsPath, WORKSPACE_READY_SENTINEL));
-      } catch {
-        // Sentinel missing → wipe and re-init. rm+mkdir (rather than emptying
-        // entries in place) keeps the implementation simple.
-        await rm(wsPath, { recursive: true, force: true });
-        await mkdir(wsPath, { recursive: true });
-        needsInit = true;
-      }
+    if (!createdNow && !(await pathExists(path.join(wsPath, WORKSPACE_READY_SENTINEL)))) {
+      // Sentinel missing → wipe and re-init. rm+mkdir (rather than emptying
+      // entries in place) keeps the implementation simple.
+      await rm(wsPath, { recursive: true, force: true });
+      await mkdir(wsPath, { recursive: true });
+      needsInit = true;
     }
 
     return { path: wsPath, key, createdNow, needsInit };
@@ -107,18 +118,10 @@ export class WorkspaceManager {
     const resolved = path.resolve(absPath);
     if (resolved === rootResolved) return false;
     if (!resolved.startsWith(rootResolved + path.sep)) return false;
-    try {
-      await stat(resolved);
-    } catch {
-      return false;
-    }
-    try {
-      await stat(path.join(resolved, WORKSPACE_READY_SENTINEL));
-      return false;
-    } catch {
-      await rm(resolved, { recursive: true, force: true });
-      return true;
-    }
+    if (!(await pathExists(resolved))) return false;
+    if (await pathExists(path.join(resolved, WORKSPACE_READY_SENTINEL))) return false;
+    await rm(resolved, { recursive: true, force: true });
+    return true;
   }
 
   /**

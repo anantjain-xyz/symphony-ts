@@ -88,7 +88,7 @@ export class AgentRunner {
   private log: NonNullable<AgentRunnerOptions['log']>;
 
   constructor(private readonly opts: AgentRunnerOptions) {
-    this.log = opts.log ?? (() => {});
+    this.log = opts.log ?? (() => undefined);
   }
 
   async run(prompt: string): Promise<AgentRunResult> {
@@ -101,7 +101,9 @@ export class AgentRunner {
     // awaits it until after turn/start succeeds, so attach a silent handler
     // to prevent an unhandledRejection from crashing the process. The caller
     // still sees the failure via the in-flight request() rejection.
-    this.completion.catch(() => {});
+    this.completion.catch(() => {
+      // Observed elsewhere — see block comment above.
+    });
 
     this.child = this.spawn();
 
@@ -125,7 +127,12 @@ export class AgentRunner {
         (r) => this.onExit(r.exitCode ?? 0, null),
         (err) => this.onExit((err as { exitCode?: number }).exitCode ?? -1, err as Error),
       )
-      .catch(() => {});
+      .catch(() => {
+        // onExit() handles both fulfillment and rejection branches above; this
+        // .catch() exists only to silence the auxiliary promise so a thrown
+        // onExit doesn't surface as unhandledRejection (it's logged by the
+        // dispatch error path that awaits run()).
+      });
 
     // Handshake
     const init = await this.request<InitializeResult>('initialize', { version: '1' });
@@ -188,7 +195,13 @@ export class AgentRunner {
           clearTimeout(t);
           resolve();
         },
-      ).catch(() => resolve());
+      ).catch(() => {
+        // Belt-and-braces: both then() handlers above already settle the
+        // outer promise via resolve(). This catch only catches a synchronous
+        // throw inside those handlers (clearTimeout shouldn't throw, but
+        // keeping the shape defensive).
+        resolve();
+      });
     });
   }
 

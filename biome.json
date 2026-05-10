@@ -25,7 +25,8 @@
         "noDebugger": "error",
         "noFocusedTests": "error",
         "noConsole": "error",
-        "noTsIgnore": "error"
+        "noTsIgnore": "error",
+        "noEmptyBlockStatements": "error"
       }
     }
   },
@@ -42,7 +43,8 @@
       "linter": {
         "rules": {
           "suspicious": {
-            "noConsole": "off"
+            "noConsole": "off",
+            "noEmptyBlockStatements": "off"
           }
         }
       }

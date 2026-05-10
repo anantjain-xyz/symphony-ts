@@ -15,7 +15,12 @@ if (!url) {
 const here = dirname(fileURLToPath(import.meta.url));
 const migrationsDir = join(here, 'migrations');
 
-const sql = postgres(url, { max: 1, onnotice: () => {} });
+const sql = postgres(url, {
+  max: 1,
+  onnotice: () => {
+    /* postgres-js NOTICE messages are noise for the migrator */
+  },
+});
 
 async function main() {
   await sql`select pg_advisory_lock(${ADVISORY_LOCK})`;

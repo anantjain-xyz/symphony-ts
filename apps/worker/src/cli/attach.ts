@@ -7,12 +7,13 @@
  * from their own terminal.
  */
 
-import { readdir, readFile, stat } from 'node:fs/promises';
+import { readdir, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path, { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config as loadDotenv } from 'dotenv';
 import { execa } from 'execa';
+import { readFirstLine } from './session-log.js';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
 loadDotenv({ path: resolve(repoRoot, '.env.local') });
@@ -135,8 +136,7 @@ async function lookupSessionIdFromDisk(cwd: string): Promise<string | null> {
       const filePath = path.join(full, entry);
       let matchesCwd = false;
       try {
-        const fd = await readFile(filePath, 'utf8');
-        const firstLine = fd.split('\n', 1)[0];
+        const firstLine = await readFirstLine(filePath);
         if (firstLine) {
           const parsed = JSON.parse(firstLine) as { cwd?: string };
           if (parsed.cwd === cwd) matchesCwd = true;

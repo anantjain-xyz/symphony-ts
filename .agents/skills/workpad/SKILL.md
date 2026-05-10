@@ -1,6 +1,6 @@
 ---
 name: workpad
-description: Manage the single Symphony Workpad comment on a Linear issue — find or bootstrap, update in place, or reset (Rework). Use whenever the workflow needs to read or write the workpad. Includes the GraphQL `commentUpdate` workaround for the known `mcp__linear-server__save_comment` duplication bug.
+description: Manage the single Symphony Workpad comment on a Linear issue — find or bootstrap, update in place, or reset (Rework). Use whenever the workflow needs to read or write the workpad. Includes the GraphQL `commentUpdate` workaround for the known Linear MCP `save_comment` duplication bug.
 ---
 
 # Workpad
@@ -9,13 +9,13 @@ The workpad is the single source of truth for an issue's plan, acceptance criter
 
 ## Find or bootstrap
 
-1. List comments on the issue with `mcp__linear-server__list_comments`.
+1. List comments on the issue with the configured Linear MCP comment-listing tool, normally `mcp__linear__list_comments` in Codex.
 2. Find the comment whose body starts with `## Symphony Workpad`. If found: persist its `id` for in-place updates and reuse it.
-3. If not found, create one with `mcp__linear-server__save_comment` using the template at the bottom of this skill. Persist the returned `id`.
+3. If not found, create one with the configured Linear MCP comment-save tool, normally `mcp__linear__save_comment` in Codex, using the template at the bottom of this skill. Persist the returned `id`.
 
 ## Update in place (the trap)
 
-`mcp__linear-server__save_comment` with a `commentId` **creates a new comment** instead of editing the original — this is what produces duplicate workpads. Always update via raw GraphQL:
+The Linear MCP `save_comment` tool with a `commentId` **creates a new comment** instead of editing the original — this is what produces duplicate workpads. Always update via raw GraphQL:
 
 ```sh
 curl -fsS \

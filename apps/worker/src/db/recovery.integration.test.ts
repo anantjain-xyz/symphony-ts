@@ -86,6 +86,41 @@ d('recover', () => {
     expect(q[0]!.run_number).toBe(2);
   });
 
+  it('marks pending-orphan runs as failure and schedules retry', async () => {
+    const active = makeTestIssue({
+      id: scope.newIssueId(),
+      identifier: scope.newIdentifier(),
+      state: 'todo',
+    });
+    await repo.upsertIssues([active]);
+
+    // Reserve a run but never call markRunning — simulates the prior worker
+    // dying between tryReserveRun and markRunning.
+    const reserved = await repo.tryReserveRun({
+      issueId: active.id,
+      runNumber: 3,
+      workspacePath: '/tmp/pending-orphan',
+    });
+
+    const config = resolveConfig(makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot }));
+    const out = await recover({
+      repo,
+      tracker: stubTracker([active], []),
+      workspaces: new WorkspaceManager(wsRoot),
+      config,
+      log: pino({ level: 'silent' }),
+      scopedIssueIds: [...scope.issueIds],
+    });
+
+    expect(out.pendingOrphansAdopted).toBe(1);
+    const [row] = await db.select().from(runs).where(eq(runs.id, reserved!.id));
+    expect(row!.status).toBe('failure');
+    expect(row!.error_class).toBe('process_crashed');
+    const q = await db.select().from(retryQueue).where(eq(retryQueue.issue_id, active.id));
+    expect(q.length).toBe(1);
+    expect(q[0]!.run_number).toBe(4);
+  });
+
   it('removes workspaces of terminal-state issues with no active runs', async () => {
     const active = makeTestIssue({
       id: scope.newIssueId(),
@@ -242,7 +277,7 @@ d('recover', () => {
     expect(rows).toHaveLength(0);
   });
 
-  it('does not touch placeholder live_sessions whose run is still running', async () => {
+  it('orphan adoption deletes placeholder live_sessions via deleteLiveSession, not the sweep', async () => {
     const issue = makeTestIssue({
       id: scope.newIssueId(),
       identifier: scope.newIdentifier(),
@@ -255,6 +290,7 @@ d('recover', () => {
       runNumber: 1,
       workspacePath: path.join(wsRoot, sanitizeKey(issue.identifier)),
     });
+    await repo.markRunning(reserved!.id);
     await repo.upsertLiveSession({
       run_id: reserved!.id,
       session_id: `pending-${reserved!.id}`,
@@ -274,8 +310,11 @@ d('recover', () => {
       scopedIssueIds: [...scope.issueIds],
     });
 
+    // The running-orphan loop calls deleteLiveSession directly on the orphan
+    // before scheduling its retry, so by the time the placeholder sweep runs
+    // there is nothing left for it to clean.
     expect(out.placeholderSessionsCleaned).toBe(0);
     const rows = await db.select().from(liveSessions).where(eq(liveSessions.run_id, reserved!.id));
-    expect(rows).toHaveLength(1);
+    expect(rows).toHaveLength(0);
   });
 });

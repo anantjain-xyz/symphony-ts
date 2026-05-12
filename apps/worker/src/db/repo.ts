@@ -198,6 +198,15 @@ export class Repo {
     return await this.db.select().from(runs).where(where);
   }
 
+  async listPending(opts?: { issueIds?: string[] }): Promise<RunRow[]> {
+    if (opts?.issueIds?.length === 0) return [];
+    const where =
+      opts?.issueIds && opts.issueIds.length > 0
+        ? and(eq(runs.status, 'pending'), inArray(runs.issue_id, opts.issueIds))
+        : eq(runs.status, 'pending');
+    return await this.db.select().from(runs).where(where);
+  }
+
   async countRunning(opts?: { issueIds?: string[] }): Promise<number> {
     if (opts?.issueIds?.length === 0) return 0;
     const where =

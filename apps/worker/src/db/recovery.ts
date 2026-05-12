@@ -21,6 +21,7 @@ export interface RecoveryDeps {
 
 export interface RecoveryOutcome {
   orphansAdopted: number; // runs that were 'running' at startup
+  pendingOrphansAdopted: number; // runs that were 'pending' at startup (reserved but never claimed)
   workspacesRemoved: number; // terminal-state issue workspaces cleaned
   partialWorkspacesCleaned: number; // orphan workspaces wiped because after_create never finished
   placeholderSessionsCleaned: number; // pending-* live_sessions for terminal runs
@@ -38,9 +39,16 @@ export interface RecoveryOutcome {
  * 3. Mark `running` runs as failure(process_crashed), schedule retries, and
  *    proactively wipe their workspaces if they're missing the ready sentinel
  *    (so the retry doesn't inherit a half-finished after_create).
- * 4. Sweep stale `pending-<run-id>` live_sessions whose run is now in a
+ * 4. Mark `pending` runs the same way: a row reserved by `tryReserveRun` but
+ *    never flipped to `running` means the previous worker died between
+ *    reservation and `markRunning`. Without this sweep the row sits forever,
+ *    invisible to the in-memory `active` map and to the eligibility filter
+ *    (which only consults `active` and `retry_queue`), so the next tick
+ *    happily reserves a fresh run number for the same issue and pendings
+ *    pile up across crashes.
+ * 5. Sweep stale `pending-<run-id>` live_sessions whose run is now in a
  *    terminal state (Codex placeholder rows that outlived their run).
- * 5. Sweep workspaces for terminal-state issues.
+ * 6. Sweep workspaces for terminal-state issues.
  *
  * Returns metrics for logging.
  */
@@ -97,6 +105,33 @@ export async function recover(deps: RecoveryDeps): Promise<RecoveryOutcome> {
     });
   }
 
+  const pendingOrphans = await repo.listPending(
+    deps.scopedIssueIds ? { issueIds: deps.scopedIssueIds } : undefined,
+  );
+  for (const o of pendingOrphans) {
+    log.warn(
+      { runId: o.id, issueId: o.issue_id, runNumber: o.run_number },
+      'pending orphan run; marking as crashed and scheduling retry',
+    );
+    await repo.finishRun({
+      runId: o.id,
+      status: 'failure',
+      errorClass: 'process_crashed',
+      errorMessage: 'worker restarted before run was claimed',
+    });
+    // No workspace cleanup: a pending row predates after_create, so the
+    // workspace either doesn't exist or is whatever a previous run left.
+    // The retry will re-enter createOrReuse and removeIfStale will handle it.
+    const ms = backoffMs(o.run_number, config.maxRetryBackoffMs());
+    await repo.scheduleRetry({
+      issueId: o.issue_id,
+      runNumber: o.run_number + 1,
+      dueAt: new Date(Date.now() + ms),
+      errorClass: 'process_crashed',
+      errorMessage: 'worker restart',
+    });
+  }
+
   let placeholderSessionsCleaned = 0;
   try {
     placeholderSessionsCleaned = await repo.deleteOrphanedPendingSessions(
@@ -136,6 +171,7 @@ export async function recover(deps: RecoveryDeps): Promise<RecoveryOutcome> {
 
   return {
     orphansAdopted: orphans.length,
+    pendingOrphansAdopted: pendingOrphans.length,
     workspacesRemoved,
     partialWorkspacesCleaned,
     placeholderSessionsCleaned,

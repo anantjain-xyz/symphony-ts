@@ -38,7 +38,7 @@ When the issue moves to `Rework`, overwrite the existing workpad's body in place
 
 - Capture every checkbox the workflow requires (env stamp, plan, acceptance, validation, notes).
 - If the issue body has `Validation`, `Test Plan`, or `Testing` sections, copy them verbatim into Acceptance / Validation as required checkboxes — no optional downgrade.
-- For user-facing changes, add a UI walkthrough criterion and embed Playwright screenshots inline. Save screenshots under the workspace (`./<name>.png` or `.playwright-mcp/<name>.png`) — the Playwright sandbox blocks `/tmp/...` and other paths outside the workspace.
+- For user-facing changes, add a UI walkthrough criterion. Screenshots themselves go in the PR description via the `symphony-screenshot` skill, not in the workpad.
 
 ## Linking artifacts
 
@@ -51,7 +51,7 @@ When the issue moves to `Rework`, overwrite the existing workpad's body in place
     }
   }
   ```
-- Screenshots → embed inline in the workpad via Linear-hosted markdown image. Don't commit screenshots to the repo and don't paste them into the GitHub PR description.
+- Screenshots → use the `symphony-screenshot` skill to embed in the PR description; do not paste them into the workpad.
 
 ## Don't
 

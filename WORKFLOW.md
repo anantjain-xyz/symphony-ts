@@ -151,6 +151,7 @@ Repeatable mechanics live under `.agents/skills/<name>/SKILL.md` (the canonical,
 | `symphony-commit` | creating a well-formed git commit from staged changes |
 | `symphony-push` | pushing the branch and ensuring a PR exists with the `symphony` label |
 | `symphony-pr-feedback` | sweeping the PR for actionable reviewer feedback before `In Review` |
+| `symphony-screenshot` | capturing Playwright screenshots and embedding them in the PR description (commit + force-push pattern) |
 | `symphony-land` | squash-merging the PR once approved and green (entered via `Merging`) |
 
 This workflow tells you *which* skill applies at each step; the skill body has the exact commands and gotchas. Don't re-derive what's already in a skill.
@@ -219,10 +220,10 @@ Route on the issue's current state. Before routing, check whether the branch PR 
    - **Mandatory**: ticket-provided `Validation`/`Test Plan`/`Testing` items must pass. Unmet items = incomplete work.
    - Prefer a targeted proof that directly exercises the change.
    - Temporary local proof edits allowed; revert before commit; document in `### Validation`/`### Notes`.
-   - User-facing → exercise the path locally (dashboard/worker) and capture evidence in the workpad. Screenshots **must** be Playwright-captured (`mcp__plugin_playwright_playwright__browser_navigate` + `..._take_screenshot`); logs/CLI output supplement screenshots, they do not replace them. Save screenshots to a workspace-relative path (e.g., `./<name>.png` or `.playwright-mcp/<name>.png`) — the Playwright sandbox blocks `/tmp/...` and any path outside the workspace + `.playwright-mcp/` roots. Embed the screenshot inline in the workpad.
+   - User-facing → exercise the path locally (dashboard/worker) and capture comprehensive evidence via the `symphony-screenshot` skill: full-page Playwright captures of every state worth reviewing (happy path, loading, error, mobile, hover) embedded in the PR description. Logs/CLI output supplement screenshots, they do not replace them.
 3. **Cleanup test data.** Anything you created in external systems for testing — Linear issues, comments, attachments; non-issue GitHub branches, draft PRs, gists; database rows in shared instances; etc. — must be deleted before moving the issue to `In Review`. Do not delete the active issue branch, its PR, or issue-owned evidence/attachments needed for review. The end state must match the start state plus only the artifacts that belong to this issue. Test-data cleanup is mandatory; record the cleanup actions in `### Notes`.
 4. **Before every push**: run required validation; rerun until green; use the `symphony-commit` skill to commit; use the `symphony-push` skill to publish.
-5. The `symphony-push` skill handles attaching the PR URL to the issue and applying the `symphony` label. For user-facing changes, keep Playwright screenshots in the Linear workpad only; do not require or manually upload screenshots in the GitHub PR description. Do not commit proof screenshots to the repository.
+5. The `symphony-push` skill handles attaching the PR URL to the issue and applying the `symphony` label. For user-facing changes, the `symphony-screenshot` skill embeds proof screenshots in the PR description via the commit + force-push pattern. The throwaway screenshot commit must be removed from branch history before transitioning to `In Review` — the skill handles this.
 6. After review feedback or check failures: run the `symphony-pull` skill again to merge `origin/master`, then re-run validation.
 7. Final workpad pass before `In Review`:
    - All plan / acceptance / validation checkboxes reflect reality.
@@ -234,7 +235,7 @@ Route on the issue's current state. Before routing, check whether the branch PR 
    - Run the `symphony-pr-feedback` skill.
    - PR checks must be green on the latest commit.
    - All ticket-mandated validation items must be checked in the workpad.
-   - For user-facing changes: confirm Playwright screenshots are embedded in the Linear workpad.
+   - For user-facing changes: confirm the `symphony-screenshot` flow ran and the PR description embeds full-page screenshots at raw GHE URLs covering every state worth reviewing.
    - Confirm test data created during validation has been cleaned up.
    - Loop until no actionable comments remain and checks are fully green.
 9. Move to `In Review`. Exception: if blocked per the escape hatch below, move to `In Review` with the blocker brief.
@@ -265,7 +266,7 @@ Run the `symphony-land` skill — it handles the approve/sync/squash-merge loop,
 - Do not post additional "done"/summary comments outside the workpad.
 - Temporary proof edits must be reverted before commit.
 - **Test data cleanup is mandatory.** Any artifacts created in external systems during testing (Linear issues/comments/attachments, non-issue GitHub branches/draft PRs/gists, rows in shared databases, etc.) must be deleted before transitioning to `In Review`. Do not delete the active issue branch, its PR, or issue-owned evidence/attachments needed for review. Leaving test residue is treated the same as leaving a temporary code edit unrevert.
-- **Proof-of-testing screenshots must be Playwright-captured** for user-facing changes, and must appear in the Linear workpad via Linear-hosted markdown images or attachments. Do not require screenshots in the GitHub PR description, do not upload them manually to GitHub, and do not check screenshot files into the repository. Hand-cropped screenshots, `console.log` snippets, or text-only descriptions do not satisfy this requirement.
+- **Proof-of-testing screenshots must be Playwright-captured** for user-facing changes and embedded in the GitHub PR description via the `symphony-screenshot` skill. Default to full-page captures and document every state worth reviewing (happy path, loading, error, empty, mobile, hover) — one screenshot per state, not a single representative shot. Hand-cropped screenshots, `console.log` snippets, or text-only descriptions do not satisfy this requirement. The screenshot commit must not survive in branch history once the URLs are captured.
 - Out-of-scope improvements → new Backlog issue (clear title / description / acceptance criteria, same project as current issue, `related` link to current, `blockedBy` if dependent).
 - Never run `pkill`/`killall`/`pgrep -f` with a broad pattern (e.g. `pkill -f "next dev"`, `pkill -f node`). Agents share the host with the operator's dashboard and with other workspaces' dev servers — unscoped matches kill *every* matching process, including the operator's. Scope cleanup to the port or the workspace: prefer `lsof -t -i :<PORT> | xargs -r kill` (handles the zero-match and multi-PID cases safely); when matching by command line, anchor to this workspace (`pkill -f 'next-server.*'"$ISSUE_IDENTIFIER"`). Same rule for `kill %1` / `kill %<jobspec>` only — those are scoped to the current shell.
 - `In Review` / `Done` / `Backlog` → do not modify the issue or its code.
@@ -279,5 +280,5 @@ Run the `symphony-land` skill — it handles the approve/sync/squash-merge loop,
 - Validation/tests green for the latest commit.
 - `symphony-pr-feedback` sweep clean (no actionable comments remain).
 - PR checks not failing, branch pushed, PR linked on the issue, `symphony` label present.
-- User-facing changes: Playwright-captured screenshots embedded in the Linear workpad.
+- User-facing changes: `symphony-screenshot` ran; PR description embeds full-page screenshots covering every state worth reviewing; screenshot commit not present in branch history.
 - All test data created during validation has been cleaned up; no residue left in Linear, GitHub, or shared backends.

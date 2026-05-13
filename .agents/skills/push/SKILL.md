@@ -27,7 +27,14 @@ description: Push the current branch to origin and ensure a PR exists for it (cr
    - `OPEN` → `gh pr edit --title "<title>" --body "<body>"` if scope shifted.
    - `CLOSED`/`MERGED` → branch is non-reusable; cut a fresh branch from `origin/master`.
 5. Title: short (< 70 chars), describes the *outcome* of the change, not the most recent fix. For Symphony issues, prefer `SYM-NN: <summary>`.
-6. Body: refresh to reflect total branch scope (not only the latest commits). Use the project's PR template if one exists.
+6. Body: refresh to reflect total branch scope (not only the latest commits). Start from the project's PR template:
+   ```sh
+   template=$(ls .github/PULL_REQUEST_TEMPLATE.md .github/pull_request_template.md 2>/dev/null | head -1)
+   ```
+   - If a template exists, use it as the skeleton. Fill `## Summary` (what changed and why — motivation for features, root cause for fixes; reference Linear tickets inline) and `## Test plan` (concrete verification — commands run, flows exercised; checkbox items).
+   - Preserve the `## Change Management` block (`type=`/`risk=`/`impact=`) verbatim — those are policy fields, not free text.
+   - Strip the HTML comment hints from the template before submitting.
+   - If no template exists, fall back to a `## Summary` + `## Test plan` body.
 7. Apply the `symphony` label via REST (the `gh pr edit --add-label` path 500s on this org due to a Projects-classic GraphQL deprecation):
    ```sh
    pr_number=$(gh pr view --json number -q .number)

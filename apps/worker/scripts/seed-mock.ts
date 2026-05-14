@@ -519,7 +519,7 @@ async function main() {
   console.log('  Pending retry:  3');
   console.log('  Recent fails:   4');
   console.log('  Issues:         10 mock + existing');
-  console.log('  Visit http://localhost:3000');
+  console.log('  Visit http://localhost:3333');
 
   // Close the postgres-js pool so the process exits promptly instead of
   // sitting on idle connections.

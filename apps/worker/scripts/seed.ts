@@ -98,7 +98,7 @@ async function main() {
     });
   }
 
-  console.log('Seeded. Visit http://localhost:3000');
+  console.log('Seeded. Visit http://localhost:3333');
   console.log(`  /issues/${ISSUES[0]!.id}`);
   console.log(`  /issues/${ISSUES[1]!.id}`);
   if (run) console.log(`  /runs/${run.id}`);

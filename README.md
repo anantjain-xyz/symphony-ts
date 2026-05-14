@@ -18,7 +18,7 @@ pnpm db:up && pnpm db:migrate
 cp .env.example .env.local            # fill in LINEAR_API_KEY
 pnpm -r build
 pnpm --filter @symphony/worker dev    # terminal 1
-pnpm --filter @symphony/dashboard dev # terminal 2 → http://localhost:3000
+pnpm --filter @symphony/dashboard dev # terminal 2 → http://localhost:3333
 ```
 
 No Linear key handy? Skip the worker and seed mock fixtures into Postgres to render every dashboard surface:
@@ -144,7 +144,7 @@ Hit `Ctrl-C` to drain (loop.stop runs with a 30 s grace deadline).
 
 ```sh
 pnpm --filter @symphony/dashboard dev
-# open http://localhost:3000
+# open http://localhost:3333
 ```
 
 The dashboard is open to anyone who can reach the port — auth is disabled because this stack is intended to run on a local machine.

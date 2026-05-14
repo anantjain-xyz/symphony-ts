@@ -25,9 +25,9 @@
   "author": "Anant Jain",
   "type": "module",
   "scripts": {
-    "dev": "next dev -p 3000",
+    "dev": "next dev -p 3333",
     "build": "next build",
-    "start": "next start -p 3000",
+    "start": "next start -p 3333",
     "typecheck": "tsc --noEmit",
     "test": "echo no-tests"
   },

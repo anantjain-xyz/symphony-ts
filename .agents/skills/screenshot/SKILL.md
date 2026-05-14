@@ -1,23 +1,57 @@
 ---
 name: screenshot
-description: Capture Playwright screenshots of a user-facing change and embed them in the GitHub PR description via a temporary commit + force-push. Use whenever the workflow asks for proof-of-testing screenshots on a user-facing change.
+description: Capture Playwright screenshots of a user-facing change and embed them in the GitHub PR description via a temporary commit + follow-up revert. Use whenever the workflow asks for proof-of-testing screenshots on a user-facing change.
 ---
 
 # Screenshot
 
-The PR description is the home for proof-of-testing screenshots. They are hosted as raw GHE blobs at a commit SHA that is force-pushed away after the URL is captured — the blob keeps serving until GHE GC.
+The PR description is the home for proof-of-testing screenshots. They are hosted as raw GHE blobs at a commit SHA whose contents are removed by a follow-up revert commit — the blob keeps serving until the branch is deleted (typically after squash-merge).
 
 ## Preconditions
 
 - Playwright MCP available (`mcp__plugin_playwright_playwright__browser_navigate`, `..._take_screenshot`).
 - A PR exists for the current branch (use `symphony-push` first if not).
 - `gh auth status` succeeds against the repo's host.
+- **For coinbase-www dev captures**: `$UNIFIED_SESSION_MANAGER_COOKIE` is set in the environment. If unset and the target URL is a coinbase-www dev URL (`localhost:3000` or `coinbase-dev.cbhq.net`), stop and write a blocker brief in the workpad per `WORKFLOW.md`'s escape hatch — do **not** capture the auth wall.
 
 ## Steps
 
+0. **Bring up dev (coinbase-www only).** Skip this step entirely for non-coinbase-www repos.
+
+   a. **Detect dev server.** Check whether `https://localhost:3000` is responding:
+      ```sh
+      curl -ks -o /dev/null -w '%{http_code}' https://localhost:3000 || echo "down"
+      ```
+      If the response is `down` or non-2xx/3xx, start it in the background:
+      ```sh
+      yarn nx run app:start --env=dev > /tmp/symphony-dev-server.log 2>&1 &
+      ```
+      Poll the curl above (max 90s, 3s interval) until it returns 2xx/3xx. If it never comes up, tail `/tmp/symphony-dev-server.log` for the error and surface it.
+
+   b. **Verify the cookie env var.** Fail fast if missing:
+      ```sh
+      [ -n "$UNIFIED_SESSION_MANAGER_COOKIE" ] || { echo "UNIFIED_SESSION_MANAGER_COOKIE not set — cannot capture authenticated dev screenshots"; exit 1; }
+      ```
+      On failure, write a blocker brief in the workpad (escape hatch in `WORKFLOW.md`) and stop. Do not proceed with an unauthenticated capture.
+
+   c. **Inject the cookie** into the Playwright browser context *before* the first navigation, using `mcp__playwright__browser_run_code_unsafe`:
+      ```js
+      await context.addCookies([{
+        name: 'unified-session-manager-cookie',
+        value: process.env.UNIFIED_SESSION_MANAGER_COOKIE,
+        domain: 'localhost',
+        path: '/',
+        sameSite: 'Lax',
+        secure: true,
+      }]);
+      ```
+      `cb-gssc` is **not** required for dev — only set it for prod captures, which this skill does not target.
+
+   d. After injection, proceed to Step 1. The first `browser_navigate` should land on the authenticated app, not the auth wall. If it lands on the auth wall anyway, the cookie is stale — surface that as a blocker rather than retrying with the form.
+
 1. **Capture comprehensively.** Navigate to the URL with `browser_navigate`, then `browser_take_screenshot` with `fullPage: true` to capture the entire page — full-page is the default; only fall back to element-scoped (`target: "<ref-from-snapshot>"`) when the page is impractically tall (infinite scroll, very long forms) or when the visible diff is genuinely a single component. Save under the workspace at `.symphony/screenshots/<descriptive-name>.png`. The Playwright sandbox blocks `/tmp/...` and any path outside the workspace + `.playwright-mcp/` roots.
 
-   **Capture every state that matters to a reviewer**, not just the happy path. For a typical user-facing change that means multiple files — e.g. `01-default.png`, `02-loading.png`, `03-error.png`, `04-mobile.png`, `05-hover.png`. Resize the viewport with `browser_resize` between shots when the change is responsive. Err on the side of more screenshots: the commit is force-pushed away so size doesn't matter, and a missing state is the most common reviewer ask. Number filenames so they sort and embed in a deterministic order.
+   **Capture every state that matters to a reviewer**, not just the happy path. For a typical user-facing change that means multiple files — e.g. `01-default.png`, `02-loading.png`, `03-error.png`, `04-mobile.png`, `05-hover.png`. Resize the viewport with `browser_resize` between shots when the change is responsive. Err on the side of more screenshots: the screenshot commit is reverted in a follow-up so it doesn't bloat master after squash-merge, and a missing state is the most common reviewer ask. Number filenames so they sort and embed in a deterministic order.
 
 2. **Stage and commit** all the screenshots together:
    ```sh
@@ -55,28 +89,31 @@ The PR description is the home for proof-of-testing screenshots. They are hosted
    ```
    Use a heredoc or a built-up shell variable for the `--body` arg so newlines stay literal. Group related captures (e.g. mobile vs desktop) under sub-headings if it makes the PR easier to scan.
 
-6. **Verify the images render** in the PR (visual confirmation by the operator, or a `curl -I "$raw_url"` returning 200 if running unattended). Do not proceed to step 7 without confirmation — once the commit is force-pushed away, the URLs still work but you can no longer regenerate them from history.
+6. **Verify the images render** in the PR (visual confirmation by the operator, or a `curl -I "$raw_url"` returning 200 if running unattended). Confirm before proceeding to step 7. After revert the URLs still resolve (the blob stays reachable through branch history) and the screenshot commit is still in the branch — recoverable via `git log` if you ever need to re-derive a URL.
 
-7. **Reset and force-push** to drop the screenshot commit from branch history:
+7. **Revert and push** to remove the screenshots from `HEAD` without rewriting history:
    ```sh
-   git reset --hard HEAD~1
-   git push --force-with-lease origin "$(git branch --show-current)"
+   git revert --no-edit HEAD --no-verify
+   git push origin "$(git branch --show-current)"
    ```
-   Always `--force-with-lease`, never `--force`. If the lease check fails, someone pushed in the meantime — fetch, re-rebase, and retry from step 3 (the new SHA invalidates the URLs captured in step 4, so re-do the PR-body update too).
+   `--no-verify` carries the same throwaway-plumbing exception as step 2. If the push is rejected as non-fast-forward, run the `pull` skill (merge `origin/<branch>`), then re-run the push — no force needed. The screenshot commit's SHA stays in branch history, so the raw URLs captured in step 4 remain valid.
 
-8. **Cleanup workspace artifacts**: `rm -rf .symphony/screenshots .playwright-mcp` (those dirs should not appear in `git status` afterward).
+8. **Cleanup workspace artifacts**: the revert already removed `.symphony/screenshots/` from the working tree; just `rm -rf .playwright-mcp` (nothing should appear in `git status` afterward).
 
 ## Caveats
 
-- **Orphaned-blob TTL.** GHE serves the URL by SHA until it garbage-collects unreachable objects — typically weeks, sometimes longer. Adequate for normal PR review windows, not for permanent documentation. If the change requires an enduring screenshot (e.g., a runbook), commit it to a real path on master via a separate PR.
-- **Force-push scope.** This skill force-pushes the issue's PR branch. It will *not* run on `master` or any protected branch — `git push --force-with-lease` to a protected branch is rejected by the remote.
+- **Blob lifetime.** The raw URL resolves as long as the screenshot commit is reachable from a remote branch. While the PR is open, the branch keeps it alive; after squash-merge + branch delete, GHE will GC it. Adequate for normal PR review windows, not for permanent documentation. If the change requires an enduring screenshot (e.g., a runbook), commit it to a real path on master via a separate PR.
+- **History footprint.** The PR branch will end with two extra commits (the screenshot add + its revert). Squash-merge collapses both to a net-zero diff in the master commit, so this is purely cosmetic in the PR's "Commits" tab.
 
 ## Don't
 
-- Don't `git push --force` without `--with-lease` — you'll silently overwrite a teammate's push.
-- Don't commit screenshots to a path that survives — the commit must be the immediate `HEAD~1` so the reset is a single hop.
+- Don't force-push to undo the screenshot commit. The revert in step 7 is the *only* sanctioned teardown — force-push is destructive and gets blocked by the harness.
+- Don't squash or amend the revert commit out of the PR branch — that would reintroduce the screenshots into `HEAD` and break the squash-merge net-zero assumption.
 - Don't skip step 6 (visual verification). A broken URL in the PR body is harder to fix than re-capturing.
 - Don't ship a single happy-path screenshot when the change has multiple states. If the diff touches loading / error / empty / mobile, capture each — reviewers will ask for them anyway.
 - Don't crop or element-scope when `fullPage` works. Tight crops hide regressions in the surrounding chrome that a full-page shot would reveal.
 - Don't reuse this skill for screenshots that need to live longer than the PR — see "Caveats".
-- Don't carry the `--no-verify` exception into other skills; it's specific to this throwaway commit.
+- Don't carry the `--no-verify` exception into other skills; it's specific to this throwaway plumbing (now both the add and the revert).
+- Don't fall back to filling the on-page auth form. The cookie-injection path is the contract; a stale cookie is a blocker, not a recoverable state.
+- Don't capture against `coinbase-dev.cbhq.net` directly or against any prod URL — the skill targets the local dev server (`https://localhost:3000`).
+- Don't set `cb-gssc`. It's only required for prod, and this skill never targets prod.

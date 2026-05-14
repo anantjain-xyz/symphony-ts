@@ -84,7 +84,7 @@ export type AgentBackend = z.infer<typeof AgentBackend>;
 export const AgentConfig = z
   .object({
     backend: AgentBackend.default('codex'),
-    max_concurrent_agents: z.number().int().positive().default(10),
+    max_concurrent_agents: z.coerce.number().int().positive().default(10),
     max_retry_backoff_ms: z.number().int().positive().default(300_000),
     max_concurrent_agents_by_state: z.record(z.string(), z.number().int().positive()).default({}),
   })

@@ -51,10 +51,10 @@ agent:
   # <issue>` to resume the same session from your own terminal. Sourced from
   # .env.local via $SYMPHONY_AGENT_BACKEND; defaults to `claude` when unset.
   backend: ${SYMPHONY_AGENT_BACKEND:-claude}
-  max_concurrent_agents: 4
+  # Cap on concurrent agents across all states. Sourced from .env.local via
+  # $SYMPHONY_MAX_CONCURRENT_AGENTS; defaults to 4 when unset.
+  max_concurrent_agents: ${SYMPHONY_MAX_CONCURRENT_AGENTS:-4}
   max_retry_backoff_ms: 300000
-  max_concurrent_agents_by_state:
-    in progress: 2
 
 codex:
   command: node ${SYMPHONY_CODEX_ADAPTER}
@@ -163,6 +163,7 @@ Facts about this run — do not waste turns rediscovering them.
 - **Linear**: the Linear MCP server is the primary path — use its tools (`mcp__linear-server__*`) directly. If — and only if — no Linear MCP tools appear in your environment, fall back to the HTTP API: `curl -fsS -H "Authorization: $LINEAR_API_KEY" -H "Content-Type: application/json" https://api.linear.app/graphql -d '{"query":"..."}'`. `$LINEAR_API_KEY` is always present. Do not spend turns probing — one of these two paths is configured.
 - **Linear MCP gotchas**: `mcp__linear-server__save_comment` with a `commentId` creates a NEW comment instead of updating in place — see the `symphony-workpad` skill for the GraphQL `commentUpdate` workaround. `mcp__linear-server__create_attachment` only accepts file uploads (base64); for URL attachments (e.g., a PR link), the auto-link from `git push` usually suffices, otherwise use `attachmentLinkCreate` / `attachmentLinkGitHubPR` via GraphQL.
 - **GitHub**: `gh` CLI is authenticated. `gh pr edit --add-label` currently 500s with a Projects-classic GraphQL deprecation — the `symphony-push` skill applies the `symphony` label via REST.
+- **Dev session cookie**: `$UNIFIED_SESSION_MANAGER_COOKIE` carries the operator's retail session for coinbase-www dev captures. The `symphony-screenshot` skill injects it into Playwright before navigating to `https://localhost:3000`. If unset when a user-facing change requires a screenshot, treat it as a blocker per the escape hatch — do not proceed with an unauthenticated capture.
 - **Workspace**: already `cd`'d into `$TMPDIR/symphony-workspaces/<IDENTIFIER>/`; branch is checked out; `npm ci` already ran via `after_create`. The `.symphony-workspace-ready` file at the workspace root is the init sentinel — ignore it in `git status` and never `git add` it.
 - **Deferred tools you will likely need**: load in a single call — `ToolSearch("select:TodoWrite,WebFetch")`. Do not make multiple discovery queries.
 

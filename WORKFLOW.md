@@ -158,7 +158,7 @@ Facts about this run — do not waste turns rediscovering them.
 - **Linear MCP gotchas**: `mcp__linear-server__save_comment` with a `commentId` creates a NEW comment instead of updating in place — see the `workpad` skill for the GraphQL `commentUpdate` workaround. `mcp__linear-server__create_attachment` only accepts file uploads (base64); for URL attachments (e.g., a PR link), the auto-link from `git push` usually suffices, otherwise use `attachmentLinkCreate` / `attachmentLinkGitHubPR` via GraphQL.
 - **GitHub**: `gh` CLI is authenticated. `gh pr edit --add-label` currently 500s with a Projects-classic GraphQL deprecation — the `push` skill applies the `symphony` label via REST.
 - **Workspace**: already `cd`'d into `$TMPDIR/symphony-workspaces/<IDENTIFIER>/`; branch is checked out; `npm ci` already ran via `after_create`. The `.symphony-workspace-ready` file at the workspace root is the init sentinel — ignore it in `git status` and never `git add` it.
-- **Deferred tools you will likely need**: load in a single call — `ToolSearch("select:TodoWrite,WebFetch")`. Do not make multiple discovery queries.
+- **Deferred tools**: most runs need none. If you need `TodoWrite` or `WebFetch` for fresh implementation work, load them in a single call — `ToolSearch("select:TodoWrite,WebFetch")`. Skip this entirely on pickup / no-op redispatch runs; do not load `ScheduleWakeup` or `Monitor` — Symphony manages re-dispatch cadence and those tools are no-ops here.
 
 ## Attempt N > 1 fast-path
 
@@ -171,7 +171,7 @@ If this is a retry (attempt number > 1 or the workpad already exists), do these 
 5. **No-op redispatch short-circuit.** Only applies when the issue state is `Todo` or `In Progress` (NOT `Rework` — that always requires the full reset of Step 3, and NOT `Merging` — that always runs the Land procedure). Within those two states, the short-circuit fires only if **all** of the following hold:
    - Every Plan / Acceptance / Validation checkbox in the workpad is already ticked.
    - A PR is linked.
-   - `gh pr view --json state,mergeable,mergeStateStatus,statusCheckRollup` shows the PR `OPEN`/`MERGED`, `mergeable` is `MERGEABLE` (NOT `CONFLICTING` or `UNKNOWN`), `mergeStateStatus` is `CLEAN`/`HAS_HOOKS`/`UNSTABLE` (NOT `DIRTY`/`BLOCKED` due to conflicts), and required checks are green.
+   - `gh pr view --json state,mergeable,mergeStateStatus,statusCheckRollup` shows the PR `OPEN`/`MERGED`, `mergeable` is `MERGEABLE` (NOT `CONFLICTING` or `UNKNOWN`), `mergeStateStatus` is `CLEAN`/`HAS_HOOKS`/`UNSTABLE` (NOT `DIRTY`/`BLOCKED` due to conflicts), and no checks have failed (`FAILURE`/`CANCELLED`/`TIMED_OUT`/`ACTION_REQUIRED`). Pending checks like `PR Reviews` are OK — we do not wait for human-gated checks.
    - `git log --oneline origin/main..HEAD` matches the workpad's recorded commits.
    - The `pr-feedback` sweep is clean: no unresolved or actionable top-level comments, inline comments, or review feedback remain.
 
@@ -188,7 +188,7 @@ Route on the issue's current state. Before routing, check whether the branch PR 
 | `Backlog` | Do not modify. Shut down. |
 | `Todo` | Bootstrap workpad (`workpad` skill), then move to `In Progress`, run Step 1. If a PR is already attached: check `gh pr view --json mergeable,mergeStateStatus` first — a `CONFLICTING`/`DIRTY` PR is the most common reason for a Todo redispatch and the conflicts MUST be resolved (`pull` skill) before anything else. Then run the `pr-feedback` sweep before new work. |
 | `In Progress` | Continue Step 1 from existing workpad. |
-| `In Review` | Do not change code or content. Wait/poll for review decision. |
+| `In Review` | Do not change code or content. Symphony does not re-engage on CI failure or new review comments while in this state — the operator must move the issue back to `Todo`/`In Progress`/`Rework` to re-engage. |
 | `Merging` (PR already `MERGED`) | Skip land procedure; record merge SHA in workpad; move to `Done`. |
 | `Merging` (any other PR state) | Run the `land` skill. |
 | `Rework` | Run Step 3 (full reset). |
@@ -228,11 +228,11 @@ Route on the issue's current state. Before routing, check whether the branch PR 
 8. **Gate before `In Review`**:
    - Read the PR's `Manual QA Plan` comment if present; sharpen UI/runtime coverage accordingly.
    - Run the `pr-feedback` skill.
-   - PR checks must be green on the latest commit.
+   - No PR checks are failing on the latest commit (`FAILURE`/`CANCELLED`/`TIMED_OUT`/`ACTION_REQUIRED`). Pending checks (notably `PR Reviews`, which is human-gated and can take days) do **not** block the transition — reviewers own the wait.
    - All ticket-mandated validation items must be checked in the workpad.
    - For user-facing changes: confirm the `screenshot` flow ran and the PR description embeds full-page screenshots at raw GitHub URLs covering every state worth reviewing.
    - Confirm test data created during validation has been cleaned up.
-   - Loop until no actionable comments remain and checks are fully green.
+   - Loop until no actionable comments remain and no checks are failing. Pending checks are fine — do not wait for `PR Reviews` or other human-gated checks to resolve.
 9. Move to `In Review`. Exception: if blocked per the escape hatch below, move to `In Review` with the blocker brief.
 10. If the ticket started as `Todo` with a PR already attached, ensure all existing PR feedback is resolved (run the `pr-feedback` skill) — code update OR explicit justified pushback reply — before moving.
 

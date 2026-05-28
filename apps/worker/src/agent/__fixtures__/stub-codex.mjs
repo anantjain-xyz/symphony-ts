@@ -9,6 +9,8 @@
  *   "slow"      - never completes (used to test turn timeout)
  *   "interrupt" - waits for turn/interrupt, then completes cancelled
  *   "crash"     - exits 7 mid-turn
+ *   "linger"    - completes success but never exits (used to test that
+ *                 dispatch reaps the adapter when it overstays its turn)
  */
 
 import readline from 'node:readline';
@@ -117,6 +119,15 @@ async function runScenario() {
       send(notif('turn/event', { kind: 'status', turn_id: turnId, message: 'about to crash' }));
       await delay(20);
       process.exit(7);
+    }
+    case 'linger': {
+      await delay(20);
+      send(notif('turn/complete', { thread_id: threadId, turn_id: turnId, outcome: 'success' }));
+      // Deliberately don't exit. Simulates an adapter chain that completes
+      // its turn cleanly but doesn't tear down (lingering MCP sockets, hook
+      // subprocesses, etc.). Dispatch must reap us.
+      await new Promise(() => {});
+      return;
     }
   }
 }

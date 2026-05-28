@@ -194,6 +194,48 @@ d('OrchestratorLoop integration', () => {
     expect(q.length).toBe(0);
   });
 
+  it('reaps the adapter when it completes its turn but lingers', async () => {
+    const issue = makeTestIssue({ id: scope.newIssueId(), identifier: scope.newIdentifier() });
+    await repo.upsertIssues([issue]);
+    const codexCommand = `STUB_SCENARIO=linger node ${STUB}`;
+    const config = resolveConfig(
+      makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot, codexCommand }),
+      {},
+      makeTestRepos(),
+    );
+    const workspaces = new WorkspaceManager(wsRoot);
+    const reserved = await repo.tryReserveRun({
+      issueId: issue.id,
+      runNumber: 1,
+      workspacePath: workspaces.pathFor(issue.identifier),
+    });
+    expect(reserved).not.toBeNull();
+
+    const handle = dispatchRun(
+      { repo, workspaces, config, log: pino({ level: 'silent' }) },
+      issue,
+      reserved!,
+    );
+
+    // Without the kill-in-finally, this would hang until vitest's test timeout
+    // because the stub never exits on its own after turn/complete.
+    await handle.done;
+
+    const [finished] = await db.select().from(runsT).where(eq(runsT.id, reserved!.id));
+    expect(finished!.status).toBe('success');
+    expect(finished!.worker_pid).not.toBeNull();
+
+    // Process group should be torn down. process.kill(pid, 0) probes existence
+    // without delivering a signal: ESRCH means gone, anything else means still
+    // alive (and we leaked).
+    try {
+      process.kill(finished!.worker_pid!, 0);
+      throw new Error(`adapter pid ${finished!.worker_pid} still alive after dispatch`);
+    } catch (err) {
+      expect((err as NodeJS.ErrnoException).code).toBe('ESRCH');
+    }
+  });
+
   it('skips dispatch while rate_limit_state has a future reset_at for the backend', async () => {
     const issue = makeTestIssue({ id: scope.newIssueId(), identifier: scope.newIdentifier() });
     const codexCommand = `STUB_SCENARIO=happy node ${STUB}`;

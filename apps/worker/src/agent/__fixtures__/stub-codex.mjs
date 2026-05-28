@@ -126,7 +126,9 @@ async function runScenario() {
       // Deliberately don't exit. Simulates an adapter chain that completes
       // its turn cleanly but doesn't tear down (lingering MCP sockets, hook
       // subprocesses, etc.). Dispatch must reap us.
-      await new Promise(() => {});
+      await new Promise(() => {
+        // intentionally never resolve — we want dispatch to reap us
+      });
       return;
     }
   }

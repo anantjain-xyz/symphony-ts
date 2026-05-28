@@ -24,12 +24,30 @@ export const TrackerConfig = z
     // multiple teams in one workspace and only one team's issues should be
     // worked on. When unset, all issues matching the state filters are picked up.
     identifier_prefix: z.string().min(1).optional(),
-    // Restrict the worker to issues belonging to a single Linear project (by
-    // project UUID — find it in the project URL or via the API). Stricter than
-    // `identifier_prefix`: a project lives inside one team, so this implies
-    // the team scope without needing the prefix. The two may be combined; the
-    // GraphQL filters intersect.
-    project_id: z.string().uuid().optional(),
+    // Restrict the worker to issues belonging to one or more Linear projects
+    // (by project UUID — find it in the project URL or via the API). Stricter
+    // than `identifier_prefix`: a project lives inside one team, so this
+    // implies the team scope without needing the prefix. The two may be
+    // combined; the GraphQL filters intersect.
+    //
+    // Accepts three shapes for ergonomic env-var interpolation:
+    //   - YAML array: `project_id: [uuid1, uuid2]`
+    //   - CSV string: `project_id: "uuid1,uuid2"` (what env-var expansion
+    //     produces when `SYMPHONY_TRACKER_PROJECT_ID=uuid1,uuid2`)
+    //   - bare single UUID: `project_id: "uuid"` (legacy single-project form)
+    // Whitespace around commas is tolerated. All shapes normalize to a
+    // string[] at parse time.
+    project_id: z
+      .preprocess((v) => {
+        if (typeof v === 'string') {
+          return v
+            .split(',')
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0);
+        }
+        return v;
+      }, z.array(z.string().uuid()).nonempty())
+      .optional(),
   })
   .strict();
 export type TrackerConfig = z.infer<typeof TrackerConfig>;
@@ -169,6 +187,11 @@ export const WorkflowFrontMatter = z
     agent: AgentConfig,
     codex: CodexConfig,
     claude: ClaudeConfig,
+    // Optional path to a repos.md registry (relative to the worker repo root).
+    // When set — or when ./repos.md exists at startup — the dispatcher selects a
+    // target repo per issue via `repo:<name>` labels instead of taking
+    // REPO_URL/SYMPHONY_INSTALL_CMD straight from process env.
+    repos_path: z.string().min(1).optional(),
   })
   .passthrough();
 export type WorkflowFrontMatter = z.infer<typeof WorkflowFrontMatter>;
@@ -176,6 +199,51 @@ export type WorkflowFrontMatter = z.infer<typeof WorkflowFrontMatter>;
 export interface ParsedWorkflow {
   frontMatter: WorkflowFrontMatter;
   promptTemplate: string;
+  sourceHash: string;
+}
+
+// =========================================================================
+// Repos (parsed repos.md front matter)
+// =========================================================================
+
+/**
+ * A single target repo Symphony can dispatch into. `name` doubles as the slug
+ * inside the routing label (`repo:<name>`) unless `label` overrides it.
+ *
+ * Per-repo overrides win over WORKFLOW.md when set:
+ *  - `agent_backend` flips the dispatched backend just for this repo.
+ *  - `env` is merged into both the hook environment and the agent adapter's
+ *    environment. The hook runner's BLOCKED_ENV (LINEAR_API_KEY etc.) still
+ *    applies — those keys cannot be smuggled in via `env`.
+ *
+ * Issues with no `repo:*` label are silently ineligible — there is no default
+ * fallback. Operators add the label to opt an issue in.
+ */
+export const RepoEntry = z
+  .object({
+    name: z
+      .string()
+      .min(1)
+      .regex(/^[a-z0-9][a-z0-9-]*$/, 'name must be lowercase kebab-case'),
+    repo_url: z.string().min(1),
+    install_cmd: z.string().min(1).optional(),
+    agent_backend: AgentBackend.optional(),
+    // Explicit routing label override. Defaults to `repo:<name>`.
+    label: z.string().min(1).optional(),
+    env: z.record(z.string(), z.string()).optional(),
+  })
+  .strict();
+export type RepoEntry = z.infer<typeof RepoEntry>;
+
+export const ReposFrontMatter = z
+  .object({
+    repos: z.array(RepoEntry).min(1),
+  })
+  .passthrough();
+export type ReposFrontMatter = z.infer<typeof ReposFrontMatter>;
+
+export interface ParsedRepos {
+  frontMatter: ReposFrontMatter;
   sourceHash: string;
 }
 

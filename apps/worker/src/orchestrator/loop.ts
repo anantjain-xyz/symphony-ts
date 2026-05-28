@@ -184,9 +184,17 @@ export class OrchestratorLoop {
     //    once their due_at passes. Issues are already in priority order from
     //    the tracker.
     const pendingRetries = await repo.pendingRetryIssueIds();
-    const eligible = active.filter(
-      (i) => i.blockers.length === 0 && !this.active.has(i.id) && !pendingRetries.has(i.id),
-    );
+    // Issues with no matching `repo:*` label are silently ineligible — no
+    // default fallback. Operators add the label to opt an issue in. We filter
+    // here (not at dispatch) so unlabeled issues never spawn a run row or
+    // noisy failure; they just sit in their tracker state until labeled.
+    const eligible = active.filter((i) => {
+      if (i.blockers.length > 0) return false;
+      if (this.active.has(i.id)) return false;
+      if (pendingRetries.has(i.id)) return false;
+      if (config.resolveRepoForIssue(i) === null) return false;
+      return true;
+    });
 
     // 4. Compute current per-state load from the in-flight handles.
     const byState = new Map<string, number>();

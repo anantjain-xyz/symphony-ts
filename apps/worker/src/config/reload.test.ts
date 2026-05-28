@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import pino from 'pino';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { makeTestRepos } from '../db/test-helpers.js';
 import { reloadWorkflowConfig } from './reload.js';
 import { liveConfig, resolveConfig } from './resolve.js';
 import { parseWorkflowSource } from './workflow.js';
@@ -40,16 +41,33 @@ tracker:
 ---
 prompt`;
 
+const REPOS_INITIAL = `---
+repos:
+  - name: test
+    repo_url: https://example.com/test
+---`;
+
+const REPOS_UPDATED = `---
+repos:
+  - name: test
+    repo_url: https://example.com/test
+  - name: extra
+    repo_url: https://example.com/extra
+---`;
+
 const log = pino({ level: 'silent' });
 
 describe('reloadWorkflowConfig', () => {
   let dir: string;
   let workflowPath: string;
+  let reposPath: string;
 
   beforeEach(async () => {
     dir = await mkdtemp(path.join(tmpdir(), 'symphony-reload-'));
     workflowPath = path.join(dir, 'WORKFLOW.md');
+    reposPath = path.join(dir, 'repos.md');
     await writeFile(workflowPath, SRC_INITIAL, 'utf8');
+    await writeFile(reposPath, REPOS_INITIAL, 'utf8');
   });
 
   afterEach(async () => {
@@ -57,20 +75,20 @@ describe('reloadWorkflowConfig', () => {
   });
 
   it('returns "unchanged" and leaves the live config untouched when sourceHash matches', async () => {
-    const live = liveConfig(resolveConfig(parseWorkflowSource(SRC_INITIAL)));
+    const live = liveConfig(resolveConfig(parseWorkflowSource(SRC_INITIAL), {}, makeTestRepos()));
     const before = live.snapshot();
-    const outcome = await reloadWorkflowConfig({ workflowPath, live, log });
+    const outcome = await reloadWorkflowConfig({ workflowPath, reposPath, live, log });
     expect(outcome).toBe('unchanged');
     expect(live.snapshot()).toBe(before); // same inner ref
     expect(live.pollIntervalMs()).toBe(1000);
   });
 
-  it('returns "swapped" and updates the live config when the file changes', async () => {
-    const live = liveConfig(resolveConfig(parseWorkflowSource(SRC_INITIAL)));
+  it('returns "swapped" and updates the live config when WORKFLOW.md changes', async () => {
+    const live = liveConfig(resolveConfig(parseWorkflowSource(SRC_INITIAL), {}, makeTestRepos()));
     const inflight = live.snapshot();
     await writeFile(workflowPath, SRC_UPDATED, 'utf8');
 
-    const outcome = await reloadWorkflowConfig({ workflowPath, live, log });
+    const outcome = await reloadWorkflowConfig({ workflowPath, reposPath, live, log });
     expect(outcome).toBe('swapped');
     expect(live.pollIntervalMs()).toBe(5000);
     expect(live.maxConcurrentAgents()).toBe(9);
@@ -84,20 +102,36 @@ describe('reloadWorkflowConfig', () => {
     expect(inflight.promptTemplate()).toBe('prompt-initial');
   });
 
+  it('returns "swapped" when only repos.md changes', async () => {
+    const live = liveConfig(resolveConfig(parseWorkflowSource(SRC_INITIAL), {}, makeTestRepos()));
+    await writeFile(reposPath, REPOS_UPDATED, 'utf8');
+    const outcome = await reloadWorkflowConfig({ workflowPath, reposPath, live, log });
+    expect(outcome).toBe('swapped');
+    expect(live.repos().frontMatter.repos.map((r) => r.name)).toEqual(['test', 'extra']);
+  });
+
   it('returns "invalid" and keeps the previous config when the new file fails validation', async () => {
-    const live = liveConfig(resolveConfig(parseWorkflowSource(SRC_INITIAL)));
+    const live = liveConfig(resolveConfig(parseWorkflowSource(SRC_INITIAL), {}, makeTestRepos()));
     await writeFile(workflowPath, SRC_INVALID, 'utf8');
-    const outcome = await reloadWorkflowConfig({ workflowPath, live, log });
+    const outcome = await reloadWorkflowConfig({ workflowPath, reposPath, live, log });
     expect(outcome).toBe('invalid');
     expect(live.pollIntervalMs()).toBe(1000);
     expect(live.maxConcurrentAgents()).toBe(2);
     expect(live.promptTemplate()).toBe('prompt-initial');
   });
 
-  it('returns "invalid" and keeps the previous config when the file is missing', async () => {
-    const live = liveConfig(resolveConfig(parseWorkflowSource(SRC_INITIAL)));
+  it('returns "invalid" and keeps the previous config when WORKFLOW.md is missing', async () => {
+    const live = liveConfig(resolveConfig(parseWorkflowSource(SRC_INITIAL), {}, makeTestRepos()));
     await rm(workflowPath, { force: true });
-    const outcome = await reloadWorkflowConfig({ workflowPath, live, log });
+    const outcome = await reloadWorkflowConfig({ workflowPath, reposPath, live, log });
+    expect(outcome).toBe('invalid');
+    expect(live.pollIntervalMs()).toBe(1000);
+  });
+
+  it('returns "invalid" and keeps the previous config when repos.md is missing', async () => {
+    const live = liveConfig(resolveConfig(parseWorkflowSource(SRC_INITIAL), {}, makeTestRepos()));
+    await rm(reposPath, { force: true });
+    const outcome = await reloadWorkflowConfig({ workflowPath, reposPath, live, log });
     expect(outcome).toBe('invalid');
     expect(live.pollIntervalMs()).toBe(1000);
   });
@@ -109,10 +143,10 @@ describe('reloadWorkflowConfig', () => {
     // updated config. Serialization makes A re-read after B finishes — at
     // that point its read sees `updated` too, so the second outcome is
     // 'unchanged' and live config stays on `updated`.
-    const live = liveConfig(resolveConfig(parseWorkflowSource(SRC_INITIAL)));
-    const a = reloadWorkflowConfig({ workflowPath, live, log });
+    const live = liveConfig(resolveConfig(parseWorkflowSource(SRC_INITIAL), {}, makeTestRepos()));
+    const a = reloadWorkflowConfig({ workflowPath, reposPath, live, log });
     await writeFile(workflowPath, SRC_UPDATED, 'utf8');
-    const b = reloadWorkflowConfig({ workflowPath, live, log });
+    const b = reloadWorkflowConfig({ workflowPath, reposPath, live, log });
     const outcomes = await Promise.all([a, b]);
     expect(outcomes).toContain('swapped');
     // Whichever runs first picks up `updated`; the second sees no further

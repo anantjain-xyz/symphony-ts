@@ -21,6 +21,7 @@ loadDotenv({ path: resolve(repoRoot, '.env') });
 
 import { createDb, issues as issuesT, liveSessions, runs as runsT } from '@symphony/shared';
 import { desc, eq } from 'drizzle-orm';
+import { loadReposFile } from '../config/repos.js';
 import { resolveConfig } from '../config/resolve.js';
 import { loadWorkflowFile } from '../config/workflow.js';
 import { WorkspaceManager } from '../workspace/manager.js';
@@ -34,7 +35,9 @@ async function main(): Promise<number> {
 
   const workflowPath = resolve(repoRoot, process.env.WORKFLOW_PATH ?? 'WORKFLOW.md');
   const workflow = await loadWorkflowFile(workflowPath);
-  const config = resolveConfig(workflow);
+  const reposPath = resolve(repoRoot, workflow.frontMatter.repos_path ?? 'repos.md');
+  const repos = await loadReposFile(reposPath);
+  const config = resolveConfig(workflow, {}, repos);
 
   if (config.agentBackend() !== 'claude') {
     process.stderr.write(

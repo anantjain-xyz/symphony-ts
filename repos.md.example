@@ -1,0 +1,35 @@
+---
+# Multi-repo registry. One Symphony worker can dispatch into any entry below,
+# routing per-issue via a `repo:<name>` Linear label.
+#
+# Routing rules (see apps/worker/src/config/repos.ts):
+#   1. First `repo:<name>` label on the issue picks the matching entry.
+#   2. Issues with no `repo:*` label are silently ineligible — they stay in
+#      whatever tracker state they're in and are never dispatched.
+#
+# Each entry's `env:` is merged into the hook environment AND the agent
+# adapter's environment. `${VAR}` is expanded from process.env at load time;
+# the hook runner's BLOCKED_ENV (LINEAR_API_KEY etc.) still wins.
+#
+# To use: copy this file to `repos.md`, edit the entries for your repos, then
+# `kill -HUP <worker-pid>` (or restart). `repos.md` is gitignored — your
+# operator-specific entries live there, not here.
+repos:
+  - name: backend-api
+    repo_url: https://github.com/your-org/backend-api
+    install_cmd: npm ci
+    agent_backend: claude
+
+  - name: frontend-app
+    repo_url: https://github.com/your-org/frontend-app
+    install_cmd: pnpm install --frozen-lockfile
+    agent_backend: claude
+    env:
+      # Per-repo secrets pulled from .env.local via ${VAR} interpolation.
+      APP_SESSION_COOKIE: ${APP_SESSION_COOKIE}
+---
+
+# Repos
+
+Add a `repo:<name>` label to a Linear issue to route it to that target.
+Issues without a `repo:*` label are not picked up.

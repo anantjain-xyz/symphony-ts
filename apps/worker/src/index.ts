@@ -20,6 +20,7 @@ process.env.SYMPHONY_CLAUDE_ADAPTER ??= resolve(
 
 import { createDb, formatError } from '@symphony/shared';
 import { reloadWorkflowConfig } from './config/reload.js';
+import { loadReposFile } from './config/repos.js';
 import { liveConfig, resolveConfig } from './config/resolve.js';
 import { loadWorkflowFile } from './config/workflow.js';
 import { recover } from './db/recovery.js';
@@ -39,14 +40,22 @@ async function main(): Promise<void> {
 
   const workflow = await loadWorkflowFile(workflowPath);
   log.info({ workflowPath, sourceHash: workflow.sourceHash.slice(0, 12) }, 'workflow loaded');
-  const config = liveConfig(resolveConfig(workflow));
 
-  const afterCreate = workflow.frontMatter.hooks.after_create ?? '';
-  if (afterCreate.includes('$REPO_URL') && !process.env.REPO_URL) {
-    log.warn(
-      'after_create references $REPO_URL but REPO_URL env var is empty; workspace init will fail',
-    );
-  }
+  // repos.md is required: it's the registry of every target repo this worker
+  // can dispatch into. Path is `WORKFLOW.md`'s `repos_path:` when set,
+  // otherwise `./repos.md`. Missing/invalid file = fatal — see repos.md at the
+  // repo root for the expected format.
+  const reposPath = resolve(repoRoot, workflow.frontMatter.repos_path ?? 'repos.md');
+  const repos = await loadReposFile(reposPath);
+  log.info(
+    {
+      reposPath,
+      reposHash: repos.sourceHash.slice(0, 12),
+      names: repos.frontMatter.repos.map((r) => r.name),
+    },
+    'repos.md loaded',
+  );
+  const config = liveConfig(resolveConfig(workflow, {}, repos));
 
   const db = createDb(env.DATABASE_URL);
   const repo = new Repo(db);
@@ -80,7 +89,7 @@ async function main(): Promise<void> {
   process.on('SIGINT', () => void shutdown('SIGINT'));
 
   process.on('SIGHUP', () => {
-    void reloadWorkflowConfig({ workflowPath, live: config, log });
+    void reloadWorkflowConfig({ workflowPath, reposPath, live: config, log });
   });
 
   process.on('uncaughtException', (err) => {

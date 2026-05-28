@@ -8,7 +8,7 @@ import pino from 'pino';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { resolveConfig } from '../config/resolve.js';
 import { Repo } from '../db/repo.js';
-import { makeTestIssue, makeTestWorkflow } from '../db/test-helpers.js';
+import { makeTestIssue, makeTestRepos, makeTestWorkflow } from '../db/test-helpers.js';
 import { TestScope } from '../db/test-scope.js';
 import type { TrackerClient } from '../tracker/linear.js';
 import { WorkspaceManager } from '../workspace/manager.js';
@@ -63,6 +63,8 @@ d('OrchestratorLoop integration', () => {
     const codexCommand = `STUB_SCENARIO=happy node ${STUB}`;
     const config = resolveConfig(
       makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot, codexCommand }),
+      {},
+      makeTestRepos(),
     );
     const loop = new OrchestratorLoop({
       tracker: stubTracker([issue]),
@@ -104,7 +106,7 @@ d('OrchestratorLoop integration', () => {
       tracker: stubTracker(issues),
       repo,
       workspaces: new WorkspaceManager(wsRoot),
-      config: resolveConfig(wf),
+      config: resolveConfig(wf, {}, makeTestRepos()),
       log: pino({ level: 'silent' }),
       scopedIssueIds: [...scope.issueIds],
     });
@@ -121,6 +123,8 @@ d('OrchestratorLoop integration', () => {
     const codexCommand = `STUB_SCENARIO=error node ${STUB}`;
     const config = resolveConfig(
       makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot, codexCommand }),
+      {},
+      makeTestRepos(),
     );
     const loop = new OrchestratorLoop({
       tracker: stubTracker([issue]),
@@ -152,6 +156,8 @@ d('OrchestratorLoop integration', () => {
     const codexCommand = `STUB_SCENARIO=interrupt node ${STUB}`;
     const config = resolveConfig(
       makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot, codexCommand }),
+      {},
+      makeTestRepos(),
     );
     const workspaces = new WorkspaceManager(wsRoot);
     const reserved = await repo.tryReserveRun({
@@ -193,6 +199,8 @@ d('OrchestratorLoop integration', () => {
     const codexCommand = `STUB_SCENARIO=happy node ${STUB}`;
     const config = resolveConfig(
       makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot, codexCommand }),
+      {},
+      makeTestRepos(),
     );
     const source = scope.newRateLimitSource('codex');
     await repo.upsertRateLimit({
@@ -222,6 +230,8 @@ d('OrchestratorLoop integration', () => {
     const codexCommand = `STUB_SCENARIO=happy node ${STUB}`;
     const config = resolveConfig(
       makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot, codexCommand }),
+      {},
+      makeTestRepos(),
     );
     const source = scope.newRateLimitSource('codex');
     await repo.upsertRateLimit({
@@ -257,7 +267,7 @@ d('OrchestratorLoop integration', () => {
     const codexCommand = `STUB_SCENARIO=error node ${STUB}`;
     const wf = makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot, codexCommand });
     wf.frontMatter.agent.max_retry_backoff_ms = 60_000;
-    const config = resolveConfig(wf);
+    const config = resolveConfig(wf, {}, makeTestRepos());
     const loop = new OrchestratorLoop({
       tracker: stubTracker([issue]),
       repo,

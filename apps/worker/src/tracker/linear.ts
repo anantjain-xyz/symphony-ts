@@ -118,7 +118,7 @@ export function createLinearClient(opts: LinearClientOptions): TrackerClient {
         ctx,
         opts.config.activeStates(),
         teamKeyFromPrefix(),
-        opts.config.projectId(),
+        opts.config.projectIds(),
       );
       return filterByPrefix(issues).sort(byPriorityThenIdentifier);
     },
@@ -128,7 +128,7 @@ export function createLinearClient(opts: LinearClientOptions): TrackerClient {
         ctx,
         opts.config.terminalStates(),
         teamKeyFromPrefix(),
-        opts.config.projectId(),
+        opts.config.projectIds(),
       );
       return filterByPrefix(issues);
     },
@@ -142,8 +142,11 @@ export function createLinearClient(opts: LinearClientOptions): TrackerClient {
           id,
         });
         if (!data.issue) return null;
-        const projectId = opts.config.projectId();
-        if (projectId && data.issue.project?.id !== projectId) return null;
+        const projectIds = opts.config.projectIds();
+        if (projectIds.length > 0) {
+          const pid = data.issue.project?.id;
+          if (!pid || !projectIds.includes(pid)) return null;
+        }
         const issue = normalize(data.issue);
         const prefix = opts.config.identifierPrefix();
         if (prefix && !issue.identifier.startsWith(prefix)) return null;
@@ -160,7 +163,7 @@ async function fetchByStateNames(
   ctx: ResilienceCtx,
   states: string[],
   teamKey: string | null,
-  projectId: string | null,
+  projectIds: string[],
 ): Promise<Issue[]> {
   if (states.length === 0) return [];
   // Linear's StringComparator doesn't support `inIgnoreCase`, so we OR together
@@ -174,15 +177,16 @@ async function fetchByStateNames(
   // they intersect with the state OR-list — `first: 100` then applies to
   // in-scope issues only. Same starvation-prevention rationale as the team
   // filter (a busy shared workspace would otherwise fill the page with
-  // off-project issues that we'd drop locally).
+  // off-project issues that we'd drop locally). `in` accepts the array as-is;
+  // a single-element project list behaves identically to the old `eq`.
   const filterParts = [`or: [${orClauses}]`];
   if (teamKey !== null) {
     varDecls.push('$teamKey: String!');
     filterParts.push('team: { key: { eq: $teamKey } }');
   }
-  if (projectId !== null) {
-    varDecls.push('$projectId: ID!');
-    filterParts.push('project: { id: { eq: $projectId } }');
+  if (projectIds.length > 0) {
+    varDecls.push('$projectIds: [ID!]!');
+    filterParts.push('project: { id: { in: $projectIds } }');
   }
   const query = `
     query SymphonyIssuesByState(${varDecls.join(', ')}) {
@@ -193,9 +197,9 @@ async function fetchByStateNames(
       }
     }
   `;
-  const vars: Record<string, string> = Object.fromEntries(states.map((s, i) => [`s${i}`, s]));
+  const vars: Record<string, unknown> = Object.fromEntries(states.map((s, i) => [`s${i}`, s]));
   if (teamKey !== null) vars.teamKey = teamKey;
-  if (projectId !== null) vars.projectId = projectId;
+  if (projectIds.length > 0) vars.projectIds = projectIds;
   const data = await execute<{ issues: { nodes: LinearIssueNode[] } }>(ctx, query, vars);
   return data.issues.nodes.map(normalize);
 }

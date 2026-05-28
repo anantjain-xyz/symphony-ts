@@ -10,7 +10,7 @@ import type { TrackerClient } from '../tracker/linear.js';
 import { sanitizeKey, WORKSPACE_READY_SENTINEL, WorkspaceManager } from '../workspace/manager.js';
 import { recover } from './recovery.js';
 import { Repo } from './repo.js';
-import { makeTestIssue, makeTestWorkflow } from './test-helpers.js';
+import { makeTestIssue, makeTestRepos, makeTestWorkflow } from './test-helpers.js';
 import { TestScope } from './test-scope.js';
 
 const DB_URL = process.env.TEST_DATABASE_URL;
@@ -67,7 +67,11 @@ d('recover', () => {
     });
     await repo.markRunning(reserved!.id);
 
-    const config = resolveConfig(makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot }));
+    const config = resolveConfig(
+      makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot }),
+      {},
+      makeTestRepos(),
+    );
     const out = await recover({
       repo,
       tracker: stubTracker([active], []),
@@ -102,7 +106,11 @@ d('recover', () => {
       workspacePath: '/tmp/pending-orphan',
     });
 
-    const config = resolveConfig(makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot }));
+    const config = resolveConfig(
+      makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot }),
+      {},
+      makeTestRepos(),
+    );
     const out = await recover({
       repo,
       tracker: stubTracker([active], []),
@@ -143,7 +151,11 @@ d('recover', () => {
       repo,
       tracker: stubTracker([active], [terminal]),
       workspaces: new WorkspaceManager(wsRoot),
-      config: resolveConfig(makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot })),
+      config: resolveConfig(
+        makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot }),
+        {},
+        makeTestRepos(),
+      ),
       log: pino({ level: 'silent' }),
       scopedIssueIds: [...scope.issueIds],
     });
@@ -159,7 +171,7 @@ d('recover', () => {
       repo,
       tracker: stubTracker([], []),
       workspaces: new WorkspaceManager(wsRoot),
-      config: resolveConfig(wf),
+      config: resolveConfig(wf, {}, makeTestRepos()),
       log: pino({ level: 'silent' }),
       scopedIssueIds: [...scope.issueIds],
     });
@@ -190,7 +202,11 @@ d('recover', () => {
       repo,
       tracker: stubTracker([issue], []),
       workspaces: new WorkspaceManager(wsRoot),
-      config: resolveConfig(makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot })),
+      config: resolveConfig(
+        makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot }),
+        {},
+        makeTestRepos(),
+      ),
       log: pino({ level: 'silent' }),
       scopedIssueIds: [...scope.issueIds],
     });
@@ -223,7 +239,11 @@ d('recover', () => {
       repo,
       tracker: stubTracker([issue], []),
       workspaces: new WorkspaceManager(wsRoot),
-      config: resolveConfig(makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot })),
+      config: resolveConfig(
+        makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot }),
+        {},
+        makeTestRepos(),
+      ),
       log: pino({ level: 'silent' }),
       scopedIssueIds: [...scope.issueIds],
     });
@@ -267,7 +287,11 @@ d('recover', () => {
       repo,
       tracker: stubTracker([], [issue]),
       workspaces: new WorkspaceManager(wsRoot),
-      config: resolveConfig(makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot })),
+      config: resolveConfig(
+        makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot }),
+        {},
+        makeTestRepos(),
+      ),
       log: pino({ level: 'silent' }),
       scopedIssueIds: [...scope.issueIds],
     });
@@ -305,7 +329,11 @@ d('recover', () => {
       repo,
       tracker: stubTracker([issue], []),
       workspaces: new WorkspaceManager(wsRoot),
-      config: resolveConfig(makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot })),
+      config: resolveConfig(
+        makeTestWorkflow({ sourceHash: scope.newWorkflowHash(), wsRoot }),
+        {},
+        makeTestRepos(),
+      ),
       log: pino({ level: 'silent' }),
       scopedIssueIds: [...scope.issueIds],
     });

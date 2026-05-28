@@ -1,5 +1,6 @@
 import { GraphQLClient } from 'graphql-request';
 import { describe, expect, it, vi } from 'vitest';
+import { makeTestRepos } from '../db/test-helpers.js';
 import { liveConfig, resolveConfig } from '../config/resolve.js';
 import { makeTestWorkflow } from '../db/test-helpers.js';
 import {
@@ -18,9 +19,14 @@ function mkConfig(
     apiKey?: string;
     identifierPrefix?: string;
     projectId?: string;
+    projectIds?: string[];
   } = {},
 ) {
-  return resolveConfig(makeTestWorkflow({ sourceHash: 'linear-test', ...overrides }));
+  return resolveConfig(
+    makeTestWorkflow({ sourceHash: 'linear-test', ...overrides }),
+    {},
+    makeTestRepos(),
+  );
 }
 
 interface RequestArg {
@@ -344,13 +350,46 @@ describe('createLinearClient', () => {
 
     const active = await client.fetchActive();
     expect(active.map((i) => i.identifier)).toEqual(['PB-7']);
-    expect(seenVars[0]).toMatchObject({ projectId: PROJECT_ID });
+    expect(seenVars[0]).toMatchObject({ projectIds: [PROJECT_ID] });
 
     const terminal = await client.fetchTerminal();
     expect(terminal.map((i) => i.identifier)).toEqual(['PB-7']);
-    expect(seenVars[1]).toMatchObject({ projectId: PROJECT_ID });
+    expect(seenVars[1]).toMatchObject({ projectIds: [PROJECT_ID] });
 
     expect(await client.fetchById('uuid-pb-8')).toBeNull();
+  });
+
+  it('multiple project_ids broaden the GraphQL `in` filter and the fetchById gate', async () => {
+    // The multi-project knob: same starvation-prevention rationale as the
+    // single-project case, but `project: { id: { in: $projectIds } }` lets one
+    // worker service every issue across the listed projects.
+    const PROJECT_A = '11111111-1111-4111-8111-111111111111';
+    const PROJECT_B = '22222222-2222-4222-8222-222222222222';
+    const PROJECT_C = '33333333-3333-4333-8333-333333333333';
+    const PB7_A = { ...ENG42, id: 'uuid-pb-7', identifier: 'PB-7', project: { id: PROJECT_A } };
+    const PB8_B = { ...ENG42, id: 'uuid-pb-8', identifier: 'PB-8', project: { id: PROJECT_B } };
+    const PB9_C = { ...ENG42, id: 'uuid-pb-9', identifier: 'PB-9', project: { id: PROJECT_C } };
+
+    const seenVars: Array<Record<string, unknown>> = [];
+    const client = createLinearClient({
+      config: mkConfig({
+        activeStates: ['todo'],
+        projectIds: [PROJECT_A, PROJECT_B],
+      }),
+      client: stubClient((op, vars) => {
+        seenVars.push(vars as Record<string, unknown>);
+        if (op === 'SymphonyIssueById') return { issue: PB9_C };
+        return { issues: { nodes: [PB7_A, PB8_B] } };
+      }),
+      sleep: async (_ms: number) => {},
+    });
+
+    const active = await client.fetchActive();
+    expect(active.map((i) => i.identifier)).toEqual(['PB-7', 'PB-8']);
+    expect(seenVars[0]).toMatchObject({ projectIds: [PROJECT_A, PROJECT_B] });
+
+    // fetchById of an issue belonging to a third (unlisted) project is gated.
+    expect(await client.fetchById('uuid-pb-9')).toBeNull();
   });
 
   it('project_id and identifier_prefix compose into a single GraphQL filter', async () => {
@@ -369,7 +408,7 @@ describe('createLinearClient', () => {
       sleep: async (_ms: number) => {},
     });
     await client.fetchActive();
-    expect(seenVars[0]).toMatchObject({ teamKey: 'PB', projectId: PROJECT_ID });
+    expect(seenVars[0]).toMatchObject({ teamKey: 'PB', projectIds: [PROJECT_ID] });
   });
 
   it('omitting identifier_prefix returns every fetched issue unchanged', async () => {
@@ -395,6 +434,8 @@ describe('createLinearClient', () => {
           activeStates: ['todo'],
           terminalStates: ['done'],
         }),
+        {},
+        makeTestRepos(),
       ),
     );
     const seenVars: Array<Record<string, unknown>> = [];
@@ -416,6 +457,8 @@ describe('createLinearClient', () => {
           activeStates: ['todo', 'in progress'],
           terminalStates: ['done', 'canceled'],
         }),
+        {},
+        makeTestRepos(),
       ),
     );
 

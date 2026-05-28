@@ -7,6 +7,9 @@ dist/
 .env.local
 .env.*.local
 
+# Operator-specific repo registry (see repos.md.example for the template).
+repos.md
+
 .DS_Store
 *.log
 

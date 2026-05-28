@@ -1,9 +1,10 @@
 import type { Issue } from '@symphony/shared';
 import pino from 'pino';
 import { describe, expect, it, vi } from 'vitest';
+import { parseReposSource } from '../config/repos.js';
 import { resolveConfig } from '../config/resolve.js';
 import type { RateLimitStateRow, Repo, RetryQueueRow } from '../db/repo.js';
-import { makeTestIssue, makeTestWorkflow } from '../db/test-helpers.js';
+import { makeTestIssue, makeTestRepos, makeTestWorkflow } from '../db/test-helpers.js';
 import type { TrackerClient } from '../tracker/linear.js';
 import { WorkspaceManager } from '../workspace/manager.js';
 import type { DispatchHandle } from './dispatch.js';
@@ -77,7 +78,11 @@ describe('OrchestratorLoop rate-limit gate', () => {
       tracker: stubTracker([issue]),
       repo,
       workspaces: new WorkspaceManager('/tmp/symphony-loop-test'),
-      config: resolveConfig(makeTestWorkflow({ sourceHash: 'unit-test-hash' })),
+      config: resolveConfig(
+        makeTestWorkflow({ sourceHash: 'unit-test-hash' }),
+        {},
+        makeTestRepos(),
+      ),
       log: pino({ level: 'silent' }),
     });
 
@@ -112,7 +117,11 @@ describe('OrchestratorLoop rate-limit gate', () => {
       tracker: stubTracker([issue]),
       repo,
       workspaces: new WorkspaceManager('/tmp/symphony-loop-test'),
-      config: resolveConfig(makeTestWorkflow({ sourceHash: 'unit-test-hash-2' })), // codex by default
+      config: resolveConfig(
+        makeTestWorkflow({ sourceHash: 'unit-test-hash-2' }),
+        {},
+        makeTestRepos(),
+      ), // codex by default
       log: pino({ level: 'silent' }),
     });
 
@@ -175,7 +184,7 @@ describe('OrchestratorLoop retry concurrency gate', () => {
       tracker: stubTracker([blocking, retrying]),
       repo,
       workspaces: new WorkspaceManager('/tmp/symphony-loop-test'),
-      config: resolveConfig(wf),
+      config: resolveConfig(wf, {}, makeTestRepos()),
       log: pino({ level: 'silent' }),
     });
     loop.registerActive(fakeHandle(blocking.id));
@@ -219,7 +228,7 @@ describe('OrchestratorLoop retry concurrency gate', () => {
       tracker: stubTracker([blocking, retrying]),
       repo,
       workspaces: new WorkspaceManager('/tmp/symphony-loop-test'),
-      config: resolveConfig(wf),
+      config: resolveConfig(wf, {}, makeTestRepos()),
       log: pino({ level: 'silent' }),
     });
     loop.registerActive(fakeHandle(blocking.id));
@@ -231,6 +240,43 @@ describe('OrchestratorLoop retry concurrency gate', () => {
     expect(reserve).toHaveBeenCalledWith(
       expect.objectContaining({ issueId: retrying.id, runNumber: 3 }),
     );
+  });
+
+  it('drops issues with no matching repo:* label when repos.md is loaded', async () => {
+    // Two issues; only the labeled one should reach tryReserveRun. The
+    // unlabeled one is silently ineligible — no run row, no failure.
+    const unlabeled = makeIssue({
+      id: '00000000-0000-0000-0000-0000000000d1',
+      identifier: 'NOLABEL-1',
+      labels: [],
+    });
+    const labeled = makeIssue({
+      id: '00000000-0000-0000-0000-0000000000d2',
+      identifier: 'LABEL-1',
+      labels: ['repo:alpha'],
+    });
+
+    const reserve = vi.fn(async () => null);
+    const repo = fakeRepo({ tryReserveRun: reserve });
+
+    const repos = parseReposSource(`---
+repos:
+  - name: alpha
+    repo_url: https://example.com/alpha
+---`);
+
+    const loop = new OrchestratorLoop({
+      tracker: stubTracker([unlabeled, labeled]),
+      repo,
+      workspaces: new WorkspaceManager('/tmp/symphony-loop-test'),
+      config: resolveConfig(makeTestWorkflow({ sourceHash: 'repos-filter' }), {}, repos),
+      log: pino({ level: 'silent' }),
+    });
+
+    await loop.tick();
+
+    expect(reserve).toHaveBeenCalledTimes(1);
+    expect(reserve).toHaveBeenCalledWith(expect.objectContaining({ issueId: labeled.id }));
   });
 
   it('does not fire a due retry when the per-state cap for that state is full', async () => {
@@ -268,7 +314,7 @@ describe('OrchestratorLoop retry concurrency gate', () => {
       tracker: stubTracker([blocking, retrying]),
       repo,
       workspaces: new WorkspaceManager('/tmp/symphony-loop-test'),
-      config: resolveConfig(wf),
+      config: resolveConfig(wf, {}, makeTestRepos()),
       log: pino({ level: 'silent' }),
     });
     loop.registerActive(fakeHandle(blocking.id));

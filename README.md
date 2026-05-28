@@ -108,26 +108,33 @@ The worker loads it via `dotenv` in `apps/worker/src/index.ts`; the dashboard
 loads it via `loadEnvConfig` in `apps/dashboard/next.config.mjs`. The dashboard
 uses `DATABASE_URL` server-side only — it never lands in the browser bundle.
 
-### Retargeting at a different repo / Linear team
+### Target repos (`repos.md`)
 
-Symphony is repo-agnostic. The common case (new repo + new Linear team in the same shape as the old one) is an `.env.local` edit only — `WORKFLOW.md` reads the values via `${VAR}` interpolation.
+Symphony routes each Linear issue to a target repo via a `repo:<name>` label. The registry of available targets lives in `repos.md` at the worker root; the worker exits at startup if it's missing.
 
-**`.env.local`**
+```sh
+cp repos.md.example repos.md
+# edit entries for your repos (name, repo_url, install_cmd, optional env)
+```
 
-| Field | Change to |
+Per-entry fields:
+
+| Field | Purpose |
 |---|---|
-| `REPO_URL` | The new repo's git URL — `after_create` clones from this. |
-| `LINEAR_API_KEY` | Only if the new team is in a different Linear workspace than the previous one. |
-| `SYMPHONY_LINEAR_WORKSPACE` | The new Linear workspace slug (`linear.app/<slug>/...`). Used by the dashboard to render "linear ↗" links. Leave blank to hide the link. |
-| `SYMPHONY_TRACKER_PREFIX` | The new team's issue prefix (e.g. `PB-`). **Required when the API key has access to multiple teams in one workspace** — otherwise the worker picks up every team's issues. Leave blank when the workspace has only one team. |
-| `SYMPHONY_INSTALL_CMD` | Install command run by `after_create` (e.g. `npm ci`, `pnpm install --frozen-lockfile`, `yarn install --frozen-lockfile`). Leave blank to default to `npm ci`. Set to `:` (bash no-op) if the repo isn't a Node project. |
+| `name` | Kebab-case slug — doubles as the routing label (`repo:<name>`) unless `label` overrides. |
+| `repo_url` | Git URL passed to `after_create` as `$REPO_URL`. |
+| `install_cmd` | Bash run in `after_create` (e.g. `npm ci`, `pnpm install --frozen-lockfile`). `$VAR` is expanded by bash at hook time. |
+| `agent_backend` | Optional — `claude` or `codex`. Defaults to `agent.backend` in WORKFLOW.md. |
+| `label` | Optional override for the routing label (defaults to `repo:<name>`). |
+| `env` | Optional map merged into hook + adapter env. `${VAR}` is interpolated from process.env at load time (use this for secrets defined in `.env.local`). |
+
+Issues with no `repo:*` label are silently ineligible — they stay in their current state and are never dispatched.
 
 Edit **`WORKFLOW.md`** only when the new team's shape differs from the defaults:
 
 | Field | Change to |
 |---|---|
 | `tracker.active_states` / `tracker.terminal_states` | Only if the new team's Linear states differ. The `Status routing` table in the prompt body assumes `Todo`, `In Progress`, `Rework`, `Merging`, `In Review`, `Done` exist — if any are missing, either add them to the team in Linear or trim the routing table. |
-| `hooks.after_create` | Only if the install step needs more than swapping the command (e.g. extra setup steps); for a plain package-manager swap, set `SYMPHONY_INSTALL_CMD` instead. |
 | `claude.allowed_tools` | Match the package-manager / language tooling the agent will need (`Bash(npm *)` vs `Bash(pnpm *)`, `Bash(cargo *)`, `Bash(uv *)`, etc.). |
 
 The Mustache-templated prompt body below the frontmatter is repo-neutral and usually doesn't need editing.

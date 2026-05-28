@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { type Issue, formatError } from '@symphony/shared';
+import { type AgentBackend, type Issue, type RepoEntry, formatError } from '@symphony/shared';
 import type { Logger } from 'pino';
 import { mapTurnEvent } from '../agent/events.js';
 import { AgentRunner, TurnTimeoutError } from '../agent/runner.js';
@@ -62,9 +62,27 @@ export function dispatchRun(deps: DispatchDeps, issue: Issue, run: RunRow): Disp
 
   const done = (async () => {
     try {
+      // The orchestrator's eligibility filter already drops issues that don't
+      // resolve to a repo, so by the time we get here we expect a match. The
+      // throw guards against future refactors that reorder the filter — we'd
+      // rather crash the dispatch than clone the wrong target.
+      const repoEntry = config.resolveRepoForIssue(issue);
+      if (!repoEntry) {
+        throw new Error(
+          `dispatch invariant violated: issue ${issue.identifier} has no matching repo entry (labels: ${issue.labels.join(', ') || 'none'})`,
+        );
+      }
+      const repoEnv = buildRepoEnv(repoEntry);
+
       const ws = await workspaces.createOrReuse(issue.identifier);
       log.info(
-        { runId: run.id, ws: ws.path, createdNow: ws.createdNow, needsInit: ws.needsInit },
+        {
+          runId: run.id,
+          ws: ws.path,
+          createdNow: ws.createdNow,
+          needsInit: ws.needsInit,
+          repo: repoEntry.name,
+        },
         'workspace ready',
       );
 
@@ -75,7 +93,7 @@ export function dispatchRun(deps: DispatchDeps, issue: Issue, run: RunRow): Disp
             'after_create',
             hookScript,
             { issue, workspacePath: ws.path, runNumber: run.run_number },
-            { timeoutMs: config.hookTimeoutMs() },
+            { timeoutMs: config.hookTimeoutMs(), extraEnv: repoEnv },
           );
           await recordHook(deps, run.id, 'after_create', r);
           if (r.exitCode !== 0) {
@@ -118,7 +136,7 @@ export function dispatchRun(deps: DispatchDeps, issue: Issue, run: RunRow): Disp
           'before_run',
           beforeRun,
           { issue, workspacePath: ws.path, runNumber: run.run_number },
-          { timeoutMs: config.hookTimeoutMs() },
+          { timeoutMs: config.hookTimeoutMs(), extraEnv: repoEnv },
         );
         await recordHook(deps, run.id, 'before_run', r);
         if (r.exitCode !== 0) {
@@ -130,22 +148,28 @@ export function dispatchRun(deps: DispatchDeps, issue: Issue, run: RunRow): Disp
       const retryCtx = await buildRetryContext(repo, issue.id, run);
       if (retryCtx) prompt = appendRetryContext(prompt, retryCtx);
 
-      const backend = config.agentBackend();
+      // Repo entry may flip the backend per issue.
+      const backend: AgentBackend = repoEntry.agent_backend ?? config.agentBackend();
       // Claude supports session pinning via --session-id; pre-generate a uuid
       // so live_sessions.thread_id is known before any events land and
       // `attach` can resume the same session.
       const preSessionId = backend === 'claude' ? randomUUID() : undefined;
 
+      const adapterEnv: Record<string, string> = {
+        ...(backend === 'claude' ? buildClaudeEnv(config) : {}),
+        ...repoEnv,
+      };
+
       runner = new AgentRunner({
-        command: config.agentCommand(),
+        command: config.agentCommandForBackend(backend),
         cwd: ws.path,
         approvalPolicy: config.workflow().frontMatter.codex.approval_policy,
         threadSandbox: config.workflow().frontMatter.codex.thread_sandbox,
         turnSandboxPolicy: config.workflow().frontMatter.codex.turn_sandbox_policy,
         networkAccess: config.workflow().frontMatter.codex.network_access,
-        turnTimeoutMs: config.turnTimeoutMs(),
+        turnTimeoutMs: config.turnTimeoutMsForBackend(backend),
         sessionId: preSessionId,
-        adapterEnv: backend === 'claude' ? buildClaudeEnv(config) : undefined,
+        adapterEnv: Object.keys(adapterEnv).length > 0 ? adapterEnv : undefined,
         log: (msg, ctx) => log.debug({ ...ctx, runId: run.id }, msg),
         onSpawn: (pid) => repo.setWorkerPid(run.id, pid),
         onEvent: async (ev) => {
@@ -210,7 +234,7 @@ export function dispatchRun(deps: DispatchDeps, issue: Issue, run: RunRow): Disp
           'after_run',
           afterRun,
           { issue, workspacePath: ws.path, runNumber: run.run_number },
-          { timeoutMs: config.hookTimeoutMs() },
+          { timeoutMs: config.hookTimeoutMs(), extraEnv: repoEnv },
         );
         await recordHook(deps, run.id, 'after_run', r);
         if (r.exitCode !== 0) {
@@ -386,6 +410,15 @@ function buildClaudeEnv(config: ResolvedConfig): Record<string, string> {
   }
   if (c.add_dirs.length > 0) {
     env.SYMPHONY_CLAUDE_ADD_DIRS = c.add_dirs.join(':');
+  }
+  return env;
+}
+
+function buildRepoEnv(entry: RepoEntry): Record<string, string> {
+  const env: Record<string, string> = { REPO_URL: entry.repo_url };
+  if (entry.install_cmd) env.SYMPHONY_INSTALL_CMD = entry.install_cmd;
+  if (entry.env) {
+    for (const [k, v] of Object.entries(entry.env)) env[k] = v;
   }
   return env;
 }

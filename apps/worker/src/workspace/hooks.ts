@@ -27,6 +27,8 @@ const BLOCKED_ENV = new Set(['DATABASE_URL', 'TEST_DATABASE_URL', 'LINEAR_API_KE
  *
  * - cwd is the workspace path; never the worker's cwd.
  * - secrets are stripped from env before spawning.
+ * - `extraEnv` (per-repo env from repos.md) is layered after the strip, so it
+ *   cannot resurrect BLOCKED_ENV keys.
  * - stdout/stderr are captured but only the stderr tail is returned.
  * - timeout enforced via execa; SIGTERM then SIGKILL.
  */
@@ -34,10 +36,16 @@ export async function runHook(
   hook: HookName,
   script: string,
   env: HookEnv,
-  options: { timeoutMs: number },
+  options: { timeoutMs: number; extraEnv?: Record<string, string> },
 ): Promise<HookResult> {
   const start = Date.now();
   const childEnv = filterEnv(process.env);
+  if (options.extraEnv) {
+    for (const [k, v] of Object.entries(options.extraEnv)) {
+      if (BLOCKED_ENV.has(k)) continue;
+      childEnv[k] = v;
+    }
+  }
   childEnv.SYMPHONY_HOOK = hook;
   childEnv.ISSUE_ID = env.issue.id;
   childEnv.ISSUE_IDENTIFIER = env.issue.identifier;

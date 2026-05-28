@@ -71,9 +71,12 @@ describe('WorkflowFrontMatter', () => {
     expect(withoutPrefix.tracker.identifier_prefix).toBeUndefined();
   });
 
-  it('parses optional project_id when set, requires UUID shape, and leaves it undefined when omitted', () => {
+  it('normalizes project_id to a string[] from single UUID, CSV string, or YAML array', () => {
     const projectId = '11111111-1111-4111-8111-111111111111';
-    const withProject = WorkflowFrontMatter.parse({
+    const second = '22222222-2222-4222-8222-222222222222';
+
+    // Legacy single-UUID string normalizes to a one-element array.
+    const single = WorkflowFrontMatter.parse({
       tracker: {
         kind: 'linear',
         api_key: 'k',
@@ -82,9 +85,33 @@ describe('WorkflowFrontMatter', () => {
         project_id: projectId,
       },
     });
-    expect(withProject.tracker.project_id).toBe(projectId);
+    expect(single.tracker.project_id).toEqual([projectId]);
 
-    const withoutProject = WorkflowFrontMatter.parse({
+    // CSV string (env-var interpolation form) splits into an array.
+    const csv = WorkflowFrontMatter.parse({
+      tracker: {
+        kind: 'linear',
+        api_key: 'k',
+        active_states: ['todo'],
+        terminal_states: ['done'],
+        project_id: `${projectId}, ${second}`,
+      },
+    });
+    expect(csv.tracker.project_id).toEqual([projectId, second]);
+
+    // YAML array passes through.
+    const arr = WorkflowFrontMatter.parse({
+      tracker: {
+        kind: 'linear',
+        api_key: 'k',
+        active_states: ['todo'],
+        terminal_states: ['done'],
+        project_id: [projectId, second],
+      },
+    });
+    expect(arr.tracker.project_id).toEqual([projectId, second]);
+
+    const without = WorkflowFrontMatter.parse({
       tracker: {
         kind: 'linear',
         api_key: 'k',
@@ -92,7 +119,7 @@ describe('WorkflowFrontMatter', () => {
         terminal_states: ['done'],
       },
     });
-    expect(withoutProject.tracker.project_id).toBeUndefined();
+    expect(without.tracker.project_id).toBeUndefined();
 
     expect(() =>
       WorkflowFrontMatter.parse({
@@ -102,6 +129,19 @@ describe('WorkflowFrontMatter', () => {
           active_states: ['todo'],
           terminal_states: ['done'],
           project_id: 'not-a-uuid',
+        },
+      }),
+    ).toThrow();
+
+    // One bad UUID in a CSV string fails the whole array.
+    expect(() =>
+      WorkflowFrontMatter.parse({
+        tracker: {
+          kind: 'linear',
+          api_key: 'k',
+          active_states: ['todo'],
+          terminal_states: ['done'],
+          project_id: `${projectId},not-a-uuid`,
         },
       }),
     ).toThrow();

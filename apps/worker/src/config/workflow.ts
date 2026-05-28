@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { homedir, tmpdir } from 'node:os';
+import { homedir } from 'node:os';
 import path from 'node:path';
 import { type ParsedWorkflow, WorkflowFrontMatter } from '@symphony/shared';
 import matter from 'gray-matter';
+import { expandString, interpolateEnv } from './interpolate.js';
 
 /**
  * Read WORKFLOW.md from disk, parse front matter, expand env vars and ~ in
@@ -78,52 +79,6 @@ function restoreHooks(
   for (const [k, v] of Object.entries(rawHooks)) {
     if (typeof v === 'string') (hooks as Record<string, unknown>)[k] = v;
   }
-}
-
-/**
- * Recursively replace `${VAR}` and `$VAR` tokens in any string value with
- * `process.env[VAR]`. Missing vars are left as the empty string. TMPDIR has
- * a built-in fallback to `os.tmpdir()` because the spec defaults workspace.root
- * to system temp and we need that to resolve even when the env var is unset
- * (e.g. on Linux the variable is conventionally not exported).
- */
-function interpolateEnv(value: unknown): unknown {
-  if (typeof value === 'string') return expandString(value);
-  if (Array.isArray(value)) return value.map(interpolateEnv);
-  if (value && typeof value === 'object') {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value)) out[k] = interpolateEnv(v);
-    return out;
-  }
-  return value;
-}
-
-const ENV_FALLBACKS: Readonly<Record<string, () => string>> = {
-  TMPDIR: () => tmpdir(),
-};
-
-// Supports `${VAR}`, `${VAR:-default}` (bash semantics: default applies when
-// VAR is unset OR empty), and bare `$VAR`. Nested expansion in defaults is not
-// supported — keep defaults to literal scalars.
-const ENV_PATTERN = /\$\{([A-Z_][A-Z0-9_]*)(?::-([^}]*))?\}|\$([A-Z_][A-Z0-9_]*)/g;
-function expandString(s: string): string {
-  return s.replace(
-    ENV_PATTERN,
-    (
-      _,
-      braced: string | undefined,
-      bracedDefault: string | undefined,
-      bare: string | undefined,
-    ) => {
-      const name = braced ?? bare;
-      if (!name) return '';
-      const fromEnv = process.env[name];
-      if (fromEnv !== undefined && fromEnv !== '') return fromEnv;
-      if (bracedDefault !== undefined) return bracedDefault;
-      const fallback = ENV_FALLBACKS[name];
-      return fallback ? fallback() : '';
-    },
-  );
 }
 
 /**

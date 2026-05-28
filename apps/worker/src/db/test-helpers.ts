@@ -1,4 +1,5 @@
-import type { Issue, ParsedWorkflow } from '@symphony/shared';
+import type { Issue, ParsedRepos, ParsedWorkflow } from '@symphony/shared';
+import { parseReposSource } from '../config/repos.js';
 
 export function makeTestIssue(overrides: Partial<Issue> & Pick<Issue, 'id' | 'identifier'>): Issue {
   return {
@@ -7,11 +8,26 @@ export function makeTestIssue(overrides: Partial<Issue> & Pick<Issue, 'id' | 'id
     priority: 1,
     state: 'todo',
     branch: null,
-    labels: [],
+    // Default to the test repo's routing label so issues are eligible for
+    // dispatch in tests that exercise the orchestrator loop. Tests asserting
+    // on unlabeled-issue behavior override this with `labels: []`.
+    labels: ['repo:test'],
     blockers: [],
     pr_urls: [],
     ...overrides,
   };
+}
+
+/**
+ * Minimal repos.md content used in tests. Matches the default label on
+ * `makeTestIssue` so an unmodified test issue dispatches cleanly.
+ */
+export function makeTestRepos(): ParsedRepos {
+  return parseReposSource(`---
+repos:
+  - name: test
+    repo_url: https://example.com/test
+---`);
 }
 
 export function makeTestWorkflow(opts: {
@@ -24,7 +40,9 @@ export function makeTestWorkflow(opts: {
   terminalStates?: string[];
   identifierPrefix?: string;
   projectId?: string;
+  projectIds?: string[];
 }): ParsedWorkflow {
+  const projectIds = opts.projectIds ?? (opts.projectId ? [opts.projectId] : undefined);
   return {
     sourceHash: opts.sourceHash,
     promptTemplate: 'do work on {{identifier}}',
@@ -36,7 +54,9 @@ export function makeTestWorkflow(opts: {
         active_states: opts.activeStates ?? ['todo'],
         terminal_states: opts.terminalStates ?? ['done'],
         ...(opts.identifierPrefix ? { identifier_prefix: opts.identifierPrefix } : {}),
-        ...(opts.projectId ? { project_id: opts.projectId } : {}),
+        ...(projectIds && projectIds.length > 0
+          ? { project_id: projectIds as [string, ...string[]] }
+          : {}),
       },
       polling: { interval_ms: 30000 },
       workspace: { root: opts.wsRoot ?? '/tmp/symphony-tests' },

@@ -1,4 +1,12 @@
-import type { AgentBackend, ClaudeConfig, ParsedWorkflow } from '@symphony/shared';
+import type {
+  AgentBackend,
+  ClaudeConfig,
+  Issue,
+  ParsedRepos,
+  ParsedWorkflow,
+  RepoEntry,
+} from '@symphony/shared';
+import { resolveRepoForIssue as matchRepo } from './repos.js';
 
 /**
  * Typed view over a parsed workflow with explicit overrides applied on top.
@@ -21,9 +29,14 @@ export interface ResolvedConfig {
   terminalStates(): string[];
   /** Optional identifier prefix (e.g. "PB-"). When set, the tracker drops issues whose identifier doesn't start with it. */
   identifierPrefix(): string | null;
-  /** Optional Linear project UUID. When set, the tracker only fetches issues belonging to this project. */
-  projectId(): string | null;
-  /** Selected agent backend. */
+  /**
+   * Linear project UUIDs the tracker is restricted to. Empty array = no
+   * project filter (worker sees every issue allowed by the team / prefix
+   * filters). Accepts a single UUID, a CSV string, or a YAML array in
+   * WORKFLOW.md — see `TrackerConfig.project_id`.
+   */
+  projectIds(): string[];
+  /** Selected agent backend (workflow default; repos may override per-issue). */
   agentBackend(): AgentBackend;
   /** Command to spawn for the selected backend's adapter. */
   agentCommand(): string;
@@ -31,10 +44,24 @@ export interface ResolvedConfig {
   claudeCommand(): string;
   /** Turn timeout for the selected backend. */
   turnTimeoutMs(): number;
+  /** Per-backend turn timeout, used when a repo overrides the workflow backend. */
+  turnTimeoutMsForBackend(backend: AgentBackend): number;
+  /** Per-backend adapter command, used when a repo overrides the workflow backend. */
+  agentCommandForBackend(backend: AgentBackend): string;
   /** Full claude block (used by dispatch to build adapter flags). */
   claude(): ClaudeConfig;
   promptTemplate(): string;
   sourceHash(): string;
+  /** Stable hash over the repos.md source. */
+  reposHash(): string;
+  /** Parsed repos.md (always present — repos.md is required at startup). */
+  repos(): ParsedRepos;
+  /**
+   * Resolve the target repo for an issue. Returns null when no `repo:*` label
+   * on the issue matches a configured entry; the orchestrator treats null as
+   * "ineligible, skip silently".
+   */
+  resolveRepoForIssue(issue: Issue): RepoEntry | null;
   workflow(): ParsedWorkflow;
   /**
    * Frozen view of the current config — captured at call time. Static configs
@@ -66,8 +93,16 @@ export interface ConfigOverrides {
 
 export function resolveConfig(
   workflow: ParsedWorkflow,
-  overrides: ConfigOverrides = {},
+  overrides: ConfigOverrides,
+  repos: ParsedRepos,
 ): ResolvedConfig {
+  const commandForBackend = (backend: AgentBackend): string =>
+    backend === 'claude' ? workflow.frontMatter.claude.command : workflow.frontMatter.codex.command;
+  const timeoutForBackend = (backend: AgentBackend): number =>
+    backend === 'claude'
+      ? workflow.frontMatter.claude.turn_timeout_ms
+      : workflow.frontMatter.codex.turn_timeout_ms;
+
   const rc: ResolvedConfig = {
     pollIntervalMs: () => overrides.pollIntervalMs ?? workflow.frontMatter.polling.interval_ms,
     maxConcurrentAgents: () =>
@@ -81,21 +116,20 @@ export function resolveConfig(
     activeStates: () => workflow.frontMatter.tracker.active_states.map((s) => s.toLowerCase()),
     terminalStates: () => workflow.frontMatter.tracker.terminal_states.map((s) => s.toLowerCase()),
     identifierPrefix: () => workflow.frontMatter.tracker.identifier_prefix ?? null,
-    projectId: () => workflow.frontMatter.tracker.project_id ?? null,
+    projectIds: () => workflow.frontMatter.tracker.project_id ?? [],
     agentBackend: () => workflow.frontMatter.agent.backend,
-    agentCommand: () =>
-      workflow.frontMatter.agent.backend === 'claude'
-        ? workflow.frontMatter.claude.command
-        : workflow.frontMatter.codex.command,
+    agentCommand: () => commandForBackend(workflow.frontMatter.agent.backend),
     codexCommand: () => workflow.frontMatter.codex.command,
     claudeCommand: () => workflow.frontMatter.claude.command,
-    turnTimeoutMs: () =>
-      workflow.frontMatter.agent.backend === 'claude'
-        ? workflow.frontMatter.claude.turn_timeout_ms
-        : workflow.frontMatter.codex.turn_timeout_ms,
+    turnTimeoutMs: () => timeoutForBackend(workflow.frontMatter.agent.backend),
+    turnTimeoutMsForBackend: timeoutForBackend,
+    agentCommandForBackend: commandForBackend,
     claude: () => workflow.frontMatter.claude,
     promptTemplate: () => workflow.promptTemplate,
     sourceHash: () => workflow.sourceHash,
+    reposHash: () => repos.sourceHash,
+    repos: () => repos,
+    resolveRepoForIssue: (issue) => matchRepo(repos, issue),
     workflow: () => workflow,
     snapshot: () => rc,
   };

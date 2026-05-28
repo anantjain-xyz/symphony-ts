@@ -274,16 +274,6 @@ export function dispatchRun(deps: DispatchDeps, issue: Issue, run: RunRow): Disp
         { runId: run.id, err: formatted },
         isTimeout ? 'turn timed out' : 'dispatch failed',
       );
-      if (runner) {
-        try {
-          await runner.kill();
-        } catch (killErr) {
-          log.warn(
-            { runId: run.id, err: formatError(killErr) },
-            'runner kill during dispatch error cleanup failed',
-          );
-        }
-      }
       await bestEffort(repo.deleteLiveSession(run.id), log, 'deleteLiveSession on dispatch error', {
         runId: run.id,
       });
@@ -297,6 +287,18 @@ export function dispatchRun(deps: DispatchDeps, issue: Issue, run: RunRow): Disp
         await scheduleRetry(deps, issue.id, run.run_number, 'turn_timeout', formatted);
       } else {
         await fail(deps, run.id, issue, run.run_number, 'dispatch_error', formatted);
+      }
+    } finally {
+      // The adapter is expected to self-exit when its underlying child does
+      // (codex / cbcode / claude.exe), but lingering MCP sockets, hook
+      // subprocesses, or unflushed stdio can leave the whole tree parked —
+      // detached from any active run. Always reap so the process tree dies
+      // with the dispatch. kill() is idempotent and no-op when the child
+      // has already exited.
+      try {
+        if (runner) await runner.kill();
+      } catch {
+        /* ignore */
       }
     }
   })();

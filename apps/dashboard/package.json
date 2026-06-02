@@ -32,19 +32,19 @@
     "test": "echo no-tests"
   },
   "dependencies": {
-    "@next/env": "^16.2.3",
+    "@next/env": "^16.2.7",
     "@symphony/shared": "workspace:*",
     "drizzle-orm": "^0.45.2",
     "next": "^15.5.18",
     "postgres": "^3.4.9",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
     "react-markdown": "^9.0.1",
     "remark-gfm": "^4.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
-    "@types/react": "^19.0.2",
+    "@types/react": "^19.2.16",
     "@types/react-dom": "^19.0.2",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.5.0",

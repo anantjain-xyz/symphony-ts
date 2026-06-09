@@ -458,6 +458,18 @@ export class Repo {
   }
 
   // ---- retry_queue ----
+  /**
+   * Schedule a retry for `runNumber` — the *next* run number to attempt for the
+   * issue. Only valid while that run hasn't been reserved yet: if a `runs` row
+   * with `run_number >= input.runNumber` already exists, the issue has moved on
+   * (a concurrent worker, or a tick that re-dispatched it in the window between
+   * `finishRun` and this call) and the retry would shadow the live run —
+   * surfacing as an issue sitting in both the active list and the retry queue.
+   * The guard is an atomic `INSERT ... SELECT ... WHERE NOT EXISTS` rather than
+   * a read-then-insert so the check can't race the very dispatch it excludes.
+   * The conflict branch likewise refuses to downgrade an already-queued retry
+   * to an older run number.
+   */
   async scheduleRetry(input: {
     issueId: string;
     runNumber: number;
@@ -465,24 +477,22 @@ export class Repo {
     errorClass: string | null;
     errorMessage: string | null;
   }): Promise<void> {
-    await this.db
-      .insert(retryQueue)
-      .values({
-        issue_id: input.issueId,
-        run_number: input.runNumber,
-        due_at: input.dueAt.toISOString(),
-        error_class: input.errorClass,
-        error_message: input.errorMessage,
-      })
-      .onConflictDoUpdate({
-        target: retryQueue.issue_id,
-        set: {
-          run_number: sql`excluded.run_number`,
-          due_at: sql`excluded.due_at`,
-          error_class: sql`excluded.error_class`,
-          error_message: sql`excluded.error_message`,
-        },
-      });
+    await this.db.execute(sql`
+      INSERT INTO ${retryQueue} (issue_id, run_number, due_at, error_class, error_message)
+      SELECT ${input.issueId}, ${input.runNumber}, ${input.dueAt.toISOString()},
+             ${input.errorClass}, ${input.errorMessage}
+      WHERE NOT EXISTS (
+        SELECT 1 FROM ${runs}
+        WHERE ${runs.issue_id} = ${input.issueId}
+          AND ${runs.run_number} >= ${input.runNumber}
+      )
+      ON CONFLICT (issue_id) DO UPDATE SET
+        run_number = excluded.run_number,
+        due_at = excluded.due_at,
+        error_class = excluded.error_class,
+        error_message = excluded.error_message
+      WHERE excluded.run_number > ${retryQueue}.run_number
+    `);
   }
 
   async dueRetries(opts?: { issueIds?: string[] }): Promise<RetryQueueRow[]> {

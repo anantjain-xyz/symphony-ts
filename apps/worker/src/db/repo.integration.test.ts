@@ -140,6 +140,87 @@ d('Repo integration', () => {
     expect(dueAfter.length).toBe(0);
   });
 
+  it('scheduleRetry: skips when a run for that number already exists (no shadow row)', async () => {
+    const issueId = scope.newIssueId();
+    await repo.upsertIssues([makeTestIssue({ id: issueId, identifier: scope.newIdentifier() })]);
+
+    // Simulate the issue having been re-dispatched as run #3 (now running)
+    // before a straggling fail() from run #2 tries to schedule its retry. The
+    // retry points at run #3, which already exists — scheduling it would leave
+    // the issue in both the active list and the retry queue.
+    const run = await repo.tryReserveRun({
+      issueId,
+      runNumber: 3,
+      workspacePath: '/tmp/symphony-tests/shadow',
+    });
+    await repo.markRunning(run!.id);
+
+    await repo.scheduleRetry({
+      issueId,
+      runNumber: 3,
+      dueAt: new Date(Date.now() - 1000),
+      errorClass: 'api_error',
+      errorMessage: 'late retry',
+    });
+
+    const mine = scope.issueIds;
+    const due = (await repo.dueRetries()).filter((r) => mine.has(r.issue_id));
+    expect(due).toEqual([]);
+  });
+
+  it('scheduleRetry: advances an existing retry to a newer run number', async () => {
+    const issueId = scope.newIssueId();
+    await repo.upsertIssues([makeTestIssue({ id: issueId, identifier: scope.newIdentifier() })]);
+
+    await repo.scheduleRetry({
+      issueId,
+      runNumber: 2,
+      dueAt: new Date(Date.now() - 1000),
+      errorClass: null,
+      errorMessage: 'first',
+    });
+    await repo.scheduleRetry({
+      issueId,
+      runNumber: 3,
+      dueAt: new Date(Date.now() - 1000),
+      errorClass: null,
+      errorMessage: 'second',
+    });
+
+    const mine = scope.issueIds;
+    const due = (await repo.dueRetries()).filter((r) => mine.has(r.issue_id));
+    expect(due).toHaveLength(1);
+    expect(due[0]!.run_number).toBe(3);
+    expect(due[0]!.error_message).toBe('second');
+  });
+
+  it('scheduleRetry: does not downgrade a queued retry to an older run number', async () => {
+    const issueId = scope.newIssueId();
+    await repo.upsertIssues([makeTestIssue({ id: issueId, identifier: scope.newIdentifier() })]);
+
+    await repo.scheduleRetry({
+      issueId,
+      runNumber: 5,
+      dueAt: new Date(Date.now() - 1000),
+      errorClass: null,
+      errorMessage: 'newer',
+    });
+    // A straggler for an older run number must not clobber the queued retry.
+    await repo.scheduleRetry({
+      issueId,
+      runNumber: 3,
+      dueAt: new Date(Date.now() - 1000),
+      errorClass: null,
+      errorMessage: 'older',
+    });
+
+    const mine = scope.issueIds;
+    const due = (await repo.dueRetries()).filter((r) => mine.has(r.issue_id));
+    expect(due).toHaveLength(1);
+    expect(due[0]!.run_number).toBe(5);
+    expect(due[0]!.error_message).toBe('newer');
+  });
+
   it('priorRun returns the last finished run for the same issue', async () => {
     const issueId = scope.newIssueId();
     await repo.upsertIssues([makeTestIssue({ id: issueId, identifier: scope.newIdentifier() })]);

@@ -64,7 +64,7 @@ export function RunRow({
 function RunCounter({ n }: { n: number }) {
   return (
     <span className="inline-flex items-baseline gap-1.5">
-      <span className="font-display text-[18px] tabular text-ink-0 leading-none">#{n}</span>
+      <span className="text-[18px] font-semibold tabular text-ink-0 leading-none">#{n}</span>
       <span className="smallcaps text-[9px] text-ink-3">run</span>
     </span>
   );

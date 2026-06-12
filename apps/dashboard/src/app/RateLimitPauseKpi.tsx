@@ -56,7 +56,7 @@ export function RateLimitPauseKpi({ source, resetAt }: Props) {
         paused
         <span className="h-1 w-1 rounded-full bg-danger dot-live" aria-hidden />
       </div>
-      <div className="font-display text-[32px] tabular leading-none mt-1 tracking-tight text-danger">
+      <div className="text-[22px] font-semibold tabular leading-none mt-1 text-danger">
         {remainingMs !== null && remainingMs > 0 ? formatRemaining(remainingMs) : 'now'}
       </div>
       <div

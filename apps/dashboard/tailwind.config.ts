@@ -6,7 +6,6 @@ export default {
     extend: {
       fontFamily: {
         sans: ['var(--font-sans)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
-        display: ['var(--font-display)', 'ui-serif', 'Georgia', 'serif'],
         mono: ['var(--font-mono)', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
       },
       colors: {
@@ -43,13 +42,9 @@ export default {
           DEFAULT: 'var(--info)',
           soft: 'var(--info-soft)',
         },
-        think: {
-          DEFAULT: 'var(--think)',
-          soft: 'var(--think-soft)',
-        },
       },
-      letterSpacing: {
-        micro: '0.16em',
+      borderRadius: {
+        DEFAULT: '0.5rem',
       },
       fontSize: {
         '2xs': ['10px', { lineHeight: '14px' }],

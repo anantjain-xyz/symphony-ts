@@ -183,9 +183,7 @@ function Header({ issue, lastRun }: { issue: Issue; lastRun: Run | undefined }) 
           </span>
         )}
       </div>
-      <h1 className="font-display text-[34px] leading-[1.08] text-ink-0 tracking-[-0.01em] font-medium">
-        {issue.title}
-      </h1>
+      <h1 className="text-[26px] leading-[1.1] text-ink-0 font-semibold">{issue.title}</h1>
       <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 smallcaps text-[10px] text-ink-3">
         <Stat label="last seen" value={<RelativeTime iso={issue.last_seen_at} />} />
         {lastRun && (
@@ -218,7 +216,7 @@ function RunCard({ run, tokens }: { run: Run; tokens: number }) {
     >
       <div className="grid grid-cols-[88px_180px_minmax(0,1fr)_auto] gap-4 px-4 py-3 items-center">
         <div className="flex items-baseline gap-2">
-          <span className="font-display text-[22px] tabular text-ink-0 leading-none">
+          <span className="text-[22px] font-semibold tabular text-ink-0 leading-none">
             {run.run_number}
           </span>
           <span className="smallcaps text-[9px] text-ink-3">run</span>
@@ -300,12 +298,12 @@ const descriptionMarkdown: Components = {
   ),
   li: ({ children }) => <li className="pl-1">{children}</li>,
   h1: ({ children }) => (
-    <h1 className="font-display text-[20px] leading-[1.25] text-ink-0 tracking-[-0.005em] mt-6 mb-3 first:mt-0">
+    <h1 className="text-[20px] font-semibold leading-[1.25] text-ink-0 mt-6 mb-3 first:mt-0">
       {children}
     </h1>
   ),
   h2: ({ children }) => (
-    <h2 className="font-display text-[17px] leading-[1.3] text-ink-0 tracking-[-0.005em] mt-6 mb-2 first:mt-0">
+    <h2 className="text-[17px] font-semibold leading-[1.3] text-ink-0 mt-6 mb-2 first:mt-0">
       {children}
     </h2>
   ),
@@ -366,7 +364,7 @@ function IssueStateBadge({ state }: { state: string }) {
   const conf = norm.includes('progress')
     ? { color: 'text-info', dot: 'bg-info dot-live' }
     : norm.includes('review')
-      ? { color: 'text-think', dot: 'bg-think' }
+      ? { color: 'text-info', dot: 'bg-info' }
       : norm.includes('done') || norm.includes('complete')
         ? { color: 'text-success', dot: 'bg-success' }
         : norm.includes('cancel') || norm.includes('block')
@@ -411,7 +409,7 @@ function Telemetry({
     <div>
       <div className="smallcaps text-[10px] text-ink-3">{label}</div>
       <div
-        className={`font-display text-[26px] tracking-tight tabular leading-none mt-1 ${valueClass ?? 'text-ink-0'}`}
+        className={`text-[22px] font-semibold tabular leading-none mt-1 ${valueClass ?? 'text-ink-0'}`}
       >
         {value}
       </div>
@@ -432,7 +430,7 @@ function Stat({ label, value }: { label: string; value: React.ReactNode }) {
 
 function EmptyRuns() {
   return (
-    <div className="rounded border border-dashed border-hairline px-4 py-8 text-[13px] text-ink-3 italic font-display">
+    <div className="rounded border border-dashed border-hairline px-4 py-8 text-[13px] text-ink-3">
       No runs for this issue yet.
     </div>
   );

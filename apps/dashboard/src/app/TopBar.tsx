@@ -22,9 +22,9 @@ export function TopBar() {
         <span
           className="block w-2 h-2 rounded-full bg-signal"
           aria-hidden
-          style={{ boxShadow: '0 0 12px rgba(232,163,61,0.5)' }}
+          style={{ boxShadow: '0 0 12px color-mix(in srgb, var(--signal) 50%, transparent)' }}
         />
-        <span className="font-display text-[17px] tracking-tight text-ink-0 group-hover:text-signal transition-colors">
+        <span className="text-[17px] font-semibold text-ink-0 group-hover:text-signal transition-colors">
           Symphony
         </span>
       </Link>

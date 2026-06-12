@@ -347,9 +347,7 @@ function TelemetryBlock({
         {label}
         {live && <span className="h-1 w-1 rounded-full bg-success dot-live" aria-hidden />}
       </div>
-      <div className="font-display text-[26px] tracking-tight tabular text-ink-0 leading-none mt-1">
-        {value}
-      </div>
+      <div className="text-[22px] font-semibold tabular text-ink-0 leading-none mt-1">{value}</div>
       {children}
     </div>
   );
@@ -384,9 +382,7 @@ function EmptyState() {
       <div className="relative h-full flex justify-center">
         <span className="absolute top-2 h-1.5 w-1.5 rounded-full ring-2 ring-surface-0 bg-ink-4" />
       </div>
-      <div className="text-[13px] text-ink-3 italic font-display">
-        Awaiting first event from the agent…
-      </div>
+      <div className="text-[13px] text-ink-3">Awaiting first event from the agent…</div>
     </div>
   );
 }

@@ -6,70 +6,59 @@
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  /* Surfaces */
-  --surface-0: #0a0b0d;
-  --surface-1: #101116;
-  --surface-2: #161821;
-  --surface-3: #1c1f29;
-  --hairline: #232733;
-  --hairline-strong: #2f3441;
+  /* Surfaces — zinc neutral ramp, mirrors symphony-rust dark tokens */
+  --surface-0: hsl(240 10% 4%);
+  --surface-1: hsl(240 8% 7%);
+  --surface-2: hsl(240 6% 12%);
+  --surface-3: hsl(240 5% 16%);
+  --hairline: hsl(240 5% 16%);
+  --hairline-strong: hsl(240 5% 26%);
 
   /* Text */
-  --ink-0: #ece9e1; /* warm paper */
-  --ink-1: #d6d2c8;
-  --ink-2: #98969a;
-  --ink-3: #6b6a70;
-  --ink-4: #46464d;
+  --ink-0: hsl(0 0% 96%);
+  --ink-1: hsl(240 5% 84%);
+  --ink-2: hsl(240 5% 60%);
+  --ink-3: hsl(240 5% 44%);
+  --ink-4: hsl(240 5% 30%);
 
-  /* Signals */
-  --signal: #e8a33d;
-  --signal-soft: rgba(232, 163, 61, 0.14);
-  --success: #6fbf6b;
-  --success-soft: rgba(111, 191, 107, 0.14);
-  --error: #e65d5d;
-  --error-soft: rgba(230, 93, 93, 0.14);
-  --info: #7aa2f7;
-  --info-soft: rgba(122, 162, 247, 0.14);
-  --think: #c39ad6;
-  --think-soft: rgba(195, 154, 214, 0.14);
-
-  /* Background tint behind the page (paper grain) */
-  --tint-warm: rgba(232, 163, 61, 0.06);
-  --tint-cool: rgba(122, 162, 247, 0.05);
+  /* Signals — opaque bg/fg pairs, mirrors symphony-rust badge colors */
+  --signal: hsl(38 70% 68%);
+  --signal-soft: hsl(33 40% 15%);
+  --success: hsl(142 50% 70%);
+  --success-soft: hsl(143 35% 14%);
+  --error: hsl(0 70% 74%);
+  --error-soft: hsl(0 40% 16%);
+  --info: hsl(214 65% 74%);
+  --info-soft: hsl(214 45% 16%);
 }
 
 :root[data-theme="light"] {
   color-scheme: light;
 
-  /* Surfaces — warm paper progression from light to slightly deeper */
-  --surface-0: #faf8f3;
-  --surface-1: #f2efe6;
-  --surface-2: #e8e4d6;
-  --surface-3: #ddd8c6;
-  --hairline: #d6d0bd;
-  --hairline-strong: #b6ad96;
+  /* Surfaces — white with muted zinc grays */
+  --surface-0: hsl(0 0% 100%);
+  --surface-1: hsl(0 0% 100%);
+  --surface-2: hsl(240 5% 96%);
+  --surface-3: hsl(240 5% 94%);
+  --hairline: hsl(240 6% 90%);
+  --hairline-strong: hsl(240 5% 78%);
 
-  /* Text — near-black primary, warm grays */
-  --ink-0: #1a1a1a;
-  --ink-1: #2d2c28;
-  --ink-2: #5b5851;
-  --ink-3: #84807a;
-  --ink-4: #a8a49b;
+  /* Text */
+  --ink-0: hsl(240 10% 9%);
+  --ink-1: hsl(240 6% 20%);
+  --ink-2: hsl(240 4% 46%);
+  --ink-3: hsl(240 4% 60%);
+  --ink-4: hsl(240 5% 72%);
 
-  /* Signals — slightly deepened so they read on light surfaces */
-  --signal: #b87411;
-  --signal-soft: rgba(184, 116, 17, 0.14);
-  --success: #3f8a3b;
-  --success-soft: rgba(63, 138, 59, 0.14);
-  --error: #c43838;
-  --error-soft: rgba(196, 56, 56, 0.14);
-  --info: #3a6dcc;
-  --info-soft: rgba(58, 109, 204, 0.14);
-  --think: #8a5fa6;
-  --think-soft: rgba(138, 95, 166, 0.14);
-
-  --tint-warm: rgba(184, 116, 17, 0.05);
-  --tint-cool: rgba(58, 109, 204, 0.04);
+  /* Signals — deepened so they read on light surfaces */
+  --signal: hsl(30 65% 32%);
+  --signal-soft: hsl(38 60% 94%);
+  --success: hsl(143 55% 28%);
+  --success-soft: hsl(142 45% 94%);
+  --error: hsl(0 60% 42%);
+  --error-soft: hsl(0 60% 96%);
+  --info: hsl(214 55% 36%);
+  --info-soft: hsl(214 60% 96%);
 }
 
 html,
@@ -77,28 +66,13 @@ body {
   background: var(--surface-0);
   color: var(--ink-1);
   font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
-  font-feature-settings: "ss01", "ss02", "cv11";
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   transition:
-    background-color 160ms ease,
-    color 160ms ease;
-}
-
-/* The faint paper grain that sits behind everything. Very subtle. */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  background-image:
-    radial-gradient(1200px 600px at 80% -10%, var(--tint-warm), transparent 60%),
-    radial-gradient(900px 500px at -10% 110%, var(--tint-cool), transparent 60%);
-}
-
-body > * {
-  position: relative;
-  z-index: 1;
+    background-color 120ms ease,
+    color 120ms ease;
 }
 
 /* Tabular numerals for anything we'd care to align in columns */
@@ -111,8 +85,7 @@ body > * {
 /* Micro caps for tiny labels */
 .smallcaps {
   text-transform: uppercase;
-  letter-spacing: 0.16em;
-  font-feature-settings: "cpsp" on;
+  letter-spacing: 0.04em;
 }
 
 /* Scrollbar polish — only for the timeline scrollers */
@@ -160,10 +133,10 @@ body > * {
 @keyframes pulse-dot {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(111, 191, 107, 0.55);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 55%, transparent);
   }
   70% {
-    box-shadow: 0 0 0 6px rgba(111, 191, 107, 0);
+    box-shadow: 0 0 0 6px transparent;
   }
 }
 

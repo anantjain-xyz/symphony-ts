@@ -114,9 +114,7 @@ function Header({
           </span>
         )}
       </div>
-      <h1 className="font-display text-[34px] leading-[1.08] text-ink-0 tracking-[-0.01em] font-medium">
-        {issue?.title ?? '—'}
-      </h1>
+      <h1 className="text-[26px] leading-[1.1] text-ink-0 font-semibold">{issue?.title ?? '—'}</h1>
       <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 smallcaps text-[10px] text-ink-3">
         <Stat label="started" value={<RelativeTime iso={run.started_at} />} />
         {run.ended_at && <Stat label="ended" value={<RelativeTime iso={run.ended_at} />} />}

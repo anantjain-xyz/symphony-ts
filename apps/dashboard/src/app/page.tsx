@@ -149,9 +149,7 @@ export default async function FleetPage() {
           <span className="text-ink-4">/</span>
           <FleetStateBadge allQuiet={allQuiet} runningCount={runningRows.length} />
         </div>
-        <h1 className="font-display text-[34px] leading-[1.08] text-ink-0 tracking-[-0.01em] font-medium">
-          Dashboard
-        </h1>
+        <h1 className="text-[26px] leading-[1.1] text-ink-0 font-semibold">Dashboard</h1>
         <div className="mt-5 grid grid-cols-2 sm:grid-cols-5 gap-x-10 gap-y-4 max-w-3xl">
           {ratePause ? (
             <RateLimitPauseKpi source={ratePause.source} resetAt={ratePause.reset_at} />
@@ -304,7 +302,7 @@ function Section({
         <span className="font-mono text-[12px] text-ink-2 tabular">{count}</span>
       </div>
       {count === 0 ? (
-        <div className="rounded border border-dashed border-hairline px-4 py-6 text-[13px] text-ink-3 italic font-display">
+        <div className="rounded border border-dashed border-hairline px-4 py-6 text-[13px] text-ink-3">
           {empty}
         </div>
       ) : (

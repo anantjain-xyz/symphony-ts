@@ -59,7 +59,7 @@ function IssueStateBadge({ state }: { state: string }) {
   const conf = norm.includes('progress')
     ? { color: 'text-info', dot: 'bg-info dot-live' }
     : norm.includes('review')
-      ? { color: 'text-think', dot: 'bg-think' }
+      ? { color: 'text-info', dot: 'bg-info' }
       : norm.includes('done') || norm.includes('complete') || norm.includes('merg')
         ? { color: 'text-success', dot: 'bg-success' }
         : norm.includes('cancel') || norm.includes('block')

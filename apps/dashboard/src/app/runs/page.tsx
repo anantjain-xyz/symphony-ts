@@ -75,9 +75,7 @@ export default async function RunsListPage({
           <span className="text-ink-4">/</span>
           <span className="smallcaps text-[10px] text-ink-2">all runs</span>
         </div>
-        <h1 className="font-display text-[34px] leading-[1.08] text-ink-0 tracking-[-0.01em] font-medium">
-          Runs
-        </h1>
+        <h1 className="text-[26px] leading-[1.1] text-ink-0 font-semibold">Runs</h1>
       </header>
 
       <ListFilters
@@ -90,7 +88,7 @@ export default async function RunsListPage({
       />
 
       {rows.length === 0 ? (
-        <div className="rounded border border-dashed border-hairline px-4 py-8 text-[13px] text-ink-3 italic font-display">
+        <div className="rounded border border-dashed border-hairline px-4 py-8 text-[13px] text-ink-3">
           No runs match the current filters.
         </div>
       ) : (

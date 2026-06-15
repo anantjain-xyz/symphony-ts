@@ -33,8 +33,8 @@ importers:
   apps/dashboard:
     dependencies:
       '@next/env':
-        specifier: ^16.2.7
-        version: 16.2.7
+        specifier: ^16.2.9
+        version: 16.2.9
       '@symphony/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -776,8 +776,8 @@ packages:
   '@next/env@15.5.18':
     resolution: {integrity: sha512-hAV85Ckd9QR6RvH04MEKwsfLTksvFpO47j9xwtoIuvuPnlwecpSi+uZTtm8HirVbtlI2Fnz//xpcSTjFdyJk+g==}
 
-  '@next/env@16.2.7':
-    resolution: {integrity: sha512-tMJizPlj6ZYpBMMdK8S0LJufrP4QTdR6pcv9KQ/bVETPAmg0j1mlHE9G2c38UyGHxoBapgwuj7XjbGJ2RcDFOg==}
+  '@next/env@16.2.9':
+    resolution: {integrity: sha512-ki5VxxXfzD/9TDe13wyeTKIjQTAwBVpnr8KhRDUr8ltMUq1/NBpWNT5tiPoxiGl+PHM4X2ahSOiPk6iAimIzPg==}
 
   '@next/swc-darwin-arm64@15.5.18':
     resolution: {integrity: sha512-w0WvQf1n+txiwns/9pwIQteCJpZTbxzO2SE0FLcwuD4v0WEh1JPOjdyxWL21XwJsdpx8cFRjyzxzCS/siP7HcQ==}
@@ -3027,7 +3027,7 @@ snapshots:
 
   '@next/env@15.5.18': {}
 
-  '@next/env@16.2.7': {}
+  '@next/env@16.2.9': {}
 
   '@next/swc-darwin-arm64@15.5.18':
     optional: true

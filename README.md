@@ -1,3 +1,5 @@
+# Archived in favor of [symphony-rust](https://github.com/anantjain-xyz/symphony-rust)
+
 # symphony-ts
 
 [![CI](https://github.com/anantjain-xyz/symphony-ts/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/anantjain-xyz/symphony-ts/actions/workflows/ci.yml)

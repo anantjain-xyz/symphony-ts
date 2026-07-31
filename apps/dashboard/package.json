@@ -32,7 +32,7 @@
     "test": "echo no-tests"
   },
   "dependencies": {
-    "@next/env": "^16.2.7",
+    "@next/env": "^16.2.9",
     "@symphony/shared": "workspace:*",
     "drizzle-orm": "^0.45.2",
     "next": "^15.5.18",
